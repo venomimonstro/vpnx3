@@ -141,15 +141,52 @@ class VpnRepository(context: Context) {
 
     fun connect(prepared: PreparedConnection) {
         wireGuard.connect(prepared.config)
+        state.saveActiveSession(prepared)
         active = prepared
     }
 
     fun disconnect() {
         val current = active
+        val persisted = state.activeSession()
         runCatching { wireGuard.disconnect() }
-        if (current != null) release(current)
+
+        if (current != null) {
+            release(current)
+        } else if (persisted != null) {
+            val endpoint=NetworkEndpoint(
+                scheme=persisted.scheme,
+                host=persisted.host,
+                port=persisted.port,
+                path=persisted.path,
+                priority=persisted.priority
+            )
+            runCatching { workerApi.closeSession(endpoint,persisted.sessionId) }
+        }
+
+        state.clearActiveSession()
         active = null
     }
 
     fun isConnected(): Boolean = wireGuard.isConnected()
+
+    fun hasPersistedSession(): Boolean = state.activeSession()!=null
+
+    fun recoverConnectionState(): Boolean {
+        val connected=wireGuard.isConnected()
+        if(!connected && state.activeSession()!=null) {
+            // Process/backend died while worker session metadata survived.
+            // Close the stale server-side peer instead of pretending the tunnel is alive.
+            val persisted=state.activeSession()!!
+            val endpoint=NetworkEndpoint(
+                scheme=persisted.scheme,
+                host=persisted.host,
+                port=persisted.port,
+                path=persisted.path,
+                priority=persisted.priority
+            )
+            runCatching { workerApi.closeSession(endpoint,persisted.sessionId) }
+            state.clearActiveSession()
+        }
+        return connected
+    }
 }

@@ -1,6 +1,16 @@
 package ru.vpnx3.app.data
 
 import android.content.Context
+import org.json.JSONObject
+
+data class ActiveSessionState(
+    val sessionId: String,
+    val scheme: String,
+    val host: String,
+    val port: Int,
+    val path: String,
+    val priority: Int
+)
 
 class LocalState(context: Context) {
     private val prefs = context.getSharedPreferences("vpnx3_state", Context.MODE_PRIVATE)
@@ -46,4 +56,38 @@ class LocalState(context: Context) {
     var highestConfigVersion: Long
         get() = prefs.getLong("highest_config_version", 0L)
         set(value) { prefs.edit().putLong("highest_config_version", value).apply() }
+
+    fun saveActiveSession(prepared: PreparedConnection) {
+        val ep=prepared.workerRoute.sessionApi
+        val raw=JSONObject()
+            .put("session_id",prepared.sessionId)
+            .put("scheme",ep.scheme)
+            .put("host",ep.host)
+            .put("port",ep.port)
+            .put("path",ep.path)
+            .put("priority",ep.priority)
+            .toString()
+        check(prefs.edit().putString("active_session",raw).commit()) {
+            "Unable to persist active session"
+        }
+    }
+
+    fun activeSession(): ActiveSessionState? {
+        val raw=prefs.getString("active_session",null) ?: return null
+        return runCatching {
+            val json=JSONObject(raw)
+            ActiveSessionState(
+                sessionId=json.getString("session_id"),
+                scheme=json.getString("scheme"),
+                host=json.getString("host"),
+                port=json.getInt("port"),
+                path=json.optString("path",""),
+                priority=json.optInt("priority",100)
+            )
+        }.getOrNull()
+    }
+
+    fun clearActiveSession() {
+        prefs.edit().remove("active_session").commit()
+    }
 }

@@ -10,24 +10,30 @@ class WireGuardController(context: Context) {
     private val tunnel = AppTunnel()
 
     @Volatile
-    private var state: Tunnel.State = Tunnel.State.DOWN
+    private var lastObservedState: Tunnel.State = Tunnel.State.DOWN
 
     fun connect(config: Config) {
-        state = backend.setState(tunnel, Tunnel.State.UP, config)
+        val state = backend.setState(tunnel, Tunnel.State.UP, config)
+        lastObservedState = state
         check(state == Tunnel.State.UP) { "WireGuard backend did not enter UP state" }
     }
 
     fun disconnect() {
-        state = backend.setState(tunnel, Tunnel.State.DOWN, null)
+        lastObservedState = backend.setState(tunnel, Tunnel.State.DOWN, null)
     }
 
-    fun isConnected(): Boolean = state == Tunnel.State.UP
+    fun currentState(): Tunnel.State =
+        runCatching { backend.getState(tunnel) }
+            .onSuccess { lastObservedState = it }
+            .getOrDefault(lastObservedState)
+
+    fun isConnected(): Boolean = currentState() == Tunnel.State.UP
 
     private inner class AppTunnel : Tunnel {
         override fun getName(): String = "vpnx3"
 
         override fun onStateChange(newState: Tunnel.State) {
-            state = newState
+            lastObservedState = newState
         }
     }
 }

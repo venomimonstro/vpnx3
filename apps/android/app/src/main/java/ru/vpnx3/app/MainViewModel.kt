@@ -32,6 +32,13 @@ data class MainUiState(
     val paymentLoading: Boolean = false
 )
 
+private data class InitResult(
+    val registration: ru.vpnx3.app.data.Registration,
+    val update: ru.vpnx3.app.update.ReleaseInfo?,
+    val plans: List<ClientPlan>,
+    val connected: Boolean
+)
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = VpnRepository(application)
     private val updates = UpdateRepository()
@@ -52,15 +59,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 repository.latestConfig()
                 val update = runCatching { updates.latest() }.getOrNull()
                 val plans = runCatching { repository.plans() }.getOrDefault(emptyList())
-                Triple(registration, update, plans)
+                val connected = repository.recoverConnectionState()
+                InitResult(registration,update,plans,connected)
             }.onSuccess { result ->
-                val registration=result.first
+                val registration=result.registration
                 mutableState.value = MainUiState(
                     registered = true,
                     trialExpiresAt = registration.trialExpiresAt,
-                    connection = ConnectionState.DISCONNECTED,
-                    availableVersion = result.second?.version,
-                    plans = result.third
+                    connection = if(result.connected) ConnectionState.CONNECTED else ConnectionState.DISCONNECTED,
+                    availableVersion = result.update?.version,
+                    plans = result.plans
                 )
             }.onFailure {
                 mutableState.value = MainUiState(
