@@ -2,6 +2,7 @@ package artifactstorage
 
 import (
 	"context"
+	"errors"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"time"
 )
+
+var ErrNotFound=errors.New("artifact object not found")
 
 type ObjectInfo struct {
 	Size int64
@@ -89,7 +92,9 @@ func (l *Local) PutVerified(ctx context.Context,key string,src io.Reader,maxByte
 func (l *Local) Open(ctx context.Context,key string)(io.ReadCloser,ObjectInfo,error){
 	if err:=ctx.Err();err!=nil{return nil,ObjectInfo{},err}
 	full,err:=l.safePath(key);if err!=nil{return nil,ObjectInfo{},err}
-	f,err:=os.Open(full);if err!=nil{return nil,ObjectInfo{},err}
+	f,err:=os.Open(full)
+	if os.IsNotExist(err){return nil,ObjectInfo{},ErrNotFound}
+	if err!=nil{return nil,ObjectInfo{},err}
 	stat,err:=f.Stat()
 	if err!=nil{f.Close();return nil,ObjectInfo{},err}
 	return f,ObjectInfo{Size:stat.Size(),ModTime:stat.ModTime()},nil
