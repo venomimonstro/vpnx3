@@ -276,16 +276,46 @@ async function clearProxy(){
   }else await api.proxy.settings.clear({scope:"regular"});
 }
 
+const MAINTENANCE_ALARM="vpnx3-maintenance";
+
+function sameIngress(a,b){
+  return !!a && !!b && a.host===b.host && Number(a.port)===Number(b.port);
+}
+
+async function scheduleMaintenance(){
+  if(api.alarms){
+    await api.alarms.create(MAINTENANCE_ALARM,{periodInMinutes:1});
+  }
+}
+
+async function maintainConnection(){
+  const s=await storageGet([STATE_KEYS.enabled,STATE_KEYS.ingress]);
+  if(!s[STATE_KEYS.enabled]) return null;
+
+  // Refresh authentication before it reaches its expiry and then read the
+  // latest signed routing manifest. Failure here does not clear the current
+  // proxy: a temporary Control Plane outage must not cause an avoidable leak.
+  await ensureCredential();
+  const ingress=await latestIngress();
+  if(!sameIngress(s[STATE_KEYS.ingress],ingress)){
+    await storageSet({[STATE_KEYS.ingress]:ingress});
+    await applyProxy(ingress);
+  }
+  return ingress;
+}
+
 async function connect(){
   await ensureRegistered();
   await ensureCredential();
   const ingress=await latestIngress();
   await storageSet({[STATE_KEYS.enabled]:true,[STATE_KEYS.ingress]:ingress});
   await applyProxy(ingress);
+  await scheduleMaintenance();
   return ingress;
 }
 async function disconnect(){
   await storageSet({[STATE_KEYS.enabled]:false,[STATE_KEYS.ingress]:null});
+  if(api.alarms) await api.alarms.clear(MAINTENANCE_ALARM);
   await clearProxy();
 }
 
@@ -341,7 +371,29 @@ api.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   }
 });
 
+if(api.alarms){
+  api.alarms.onAlarm.addListener(alarm=>{
+    if(alarm.name===MAINTENANCE_ALARM){
+      maintainConnection().catch(()=>{});
+    }
+  });
+}
+
+if(api.proxy?.onProxyError){
+  api.proxy.onProxyError.addListener(()=>maintainConnection().catch(()=>{}));
+}
+if(api.proxy?.onError){
+  api.proxy.onError.addListener(()=>maintainConnection().catch(()=>{}));
+}
+
 api.runtime.onStartup.addListener(async()=>{
   const s=await storageGet([STATE_KEYS.enabled]);
-  if(s[STATE_KEYS.enabled]) connect().catch(()=>disconnect());
+  if(s[STATE_KEYS.enabled]){
+    await scheduleMaintenance();
+    maintainConnection().catch(()=>{});
+  }
+});
+api.runtime.onInstalled.addListener(async()=>{
+  const s=await storageGet([STATE_KEYS.enabled]);
+  if(s[STATE_KEYS.enabled]) await scheduleMaintenance();
 });

@@ -3,7 +3,7 @@
   "name": "VPNX3",
   "version": "0.1.0",
   "description": "Защищённое браузерное подключение VPNX3",
-  "permissions": ["proxy","storage","webRequest","webRequestBlocking"],
+  "permissions": ["proxy","storage","webRequest","webRequestBlocking","alarms"],
   "host_permissions": ["https://*/*","http://*/*"],
   "background": {"scripts": ["background.js"]},
   "action": {"default_popup": "popup.html"},
