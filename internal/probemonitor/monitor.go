@@ -25,10 +25,29 @@ func (m *Monitor) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			checkCtx,cancel:=context.WithTimeout(ctx,5*time.Second)
-			err:=m.store.RecalculateProbeHealth(checkCtx,5*time.Minute)
-			cancel()
-			if err!=nil { m.logger.Error("probe health recalculation failed","error",err) }
+			m.check(ctx)
+		}
+	}
+}
+
+func (m *Monitor) check(parent context.Context) {
+	ctx,cancel:=context.WithTimeout(parent,8*time.Second)
+	defer cancel()
+
+	if err:=m.store.RecalculateProbeHealth(ctx,5*time.Minute); err!=nil {
+		m.logger.Error("probe health recalculation failed","error",err)
+		return
+	}
+	changes,err:=m.store.EvaluateProbeCircuitBreakers(ctx,3*time.Minute)
+	if err!=nil {
+		m.logger.Error("probe circuit breaker evaluation failed","error",err)
+		return
+	}
+	for _,change:=range changes {
+		if change.Opened {
+			m.logger.Warn("probe circuit breaker opened","node_id",change.NodeID,"health_score",change.Score)
+		} else {
+			m.logger.Info("probe circuit breaker recovered","node_id",change.NodeID,"health_score",change.Score)
 		}
 	}
 }

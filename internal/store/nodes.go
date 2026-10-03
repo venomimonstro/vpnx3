@@ -13,27 +13,28 @@ import (
 )
 
 type Node struct {
-	ID               string     `json:"id"`
-	Name             string     `json:"name"`
-	Role             string     `json:"role"`
-	Status           string     `json:"status"`
-	CountryCode      *string    `json:"country_code,omitempty"`
-	Provider         *string    `json:"provider,omitempty"`
-	PublicIP         *string    `json:"public_ip,omitempty"`
-	AgentVersion     *string    `json:"agent_version,omitempty"`
-	CapacitySessions *int       `json:"capacity_sessions,omitempty"`
-	CurrentSessions  int        `json:"current_sessions"`
-	HealthScore      *float64   `json:"health_score,omitempty"`
-	LastHeartbeatAt  *time.Time `json:"last_heartbeat_at,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	ID                 string     `json:"id"`
+	Name               string     `json:"name"`
+	Role               string     `json:"role"`
+	Status             string     `json:"status"`
+	CountryCode        *string    `json:"country_code,omitempty"`
+	Provider           *string    `json:"provider,omitempty"`
+	PublicIP           *string    `json:"public_ip,omitempty"`
+	AgentVersion       *string    `json:"agent_version,omitempty"`
+	CapacitySessions   *int       `json:"capacity_sessions,omitempty"`
+	CurrentSessions    int        `json:"current_sessions"`
+	HealthScore        *float64   `json:"health_score,omitempty"`
+	CircuitBreakerOpen bool       `json:"circuit_breaker_open"`
+	LastHeartbeatAt    *time.Time `json:"last_heartbeat_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 func (s *Store) ListNodes(ctx context.Context) ([]Node, error) {
 	rows, err := s.DB.Query(ctx, `
 		SELECT id::text,name,role::text,status::text,country_code,provider,
 		       host(public_ip),agent_version,capacity_sessions,current_sessions,
-		       health_score::float8,last_heartbeat_at,created_at,updated_at
+		       health_score::float8,circuit_breaker_open,last_heartbeat_at,created_at,updated_at
 		FROM nodes ORDER BY created_at DESC
 	`)
 	if err != nil { return nil, fmt.Errorf("list nodes: %w", err) }
@@ -44,7 +45,7 @@ func (s *Store) ListNodes(ctx context.Context) ([]Node, error) {
 		var n Node
 		if err := rows.Scan(&n.ID,&n.Name,&n.Role,&n.Status,&n.CountryCode,&n.Provider,
 			&n.PublicIP,&n.AgentVersion,&n.CapacitySessions,&n.CurrentSessions,
-			&n.HealthScore,&n.LastHeartbeatAt,&n.CreatedAt,&n.UpdatedAt); err != nil {
+			&n.HealthScore,&n.CircuitBreakerOpen,&n.LastHeartbeatAt,&n.CreatedAt,&n.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan node: %w", err)
 		}
 		nodes = append(nodes, n)
@@ -113,6 +114,7 @@ func (s *Store) TransitionNode(ctx context.Context, nodeID, target, reason, acto
 	_, err = tx.Exec(ctx, `
 		UPDATE nodes
 		SET status=$2,
+		    circuit_breaker_open=false,
 		    updated_at=now(),
 		    published_at=CASE WHEN $2='active' AND published_at IS NULL THEN now() ELSE published_at END,
 		    quarantined_at=CASE WHEN $2='quarantined' THEN now() ELSE quarantined_at END,
@@ -136,11 +138,11 @@ func (s *Store) NodeByID(ctx context.Context, nodeID string) (Node, error) {
 	err := s.DB.QueryRow(ctx, `
 		SELECT id::text,name,role::text,status::text,country_code,provider,
 		       host(public_ip),agent_version,capacity_sessions,current_sessions,
-		       health_score::float8,last_heartbeat_at,created_at,updated_at
+		       health_score::float8,circuit_breaker_open,last_heartbeat_at,created_at,updated_at
 		FROM nodes WHERE id=$1
 	`, nodeID).Scan(&n.ID,&n.Name,&n.Role,&n.Status,&n.CountryCode,&n.Provider,
 		&n.PublicIP,&n.AgentVersion,&n.CapacitySessions,&n.CurrentSessions,
-		&n.HealthScore,&n.LastHeartbeatAt,&n.CreatedAt,&n.UpdatedAt)
+		&n.HealthScore,&n.CircuitBreakerOpen,&n.LastHeartbeatAt,&n.CreatedAt,&n.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) { return Node{}, ErrNotFound }
 	if err != nil { return Node{}, fmt.Errorf("node by id: %w", err) }
 	return n,nil
