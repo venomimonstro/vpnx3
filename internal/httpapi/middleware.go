@@ -5,14 +5,19 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"log/slog"
+	"net"
 	"net/http"
+	"strings"
 	"runtime/debug"
 	"time"
 )
 
 type contextKey string
 
-const requestIDKey contextKey = "request_id"
+const (
+	requestIDKey contextKey = "request_id"
+	clientIPKey contextKey = "client_ip"
+)
 
 func requestContext(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -80,4 +85,55 @@ func newRequestID() string {
 		return "request-id-unavailable"
 	}
 	return hex.EncodeToString(raw[:])
+}
+
+
+func trustedProxyContext(cidrs []string,next http.Handler) http.Handler {
+	networks:=make([]*net.IPNet,0,len(cidrs))
+	for _,raw:=range cidrs{
+		_,network,err:=net.ParseCIDR(strings.TrimSpace(raw))
+		if err==nil && network!=nil{networks=append(networks,network)}
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+		peer:=remoteIP(r.RemoteAddr)
+		client:=peer
+		if peer!=nil && ipInNetworks(peer,networks){
+			if forwarded:=firstForwardedIP(r.Header.Get("X-Forwarded-For"));forwarded!=nil{
+				client=forwarded
+			}else if real:=net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP")));real!=nil{
+				client=real
+			}
+		}
+		ctx:=context.WithValue(r.Context(),clientIPKey,client)
+		next.ServeHTTP(w,r.WithContext(ctx))
+	})
+}
+
+func remoteIP(remoteAddr string) net.IP {
+	host,_,err:=net.SplitHostPort(remoteAddr)
+	if err==nil{
+		if ip:=net.ParseIP(host);ip!=nil{return ip}
+	}
+	return net.ParseIP(remoteAddr)
+}
+
+func firstForwardedIP(raw string) net.IP {
+	for _,part:=range strings.Split(raw,","){
+		value:=strings.TrimSpace(part)
+		if value==""{continue}
+		if ip:=net.ParseIP(value);ip!=nil{return ip}
+		// RFC 7239-like accidental host:port values are tolerated only when
+		// SplitHostPort can unambiguously parse them.
+		if host,_,err:=net.SplitHostPort(value);err==nil{
+			if ip:=net.ParseIP(host);ip!=nil{return ip}
+		}
+	}
+	return nil
+}
+
+func ipInNetworks(ip net.IP,networks []*net.IPNet) bool {
+	for _,network:=range networks{
+		if network.Contains(ip){return true}
+	}
+	return false
 }
