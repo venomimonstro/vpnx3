@@ -83,4 +83,11 @@ func (p *Publisher) publish(parent context.Context,reason string){
 		"reason",reason,
 		"key_id",env.KeyID,
 	)
+	if reason=="periodic" {
+		if deleted,err:=p.service.CleanupHistory(ctx);err!=nil{
+			p.logger.Warn("configuration history cleanup failed","error",err)
+		}else if deleted>0{
+			p.logger.Info("old configuration manifests cleaned","count",deleted)
+		}
+	}
 }
