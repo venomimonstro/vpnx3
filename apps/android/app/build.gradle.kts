@@ -5,6 +5,23 @@ plugins {
 
 android {
     namespace = "ru.vpnx3.app"
+
+    val releaseStoreFile = providers.environmentVariable("VPNX3_ANDROID_KEYSTORE_PATH")
+    val releaseStorePassword = providers.environmentVariable("VPNX3_ANDROID_KEYSTORE_PASSWORD")
+    val releaseKeyAlias = providers.environmentVariable("VPNX3_ANDROID_KEY_ALIAS")
+    val releaseKeyPassword = providers.environmentVariable("VPNX3_ANDROID_KEY_PASSWORD")
+
+    signingConfigs {
+        if (releaseStoreFile.isPresent && releaseStorePassword.isPresent &&
+            releaseKeyAlias.isPresent && releaseKeyPassword.isPresent) {
+            create("release") {
+                storeFile = file(releaseStoreFile.get())
+                storePassword = releaseStorePassword.get()
+                keyAlias = releaseKeyAlias.get()
+                keyPassword = releaseKeyPassword.get()
+            }
+        }
+    }
     compileSdk = 37
 
     defaultConfig {
@@ -23,6 +40,13 @@ android {
 
         buildConfigField("String", "CONTROL_URL", "\"$controlUrl\"")
         buildConfigField("String", "CONFIG_PUBLIC_KEY", "\"$configPublicKey\"")
+    }
+
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
+        }
     }
 
     buildFeatures {

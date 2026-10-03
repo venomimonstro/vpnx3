@@ -76,6 +76,7 @@ const sections=[
   ["users","Пользователи","users.read"],
   ["billing","Тарифы и платежи","billing.read"],
   ["incidents","Инциденты","incidents.read"],
+  ["releases","Релизы","releases.read"],
   ["audit","Аудит","audit.read"]
 ];
 
@@ -240,6 +241,25 @@ async function createIncident(){
   try{await api("/api/v1/admin/incidents",{method:"POST",body:JSON.stringify({severity,title,summary})});renderSection()}catch(e){alert(e.message)}
 }
 
+async function releases(){
+  const d=await api("/api/v1/admin/releases?limit=100");
+  const toolbar=$("div",{class:"toolbar"});
+  if(can("releases.manage")) toolbar.append($("button",{class:"btn primary",onclick:createRelease},"Новый релиз"));
+  const rows=d.releases.map(r=>[
+    r.version,badge(r.status),$("span",{class:"mono"},r.source_commit),dt(r.created_at),r.notes||"—",
+    $("button",{class:"btn",onclick:async()=>{try{const j=await api("/api/v1/admin/releases/"+r.id+"/jobs");alert(j.jobs.map(x=>x.target+" — "+x.status+(x.error_summary?" — "+x.error_summary:"")).join("\n")||"Задач нет")}catch(e){alert(e.message)}}},"Задачи")
+  ]);
+  return sectionFrame("Релизы",$("div",{},toolbar,table(["Версия","Статус","Commit","Создан","Заметки","Сборки"],rows)));
+}
+async function createRelease(){
+  const version=prompt("Версия","0.1.0");if(!version)return;
+  const source_commit=prompt("Git commit SHA (40 символов)");if(!source_commit)return;
+  const raw=prompt("Цели через запятую","android_apk,android_aab");if(!raw)return;
+  const targets=raw.split(",").map(x=>x.trim()).filter(Boolean);
+  const notes=prompt("Заметки","")||"";
+  try{await api("/api/v1/admin/releases",{method:"POST",body:JSON.stringify({version,source_commit,targets,notes})});renderSection()}catch(e){alert(e.message)}
+}
+
 async function audit(){
   const d=await api("/api/v1/admin/audit?limit=250");
   return sectionFrame("Аудит",table(["Время","Актор","Действие","Ресурс","Результат","IP","Request ID"],d.events.map(e=>[
@@ -251,7 +271,7 @@ async function renderSection(){
   const target=document.getElementById("section");if(!target)return;
   target.replaceChildren($("div",{class:"card"},"Загрузка…"));
   try{
-    const fn={dashboard,nodes,probes,users,billing,incidents,audit}[state.section]||dashboard;
+    const fn={dashboard,nodes,probes,users,billing,incidents,releases,audit}[state.section]||dashboard;
     target.replaceChildren(await fn());
   }catch(e){target.replaceChildren(sectionError("VPNX3",e))}
 }
