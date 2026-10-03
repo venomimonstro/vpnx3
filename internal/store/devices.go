@@ -16,7 +16,7 @@ type DeviceRegistration struct {
 	TrialExpires time.Time
 }
 
-func (s *Store) RegisterAnonymousDevice(ctx context.Context,platform,displayName string,publicKey []byte,trialDays int) (DeviceRegistration,error) {
+func (s *Store) RegisterAnonymousDevice(ctx context.Context,platform,displayName,algorithm string,publicKey []byte,trialDays int) (DeviceRegistration,error) {
 	platform=strings.TrimSpace(strings.ToLower(platform))
 	switch platform {
 	case "android","ios","chrome","firefox","windows","macos","linux":
@@ -25,7 +25,10 @@ func (s *Store) RegisterAnonymousDevice(ctx context.Context,platform,displayName
 	}
 	displayName=strings.TrimSpace(displayName)
 	if displayName=="" || len(displayName)>120 { return DeviceRegistration{},fmt.Errorf("invalid display name") }
-	if len(publicKey)!=32 { return DeviceRegistration{},fmt.Errorf("invalid public key") }
+	if len(publicKey)==0 || len(publicKey)>2048 { return DeviceRegistration{},fmt.Errorf("invalid public key") }
+	if algorithm!="ed25519" && algorithm!="ecdsa-p256-sha256" {
+		return DeviceRegistration{},fmt.Errorf("unsupported identity algorithm")
+	}
 	if trialDays<0 || trialDays>30 { return DeviceRegistration{},fmt.Errorf("invalid trial duration") }
 
 	tx,err:=s.DB.Begin(ctx)
@@ -44,9 +47,9 @@ func (s *Store) RegisterAnonymousDevice(ctx context.Context,platform,displayName
 		INSERT INTO devices(
 			user_id,platform,display_name,status,identity_public_key,identity_algorithm,
 			trial_started_at,trial_expires_at,last_seen_at
-		) VALUES($1,$2,$3,'active',$4,'ed25519',$5,$6,$5)
+		) VALUES($1,$2,$3,'active',$4,$5,$6,$7,$6)
 		RETURNING id::text
-	`,userID,platform,displayName,publicKey,now,trialExpires).Scan(&deviceID); err!=nil {
+	`,userID,platform,displayName,publicKey,algorithm,now,trialExpires).Scan(&deviceID); err!=nil {
 		return DeviceRegistration{},fmt.Errorf("create device: %w",err)
 	}
 	if err:=tx.Commit(ctx); err!=nil { return DeviceRegistration{},err }
@@ -54,20 +57,22 @@ func (s *Store) RegisterAnonymousDevice(ctx context.Context,platform,displayName
 }
 
 type DeviceAuthState struct {
-	UserID string
-	DeviceID string
-	PublicKey []byte
-	Sequence int64
-	Status string
-	TrialExpires *time.Time
+	UserID            string
+	DeviceID          string
+	PublicKey         []byte
+	IdentityAlgorithm string
+	Sequence          int64
+	Status            string
+	TrialExpires      *time.Time
 }
 
 func (s *Store) DeviceAuthState(ctx context.Context,deviceID string) (DeviceAuthState,error) {
 	var d DeviceAuthState
 	err:=s.DB.QueryRow(ctx,`
-		SELECT user_id::text,id::text,identity_public_key,request_sequence,status,trial_expires_at
+		SELECT user_id::text,id::text,identity_public_key,identity_algorithm,
+		       request_sequence,status,trial_expires_at
 		FROM devices WHERE id=$1
-	`,deviceID).Scan(&d.UserID,&d.DeviceID,&d.PublicKey,&d.Sequence,&d.Status,&d.TrialExpires)
+	`,deviceID).Scan(&d.UserID,&d.DeviceID,&d.PublicKey,&d.IdentityAlgorithm,&d.Sequence,&d.Status,&d.TrialExpires)
 	if errors.Is(err,pgx.ErrNoRows) { return DeviceAuthState{},ErrNotFound }
 	if err!=nil { return DeviceAuthState{},fmt.Errorf("load device auth state: %w",err) }
 	return d,nil
@@ -85,7 +90,7 @@ func (s *Store) AdvanceDeviceSequence(ctx context.Context,deviceID string,newSeq
 }
 
 type Entitlement struct {
-	Name string
+	Name      string
 	ExpiresAt time.Time
 }
 
