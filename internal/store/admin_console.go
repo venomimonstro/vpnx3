@@ -28,7 +28,12 @@ func (s *Store) Dashboard(ctx context.Context) (DashboardSummary,error) {
 		  (SELECT count(*) FROM nodes WHERE status='active'),
 		  (SELECT count(*) FROM nodes WHERE status='degraded'),
 		  (SELECT COALESCE(sum(current_sessions),0) FROM nodes WHERE role='worker'),
-		  (SELECT COALESCE(sum(amount_minor),0) FROM payments WHERE status='succeeded' AND paid_at>=now()-interval '30 days'),
+		  (
+		    SELECT COALESCE(sum(p.amount_minor),0)-
+		           COALESCE((SELECT sum(r.amount_minor) FROM refunds r WHERE r.status='succeeded' AND r.refunded_at>=now()-interval '30 days'),0)
+		    FROM payments p
+		    WHERE p.status IN ('succeeded','refunded') AND p.paid_at>=now()-interval '30 days'
+		  ),
 		  (SELECT count(*) FROM payments WHERE created_at>=now()-interval '30 days')
 	`).Scan(
 		&d.UsersTotal,&d.DevicesActive,&d.SubscriptionsActive,&d.NodesActive,

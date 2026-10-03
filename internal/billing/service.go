@@ -48,3 +48,29 @@ func (s *Service) ApplyVerifiedEvent(ctx context.Context,event NormalizedEvent) 
 		RawPayload:event.RawPayload,
 	})
 }
+
+
+type NormalizedRefundEvent struct {
+	Provider string
+	ProviderEventID string
+	ProviderRefundID string
+	ProviderPaymentID string
+	UserID string
+	PlanID string
+	Status string
+	AmountMinor int64
+	PaymentAmountMinor int64
+	Currency string
+	OccurredAt time.Time
+	RawPayload []byte
+}
+
+func (s *Service) ApplyVerifiedRefund(ctx context.Context,event NormalizedRefundEvent)(bool,error){
+	return s.store.ApplyRefundEvent(ctx,store.RefundEvent{
+		Provider:event.Provider,ProviderEventID:event.ProviderEventID,
+		ProviderRefundID:event.ProviderRefundID,ProviderPaymentID:event.ProviderPaymentID,
+		UserID:event.UserID,PlanID:event.PlanID,Status:event.Status,
+		AmountMinor:event.AmountMinor,PaymentAmountMinor:event.PaymentAmountMinor,
+		Currency:event.Currency,OccurredAt:event.OccurredAt,RawPayload:event.RawPayload,
+	})
+}

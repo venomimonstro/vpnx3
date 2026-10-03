@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/venomimonstro/vpnx3/internal/store"
@@ -42,4 +43,13 @@ func (s *Server) handleCreatePlan(w http.ResponseWriter,r *http.Request) {
 	_ = s.store.WriteAudit(r.Context(),"admin",admin.ID,"billing.plan.create","plan",plan.ID,
 		requestIDFromContext(r.Context()),ipString(clientIP(r)),"success")
 	writeJSON(w,http.StatusCreated,plan)
+}
+
+
+func (s *Server) handleFinanceSummary(w http.ResponseWriter,r *http.Request){
+	days:=30
+	if raw:=r.URL.Query().Get("days");raw!=""{if v,err:=strconv.Atoi(raw);err==nil{days=v}}
+	summary,err:=s.store.FinanceSummary(r.Context(),days)
+	if err!=nil{s.internalError(w,r,err);return}
+	writeJSON(w,http.StatusOK,summary)
 }

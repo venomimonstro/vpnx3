@@ -65,6 +65,19 @@ func (s *Server) handleYooKassaWebhook(w http.ResponseWriter,r *http.Request) {
 	raw,err:=io.ReadAll(http.MaxBytesReader(w,r.Body,1<<20))
 	if err!=nil { writeError(w,http.StatusBadRequest,"invalid_body"); return }
 
+	var notice struct{ Event string `json:"event"` }
+	if err:=json.Unmarshal(raw,&notice);err!=nil{writeError(w,http.StatusBadRequest,"invalid_webhook");return}
+
+	if notice.Event=="refund.succeeded" {
+		event,err:=s.yooKassa.VerifyAndNormalizeRefundWebhook(r.Context(),raw)
+		if err!=nil{
+			s.logger.Warn("YooKassa refund webhook verification failed","error",err)
+			writeError(w,http.StatusBadRequest,"invalid_webhook");return
+		}
+		if _,err:=s.billing.ApplyVerifiedRefund(r.Context(),event);err!=nil{s.internalError(w,r,err);return}
+		w.WriteHeader(http.StatusOK);return
+	}
+
 	event,err:=s.yooKassa.VerifyAndNormalizeWebhook(r.Context(),r.Header,raw)
 	if err!=nil {
 		s.logger.Warn("YooKassa webhook verification failed","error",err)

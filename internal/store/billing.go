@@ -208,15 +208,16 @@ func (s *Store) ApplyPaymentEvent(ctx context.Context,event PaymentEvent) (bool,
 	}
 
 	if shouldGrant {
-		var currentID string
+		var subscriptionID string
 		var currentExpires time.Time
 		err:=tx.QueryRow(ctx,`
 			SELECT id::text,expires_at
 			FROM subscriptions
 			WHERE user_id=$1 AND status IN ('active','grace')
+			  AND COALESCE(grace_until,expires_at) > $2
 			ORDER BY expires_at DESC LIMIT 1
 			FOR UPDATE
-		`,event.UserID).Scan(&currentID,&currentExpires)
+		`,event.UserID,event.OccurredAt).Scan(&subscriptionID,&currentExpires)
 
 		start:=event.OccurredAt
 		if err==nil && currentExpires.After(start) { start=currentExpires }
@@ -224,18 +225,28 @@ func (s *Store) ApplyPaymentEvent(ctx context.Context,event PaymentEvent) (bool,
 		grace:=expires.Add(time.Duration(graceDays)*24*time.Hour)
 
 		if errors.Is(err,pgx.ErrNoRows) {
-			_,err=tx.Exec(ctx,`
+			err=tx.QueryRow(ctx,`
 				INSERT INTO subscriptions(user_id,plan_id,status,starts_at,expires_at,grace_until,auto_renew)
 				VALUES($1,$2,'active',$3,$4,$5,false)
-			`,event.UserID,event.PlanID,event.OccurredAt,expires,grace)
+				RETURNING id::text
+			`,event.UserID,event.PlanID,event.OccurredAt,expires,grace).Scan(&subscriptionID)
 		} else if err==nil {
 			_,err=tx.Exec(ctx,`
 				UPDATE subscriptions
 				SET plan_id=$2,status='active',expires_at=$3,grace_until=$4,updated_at=now()
 				WHERE id=$1
-			`,currentID,event.PlanID,expires,grace)
+			`,subscriptionID,event.PlanID,expires,grace)
 		}
 		if err!=nil { return false,fmt.Errorf("apply subscription entitlement: %w",err) }
+
+		creditSeconds:=int64(periodDays)*24*60*60
+		if _,err:=tx.Exec(ctx,`
+			INSERT INTO subscription_credits(subscription_id,payment_id,credit_seconds,source,granted_at)
+			VALUES($1,$2,$3,'payment',$4)
+			ON CONFLICT(payment_id) DO NOTHING
+		`,subscriptionID,paymentID,creditSeconds,event.OccurredAt);err!=nil{
+			return false,fmt.Errorf("record subscription credit: %w",err)
+		}
 	}
 
 	if _,err:=tx.Exec(ctx,`
@@ -246,5 +257,116 @@ func (s *Store) ApplyPaymentEvent(ctx context.Context,event PaymentEvent) (bool,
 	}
 
 	if err:=tx.Commit(ctx); err!=nil { return false,err }
+	return true,nil
+}
+
+
+type RefundEvent struct {
+	Provider string
+	ProviderEventID string
+	ProviderRefundID string
+	ProviderPaymentID string
+	UserID string
+	PlanID string
+	Status string
+	AmountMinor int64
+	PaymentAmountMinor int64
+	Currency string
+	OccurredAt time.Time
+	RawPayload []byte
+}
+
+func (s *Store) ApplyRefundEvent(ctx context.Context,event RefundEvent)(bool,error){
+	event.Provider=strings.ToLower(strings.TrimSpace(event.Provider))
+	event.ProviderEventID=strings.TrimSpace(event.ProviderEventID)
+	event.ProviderRefundID=strings.TrimSpace(event.ProviderRefundID)
+	event.ProviderPaymentID=strings.TrimSpace(event.ProviderPaymentID)
+	event.Status=strings.ToLower(strings.TrimSpace(event.Status))
+	event.Currency=strings.ToUpper(strings.TrimSpace(event.Currency))
+	if event.Provider==""||event.ProviderEventID==""||event.ProviderRefundID==""||event.ProviderPaymentID==""||
+		event.UserID==""||event.PlanID==""||event.AmountMinor<=0||event.PaymentAmountMinor<=0||len(event.Currency)!=3{
+		return false,fmt.Errorf("invalid normalized refund event")
+	}
+	if event.Status!="succeeded"{return false,fmt.Errorf("unsupported refund status")}
+	if event.OccurredAt.IsZero(){event.OccurredAt=time.Now().UTC()}
+	hash:=sha256.Sum256(event.RawPayload)
+
+	tx,err:=s.DB.Begin(ctx);if err!=nil{return false,err};defer tx.Rollback(ctx)
+	var duplicate int
+	err=tx.QueryRow(ctx,"SELECT 1 FROM billing_events WHERE provider=$1 AND provider_event_id=$2",
+		event.Provider,event.ProviderEventID).Scan(&duplicate)
+	if err==nil{return false,nil}
+	if !errors.Is(err,pgx.ErrNoRows){return false,err}
+
+	var paymentID,previousStatus,userID,planID,currency string
+	var paymentAmount int64
+	err=tx.QueryRow(ctx,`
+		SELECT id::text,status,user_id::text,plan_id::text,amount_minor,currency
+		FROM payments
+		WHERE provider=$1 AND provider_payment_id=$2
+		FOR UPDATE
+	`,event.Provider,event.ProviderPaymentID).Scan(&paymentID,&previousStatus,&userID,&planID,&paymentAmount,&currency)
+	if errors.Is(err,pgx.ErrNoRows){return false,fmt.Errorf("refund payment not found")}
+	if err!=nil{return false,err}
+	if userID!=event.UserID||planID!=event.PlanID||paymentAmount!=event.PaymentAmountMinor||currency!=event.Currency{
+		return false,fmt.Errorf("refund conflicts with stored payment identity")
+	}
+	if previousStatus!="succeeded"&&previousStatus!="refunded"{
+		return false,fmt.Errorf("refund requires succeeded payment")
+	}
+	if event.AmountMinor>paymentAmount{return false,fmt.Errorf("refund exceeds payment amount")}
+
+	var refundID string
+	err=tx.QueryRow(ctx,`
+		INSERT INTO refunds(payment_id,provider,provider_refund_id,status,amount_minor,currency,refunded_at)
+		VALUES($1,$2,$3,'succeeded',$4,$5,$6)
+		ON CONFLICT(provider,provider_refund_id) DO NOTHING
+		RETURNING id::text
+	`,paymentID,event.Provider,event.ProviderRefundID,event.AmountMinor,event.Currency,event.OccurredAt).Scan(&refundID)
+	if errors.Is(err,pgx.ErrNoRows){return false,nil}
+	if err!=nil{return false,err}
+
+	var totalRefunded int64
+	if err:=tx.QueryRow(ctx,`
+		SELECT COALESCE(sum(amount_minor),0)
+		FROM refunds WHERE payment_id=$1 AND status='succeeded'
+	`,paymentID).Scan(&totalRefunded);err!=nil{return false,err}
+	if totalRefunded>paymentAmount{return false,fmt.Errorf("cumulative refunds exceed payment amount")}
+
+	if totalRefunded==paymentAmount && previousStatus!="refunded" {
+		if _,err:=tx.Exec(ctx,"UPDATE payments SET status='refunded',updated_at=now() WHERE id=$1",paymentID);err!=nil{return false,err}
+
+		var subscriptionID string
+		var creditSeconds int64
+		err:=tx.QueryRow(ctx,`
+			UPDATE subscription_credits
+			SET revoked_at=$2
+			WHERE payment_id=$1 AND revoked_at IS NULL
+			RETURNING subscription_id::text,credit_seconds
+		`,paymentID,event.OccurredAt).Scan(&subscriptionID,&creditSeconds)
+		if err==nil {
+			if _,err:=tx.Exec(ctx,`
+				UPDATE subscriptions
+				SET expires_at=GREATEST(starts_at,expires_at-($2::bigint * interval '1 second')),
+				    grace_until=CASE
+				      WHEN grace_until IS NULL THEN NULL
+				      ELSE GREATEST(starts_at,grace_until-($2::bigint * interval '1 second'))
+				    END,
+				    status=CASE
+				      WHEN GREATEST(starts_at,expires_at-($2::bigint * interval '1 second')) <= now() THEN 'expired'
+				      ELSE status
+				    END,
+				    updated_at=now()
+				WHERE id=$1
+			`,subscriptionID,creditSeconds);err!=nil{return false,err}
+		} else if !errors.Is(err,pgx.ErrNoRows) { return false,err }
+	}
+
+	if _,err:=tx.Exec(ctx,`
+		INSERT INTO billing_events(provider,provider_event_id,event_type,payload_hash,payment_id)
+		VALUES($1,$2,'refund.succeeded',$3,$4)
+	`,event.Provider,event.ProviderEventID,hash[:],paymentID);err!=nil{return false,err}
+
+	if err:=tx.Commit(ctx);err!=nil{return false,err}
 	return true,nil
 }

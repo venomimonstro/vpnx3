@@ -173,6 +173,77 @@ func (a *Adapter) VerifyAndNormalizeWebhook(ctx context.Context,_ http.Header,ra
 	},nil
 }
 
+type refundObject struct {
+	ID string `json:"id"`
+	Status string `json:"status"`
+	PaymentID string `json:"payment_id"`
+	Amount struct {
+		Value string `json:"value"`
+		Currency string `json:"currency"`
+	} `json:"amount"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (a *Adapter) VerifyAndNormalizeRefundWebhook(ctx context.Context,raw []byte)(billing.NormalizedRefundEvent,error){
+	var notice struct{
+		Type string `json:"type"`
+		Event string `json:"event"`
+		Object struct{ID string `json:"id"`} `json:"object"`
+	}
+	if err:=json.Unmarshal(raw,&notice);err!=nil{return billing.NormalizedRefundEvent{},err}
+	if notice.Type!="notification"||notice.Event!="refund.succeeded"||notice.Object.ID==""{
+		return billing.NormalizedRefundEvent{},fmt.Errorf("invalid YooKassa refund notification")
+	}
+	refund,refundRaw,err:=a.fetchRefund(ctx,notice.Object.ID)
+	if err!=nil{return billing.NormalizedRefundEvent{},err}
+	if refund.Status!="succeeded"||refund.PaymentID==""{
+		return billing.NormalizedRefundEvent{},fmt.Errorf("verified refund is not succeeded")
+	}
+	payment,paymentRaw,err:=a.fetchPayment(ctx,refund.PaymentID)
+	if err!=nil{return billing.NormalizedRefundEvent{},err}
+	if payment.Metadata.UserID==""||payment.Metadata.PlanID==""{
+		return billing.NormalizedRefundEvent{},fmt.Errorf("refund payment metadata is incomplete")
+	}
+	refundMinor,err:=decimalToMinor(refund.Amount.Value);if err!=nil{return billing.NormalizedRefundEvent{},err}
+	paymentMinor,err:=decimalToMinor(payment.Amount.Value);if err!=nil{return billing.NormalizedRefundEvent{},err}
+	if refund.Amount.Currency!=payment.Amount.Currency{
+		return billing.NormalizedRefundEvent{},fmt.Errorf("refund currency differs from payment")
+	}
+	payload:=append(append(append([]byte{},raw...),refundRaw...),paymentRaw...)
+	return billing.NormalizedRefundEvent{
+		Provider:a.Name(),
+		ProviderEventID:"refund.succeeded:"+refund.ID,
+		ProviderRefundID:refund.ID,
+		ProviderPaymentID:payment.ID,
+		UserID:payment.Metadata.UserID,
+		PlanID:payment.Metadata.PlanID,
+		Status:"succeeded",
+		AmountMinor:refundMinor,
+		PaymentAmountMinor:paymentMinor,
+		Currency:refund.Amount.Currency,
+		OccurredAt:refund.CreatedAt,
+		RawPayload:payload,
+	},nil
+}
+
+func (a *Adapter) fetchRefund(ctx context.Context,id string)(refundObject,[]byte,error){
+	req,err:=http.NewRequestWithContext(ctx,http.MethodGet,apiBase+"/refunds/"+id,nil)
+	if err!=nil{return refundObject{},nil,err}
+	req.SetBasicAuth(a.shopID,a.secretKey)
+	req.Header.Set("Accept","application/json")
+	resp,err:=a.client.Do(req)
+	if err!=nil{return refundObject{},nil,fmt.Errorf("verify YooKassa refund: %w",err)}
+	defer resp.Body.Close()
+	raw,err:=io.ReadAll(io.LimitReader(resp.Body,1<<20));if err!=nil{return refundObject{},nil,err}
+	if resp.StatusCode!=http.StatusOK{return refundObject{},nil,fmt.Errorf("verify YooKassa refund status %d",resp.StatusCode)}
+	var refund refundObject
+	if err:=json.Unmarshal(raw,&refund);err!=nil{return refundObject{},nil,err}
+	if refund.ID==""||refund.Status==""||refund.PaymentID==""||refund.Amount.Value==""{
+		return refundObject{},nil,fmt.Errorf("incomplete YooKassa refund object")
+	}
+	return refund,raw,nil
+}
+
 type paymentObject struct {
 	ID string `json:"id"`
 	Status string `json:"status"`

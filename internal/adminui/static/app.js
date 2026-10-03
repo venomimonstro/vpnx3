@@ -263,7 +263,11 @@ async function userDevices(u){
 }
 
 async function billing(){
-  const [plans,pays]=await Promise.all([api("/api/v1/billing/plans"),api("/api/v1/admin/payments?limit=200")]);
+  const [plans,pays,finance]=await Promise.all([
+    api("/api/v1/billing/plans"),
+    api("/api/v1/admin/payments?limit=200"),
+    api("/api/v1/admin/finance/summary?days=30")
+  ]);
   const create=can("billing.manage")?$("button",{class:"btn primary",onclick:createPlan},"Новая версия тарифа"):null;
   const planTable=table(["Код","Версия","Название","Цена","Период","Устройства","Продажа"],plans.plans.map(p=>[
     p.code,p.version,p.name,money(p.price_minor,p.currency),p.billing_period_days+" дн.",p.device_limit,p.sale_enabled?"да":"нет"
@@ -271,7 +275,11 @@ async function billing(){
   const payTable=table(["Время","Пользователь","Тариф","Провайдер","Статус","Сумма","Оплачен"],pays.payments.map(p=>[
     dt(p.created_at),$("span",{class:"mono"},p.user_id),p.plan_code+" v"+p.plan_version,p.provider,badge(p.status),money(p.amount_minor,p.currency),dt(p.paid_at)
   ]));
-  return sectionFrame("Тарифы и платежи",$("div",{class:"stack"},$("div",{class:"toolbar"},create),$("div",{class:"card"},$("h2",{},"Тарифы"),planTable),$("div",{class:"card"},$("h2",{},"Платежи"),payTable)));
+  const financeCard=$("div",{class:"card"},$("h2",{},"Финансы за 30 дней"),
+    $("p",{},"Поступления: "+money(finance.captured_minor,finance.currency)),
+    $("p",{},"Возвраты: "+money(finance.refunded_minor,finance.currency)),
+    $("p",{},"Чистыми: "+money(finance.net_minor,finance.currency)));
+  return sectionFrame("Тарифы и платежи",$("div",{class:"stack"},$("div",{class:"toolbar"},create),financeCard,$("div",{class:"card"},$("h2",{},"Тарифы"),planTable),$("div",{class:"card"},$("h2",{},"Платежи"),payTable)));
 }
 async function createPlan(){
   const code=prompt("Код тарифа","basic");if(!code)return;
