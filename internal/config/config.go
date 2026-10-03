@@ -35,6 +35,7 @@ type Config struct {
 	ArtifactDir            string
 	ArtifactMaxBytes       int64
 	ArtifactRetentionDays  int
+	ArtifactTransferTimeout time.Duration
 	TrustedProxyCIDRs      []string
 }
 
@@ -64,6 +65,7 @@ func Load() (Config, error) {
 		ArtifactDir:            env("VPNX3_ARTIFACT_DIR","/var/lib/vpnx3/artifacts"),
 		ArtifactMaxBytes:       int64(intEnv("VPNX3_ARTIFACT_MAX_MB",300))*1024*1024,
 		ArtifactRetentionDays:  intEnv("VPNX3_ARTIFACT_RETENTION_DAYS",30),
+		ArtifactTransferTimeout: duration("VPNX3_ARTIFACT_TRANSFER_TIMEOUT",30*time.Minute),
 		TrustedProxyCIDRs:      csvEnv("VPNX3_TRUSTED_PROXY_CIDRS"),
 	}
 
@@ -90,6 +92,9 @@ func Load() (Config, error) {
 	}
 	if cfg.WireGuardKeepalive < 0 || cfg.WireGuardKeepalive > 120 {
 		return Config{}, fmt.Errorf("VPNX3_WG_KEEPALIVE must be between 0 and 120")
+	}
+	if cfg.ArtifactTransferTimeout < time.Minute || cfg.ArtifactTransferTimeout > 2*time.Hour {
+		return Config{}, fmt.Errorf("VPNX3_ARTIFACT_TRANSFER_TIMEOUT must be between 1m and 2h")
 	}
 	if cfg.ArtifactRetentionDays < 1 || cfg.ArtifactRetentionDays > 3650 {
 		return Config{}, fmt.Errorf("VPNX3_ARTIFACT_RETENTION_DAYS must be between 1 and 3650")
