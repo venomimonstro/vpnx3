@@ -72,6 +72,7 @@ func (s *Server) handlePublicArtifactDownload(w http.ResponseWriter,r *http.Requ
 	if errors.Is(err,artifactstorage.ErrNotFound){
 		writeError(w,http.StatusNotFound,"artifact_file_missing");return
 	}
+	if errors.Is(err,errArtifactStreamStarted){return}
 	if err!=nil{
 		s.logger.Error("public artifact download failed","release_id",a.ReleaseID,"artifact_id",a.ArtifactID,"error",err)
 		writeError(w,http.StatusConflict,"artifact_integrity_failed")
