@@ -1,0 +1,79 @@
+package httpapi
+
+import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/venomimonstro/vpnx3/internal/deviceauth"
+	"github.com/venomimonstro/vpnx3/internal/store"
+)
+
+func (s *Server) handleClientCreatePayment(w http.ResponseWriter,r *http.Request) {
+	if s.yooKassa==nil {
+		writeError(w,http.StatusServiceUnavailable,"payments_unavailable")
+		return
+	}
+	body,err:=io.ReadAll(http.MaxBytesReader(w,r.Body,64<<10))
+	if err!=nil { writeError(w,http.StatusBadRequest,"invalid_body"); return }
+	var req struct {
+		Sequence int64 `json:"sequence"`
+		PlanID string `json:"plan_id"`
+	}
+	decoder:=json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err:=decoder.Decode(&req); err!=nil || req.Sequence<=0 || strings.TrimSpace(req.PlanID)=="" {
+		writeError(w,http.StatusBadRequest,"invalid_json"); return
+	}
+
+	deviceID:=strings.TrimSpace(r.Header.Get("X-VPNX3-Device-ID"))
+	ts:=strings.TrimSpace(r.Header.Get("X-VPNX3-Timestamp"))
+	sig:=strings.TrimSpace(r.Header.Get("X-VPNX3-Signature"))
+	state,err:=s.store.DeviceAuthState(r.Context(),deviceID)
+	if err!=nil || state.Status!="active" { writeError(w,http.StatusUnauthorized,"invalid_device"); return }
+	if req.Sequence<=state.Sequence { writeError(w,http.StatusConflict,"stale_request"); return }
+	if err:=deviceauth.Verify(state.IdentityAlgorithm,state.PublicKey,r.Method,r.URL.Path,ts,sig,body,time.Now().UTC()); err!=nil {
+		writeError(w,http.StatusUnauthorized,"invalid_device_signature"); return
+	}
+	if err:=s.store.AdvanceDeviceSequence(r.Context(),deviceID,req.Sequence); err!=nil {
+		writeError(w,http.StatusConflict,"stale_request"); return
+	}
+
+	plan,err:=s.store.PlanByID(r.Context(),strings.TrimSpace(req.PlanID))
+	if err==store.ErrNotFound || (err==nil && !plan.SaleEnabled) {
+		writeError(w,http.StatusNotFound,"plan_not_available"); return
+	}
+	if err!=nil { s.internalError(w,r,err); return }
+
+	result,err:=s.yooKassa.CreatePayment(r.Context(),state.UserID,plan)
+	if err!=nil { s.internalError(w,r,err); return }
+	if _,err:=s.billing.ApplyVerifiedEvent(r.Context(),result.Event); err!=nil {
+		s.internalError(w,r,err); return
+	}
+	writeJSON(w,http.StatusCreated,map[string]any{
+		"provider":"yookassa",
+		"payment_id":result.Event.ProviderPaymentID,
+		"confirmation_url":result.ConfirmationURL,
+	})
+}
+
+func (s *Server) handleYooKassaWebhook(w http.ResponseWriter,r *http.Request) {
+	if s.yooKassa==nil { writeError(w,http.StatusNotFound,"not_found"); return }
+	raw,err:=io.ReadAll(http.MaxBytesReader(w,r.Body,1<<20))
+	if err!=nil { writeError(w,http.StatusBadRequest,"invalid_body"); return }
+
+	event,err:=s.yooKassa.VerifyAndNormalizeWebhook(r.Context(),r.Header,raw)
+	if err!=nil {
+		s.logger.Warn("YooKassa webhook verification failed","error",err)
+		writeError(w,http.StatusBadRequest,"invalid_webhook")
+		return
+	}
+	if _,err:=s.billing.ApplyVerifiedEvent(r.Context(),event); err!=nil {
+		s.internalError(w,r,err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}

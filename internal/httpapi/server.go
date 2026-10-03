@@ -10,6 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/venomimonstro/vpnx3/internal/config"
 	"github.com/venomimonstro/vpnx3/internal/configservice"
+	"github.com/venomimonstro/vpnx3/internal/billing"
+	"github.com/venomimonstro/vpnx3/internal/billing/yookassa"
 	"github.com/venomimonstro/vpnx3/internal/signing"
 	"github.com/venomimonstro/vpnx3/internal/store"
 )
@@ -23,10 +25,18 @@ type Server struct {
 	configService *configservice.Service
 	configSigner *signing.Signer
 	accessSigner *signing.Signer
+	billing *billing.Service
+	yooKassa *yookassa.Adapter
 }
 
 func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSigner,accessSigner *signing.Signer) *Server {
 	mux:=http.NewServeMux()
+	var yoo *yookassa.Adapter
+	if cfg.YooKassaShopID!="" {
+		var err error
+		yoo,err=yookassa.New(cfg.YooKassaShopID,cfg.YooKassaSecretKey,cfg.YooKassaReturnURL)
+		if err!=nil { panic(err) }
+	}
 	s:=&Server{
 		logger:logger,db:db,store:store.New(db),cfg:cfg,
 		configService:configservice.New(
@@ -39,6 +49,7 @@ func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSign
 			},
 		),
 		configSigner:configSigner,accessSigner:accessSigner,
+		billing:billing.New(store.New(db)),yooKassa:yoo,
 	}
 	mux.HandleFunc("GET /health/live",s.handleLive)
 	mux.HandleFunc("GET /health/ready",s.handleReady)
@@ -54,6 +65,8 @@ func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSign
 	mux.HandleFunc("POST /api/v1/client/register",s.handleClientRegister)
 	mux.HandleFunc("POST /api/v1/client/lease",s.handleClientLease)
 	mux.HandleFunc("GET /api/v1/plans",s.handlePublicPlans)
+	mux.HandleFunc("POST /api/v1/client/payments",s.handleClientCreatePayment)
+	mux.HandleFunc("POST /api/v1/webhooks/yookassa",s.handleYooKassaWebhook)
 	mux.Handle("GET /api/v1/admin/me",s.requireAdmin(http.HandlerFunc(s.handleAdminMe)))
 	mux.Handle("POST /api/v1/admin/logout",s.requireAdmin(http.HandlerFunc(s.handleAdminLogout)))
 	mux.Handle("POST /api/v1/config/publish",s.requireAdmin(requirePermission("config.manage",http.HandlerFunc(s.handlePublishConfig))))

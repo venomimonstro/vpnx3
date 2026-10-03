@@ -28,6 +28,9 @@ type Config struct {
 	ClientDNS              []string
 	WireGuardMTU           int
 	WireGuardKeepalive     int
+	YooKassaShopID         string
+	YooKassaSecretKey      string
+	YooKassaReturnURL      string
 }
 
 func Load() (Config, error) {
@@ -49,6 +52,9 @@ func Load() (Config, error) {
 		ClientDNS:              csvEnv("VPNX3_CLIENT_DNS"),
 		WireGuardMTU:           intEnv("VPNX3_WG_CLIENT_MTU", 1280),
 		WireGuardKeepalive:     intEnv("VPNX3_WG_KEEPALIVE", 25),
+		YooKassaShopID:         strings.TrimSpace(os.Getenv("VPNX3_YOOKASSA_SHOP_ID")),
+		YooKassaSecretKey:      strings.TrimSpace(os.Getenv("VPNX3_YOOKASSA_SECRET_KEY")),
+		YooKassaReturnURL:      strings.TrimSpace(os.Getenv("VPNX3_YOOKASSA_RETURN_URL")),
 	}
 
 	if strings.TrimSpace(cfg.HTTPAddr) == "" {
@@ -74,6 +80,10 @@ func Load() (Config, error) {
 	}
 	if cfg.WireGuardKeepalive < 0 || cfg.WireGuardKeepalive > 120 {
 		return Config{}, fmt.Errorf("VPNX3_WG_KEEPALIVE must be between 0 and 120")
+	}
+	configuredYooKassa:=cfg.YooKassaShopID!="" || cfg.YooKassaSecretKey!="" || cfg.YooKassaReturnURL!=""
+	if configuredYooKassa && (cfg.YooKassaShopID=="" || cfg.YooKassaSecretKey=="" || !strings.HasPrefix(cfg.YooKassaReturnURL,"https://")) {
+		return Config{}, fmt.Errorf("YooKassa configuration requires shop id, secret key and https return URL")
 	}
 	for _, dns := range cfg.ClientDNS {
 		if net.ParseIP(dns) == nil {
