@@ -40,4 +40,9 @@ func (c *Cleaner) cleanup(parent context.Context){
 	if tag.RowsAffected()>0{
 		c.logger.Info("pairing codes cleaned","count",tag.RowsAffected())
 	}
+	if deleted,err:=c.store.CleanupClientRegistrationRate(ctx);err!=nil{
+		c.logger.Warn("registration rate cleanup failed","error",err)
+	}else if deleted>0{
+		c.logger.Info("registration rate buckets cleaned","count",deleted)
+	}
 }
