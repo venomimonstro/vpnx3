@@ -1,12 +1,3 @@
-# Browser multi-device account
+# Browser account pairing
 
-Chrome и Firefox теперь используют тот же account pairing, что Android.
-
-В popup:
-- отображается текущий entitlement;
-- показано active_devices / device_limit;
-- оплаченный аккаунт может создать одноразовый pairing code;
-- новый browser-extension device может ввести код с Android или другого устройства;
-- после успешного claim local user_id обновляется, а следующий Proxy Lease выдаётся уже по общей подписке.
-
-Proxy credential не переносится между аккаунтами вручную: после pairing серверная entitlement-проверка остаётся источником истины.
+Chrome/Firefox now use the same signed account status and pairing API as Android. The extension can create a one-time pairing code when the paid plan has a free device slot, or claim a code generated on Android/another extension. The browser keeps its own device identity; only the server-side user_id relation changes.

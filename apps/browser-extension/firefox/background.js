@@ -203,6 +203,29 @@ async function claimPairingCode(code){
   return status;
 }
 
+async function accountStatus(){
+  const reg=await ensureRegistered();
+  const sequence=await nextSequence();
+  return request("POST","/api/v1/client/account/status",{sequence},reg[STATE_KEYS.deviceId]);
+}
+
+async function createPairingCode(){
+  const reg=await ensureRegistered();
+  const sequence=await nextSequence();
+  return request("POST","/api/v1/client/pairing-code",{sequence},reg[STATE_KEYS.deviceId]);
+}
+
+async function claimPairingCode(code){
+  const reg=await ensureRegistered();
+  const sequence=await nextSequence();
+  const status=await request("POST","/api/v1/client/pairing-claim",{
+    sequence,
+    code:String(code||"").trim().toUpperCase()
+  },reg[STATE_KEYS.deviceId]);
+  await storageSet({[STATE_KEYS.userId]:status.user_id});
+  return status;
+}
+
 async function newProxyCredential(){
   const reg=await ensureRegistered();
   const sequence=await nextSequence();
