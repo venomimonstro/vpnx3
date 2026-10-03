@@ -60,6 +60,14 @@ class VpnRepository(context: Context) {
 
     fun latestConfig(): VerifiedConfig = configRepository.refreshOrFallback()
 
+    fun plans(): List<ClientPlan> = api.plans()
+
+    fun createPayment(planId:String): PaymentStart {
+        val registration=ensureRegistered()
+        val sequence=state.reserveNextRequestSequence()
+        return api.createPayment(registration.deviceId,sequence,planId)
+    }
+
     fun prepareConnection(): PreparedConnection {
         val signedConfig = latestConfig()
         val routes = RoutingSelector.candidates(signedConfig)

@@ -16,6 +16,22 @@ data class AccessLease(
     val rawEnvelope: String
 )
 
+data class ClientPlan(
+    val id: String,
+    val code: String,
+    val version: Int,
+    val name: String,
+    val priceMinor: Long,
+    val currency: String,
+    val billingPeriodDays: Int,
+    val deviceLimit: Int
+)
+
+data class PaymentStart(
+    val paymentId: String,
+    val confirmationUrl: String
+)
+
 class ControlApi(
     private val baseUrl: String,
     private val identity: DeviceIdentity
@@ -54,6 +70,41 @@ class ControlApi(
 
     fun latestConfig(): String =
         request("GET", "/api/v1/config/latest", null, emptyMap())
+
+    fun plans(): List<ClientPlan> {
+        val raw=request("GET","/api/v1/plans",null,emptyMap())
+        val arr=JSONObject(raw).getJSONArray("plans")
+        return buildList {
+            for(i in 0 until arr.length()){
+                val p=arr.getJSONObject(i)
+                add(ClientPlan(
+                    id=p.getString("id"),
+                    code=p.getString("code"),
+                    version=p.getInt("version"),
+                    name=p.getString("name"),
+                    priceMinor=p.getLong("price_minor"),
+                    currency=p.getString("currency"),
+                    billingPeriodDays=p.getInt("billing_period_days"),
+                    deviceLimit=p.getInt("device_limit")
+                ))
+            }
+        }
+    }
+
+    fun createPayment(deviceId:String,sequence:Long,planId:String): PaymentStart {
+        val path="/api/v1/client/payments"
+        val body=JSONObject()
+            .put("sequence",sequence)
+            .put("plan_id",planId)
+            .toString()
+            .toByteArray(Charsets.UTF_8)
+        val raw=signedRequest("POST",path,body,deviceId)
+        val json=JSONObject(raw)
+        return PaymentStart(
+            paymentId=json.getString("payment_id"),
+            confirmationUrl=json.getString("confirmation_url")
+        )
+    }
 
     private fun signedRequest(
         method: String,

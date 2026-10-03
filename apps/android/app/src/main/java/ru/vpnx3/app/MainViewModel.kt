@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import ru.vpnx3.app.data.ClientPlan
 import ru.vpnx3.app.data.PreparedConnection
 import ru.vpnx3.app.data.VpnRepository
 import ru.vpnx3.app.update.UpdateRepository
@@ -26,7 +27,9 @@ data class MainUiState(
     val trialExpiresAt: String? = null,
     val connection: ConnectionState = ConnectionState.PREPARING,
     val error: String? = null,
-    val availableVersion: String? = null
+    val availableVersion: String? = null,
+    val plans: List<ClientPlan> = emptyList(),
+    val paymentLoading: Boolean = false
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -48,14 +51,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val registration = repository.ensureRegistered()
                 repository.latestConfig()
                 val update = runCatching { updates.latest() }.getOrNull()
-                Pair(registration, update)
+                val plans = runCatching { repository.plans() }.getOrDefault(emptyList())
+                Triple(registration, update, plans)
             }.onSuccess { result ->
                 val registration=result.first
                 mutableState.value = MainUiState(
                     registered = true,
                     trialExpiresAt = registration.trialExpiresAt,
                     connection = ConnectionState.DISCONNECTED,
-                    availableVersion = result.second?.version
+                    availableVersion = result.second?.version,
+                    plans = result.third
                 )
             }.onFailure {
                 mutableState.value = MainUiState(
@@ -63,6 +68,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     error = "Не удалось подготовить VPNX3"
                 )
             }
+        }
+    }
+
+    fun startPayment(planId:String,onReady:(String)->Unit) {
+        mutableState.value=mutableState.value.copy(paymentLoading=true,error=null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.createPayment(planId) }
+                .onSuccess {
+                    mutableState.value=mutableState.value.copy(paymentLoading=false)
+                    onReady(it.confirmationUrl)
+                }
+                .onFailure {
+                    mutableState.value=mutableState.value.copy(
+                        paymentLoading=false,
+                        error="Не удалось создать платёж"
+                    )
+                }
         }
     }
 

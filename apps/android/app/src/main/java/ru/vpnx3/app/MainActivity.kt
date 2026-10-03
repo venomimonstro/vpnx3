@@ -1,5 +1,7 @@
 package ru.vpnx3.app
 
+import android.content.Intent
+import android.net.Uri
 import android.net.VpnService
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -51,7 +53,14 @@ class MainActivity : ComponentActivity() {
                             runOnUiThread { requestVpnPermission(vm) }
                         }
                     },
-                    onDisconnect = vm::disconnect
+                    onDisconnect = vm::disconnect,
+                    onBuy = { planId ->
+                        vm.startPayment(planId) { url ->
+                            runOnUiThread {
+                                startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))
+                            }
+                        }
+                    }
                 )
             }
         }
@@ -71,7 +80,8 @@ class MainActivity : ComponentActivity() {
 private fun HomeScreen(
     state: MainUiState,
     onConnect: () -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onBuy: (String) -> Unit
 ) {
     val busy = state.connection == ConnectionState.PREPARING ||
         state.connection == ConnectionState.CONNECTING ||
@@ -111,8 +121,23 @@ private fun HomeScreen(
             Text(it, color = MaterialTheme.colorScheme.error)
         }
 
+        if (state.plans.isNotEmpty()) {
+            Spacer(Modifier.height(20.dp))
+            Text("Тарифы", style = MaterialTheme.typography.titleMedium)
+            state.plans.forEach { plan ->
+                Spacer(Modifier.height(8.dp))
+                val rubles = plan.priceMinor / 100.0
+                Button(
+                    enabled = !state.paymentLoading,
+                    onClick = { onBuy(plan.id) }
+                ) {
+                    Text("${plan.name} — ${"%.2f".format(rubles)} ${plan.currency} / ${plan.billingPeriodDays} дн.")
+                }
+            }
+        }
+
         Spacer(Modifier.height(24.dp))
-        if (busy) {
+        if (busy || state.paymentLoading) {
             CircularProgressIndicator()
         } else if (state.connection == ConnectionState.CONNECTED) {
             Button(onClick = onDisconnect) {
