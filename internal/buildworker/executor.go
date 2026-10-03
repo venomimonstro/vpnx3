@@ -54,12 +54,16 @@ func (e Executor) Run(ctx context.Context,job Job) (Result,error) {
 	var artifact string
 	switch job.Target {
 	case "android_apk":
-		if err:=run(buildCtx,filepath.Join(src,"apps","android"),buildEnv(),"gradle","--no-daemon",":app:assembleRelease");err!=nil {
+		env,err:=androidBuildEnv(job.Version)
+		if err!=nil{return Result{},err}
+		if err:=run(buildCtx,filepath.Join(src,"apps","android"),env,"gradle","--no-daemon",":app:assembleRelease");err!=nil {
 			return Result{},fmt.Errorf("android apk build: %w",err)
 		}
 		artifact=filepath.Join(src,"apps","android","app","build","outputs","apk","release","app-release.apk")
 	case "android_aab":
-		if err:=run(buildCtx,filepath.Join(src,"apps","android"),buildEnv(),"gradle","--no-daemon",":app:bundleRelease");err!=nil {
+		env,err:=androidBuildEnv(job.Version)
+		if err!=nil{return Result{},err}
+		if err:=run(buildCtx,filepath.Join(src,"apps","android"),env,"gradle","--no-daemon",":app:bundleRelease");err!=nil {
 			return Result{},fmt.Errorf("android aab build: %w",err)
 		}
 		artifact=filepath.Join(src,"apps","android","app","build","outputs","bundle","release","app-release.aab")
@@ -122,15 +126,40 @@ func run(ctx context.Context,dir string,extraEnv []string,name string,args ...st
 func output(ctx context.Context,dir,name string,args ...string)(string,error){
 	cmd:=exec.CommandContext(ctx,name,args...);cmd.Dir=dir;b,err:=cmd.Output();return string(b),err
 }
-func buildEnv() []string {
+func androidBuildEnv(releaseVersion string) ([]string,error) {
+	versionName,versionCode,err:=androidVersion(releaseVersion)
+	if err!=nil{return nil,err}
 	keys:=[]string{
 		"VPNX3_ANDROID_KEYSTORE_PATH","VPNX3_ANDROID_KEYSTORE_PASSWORD",
 		"VPNX3_ANDROID_KEY_ALIAS","VPNX3_ANDROID_KEY_PASSWORD",
 		"VPNX3_CLIENT_CONTROL_URL","VPNX3_CONFIG_PUBLIC_KEY","VPNX3_RELEASE_PUBLIC_KEY",
+		"ANDROID_SDK_ROOT","ANDROID_HOME","GRADLE_USER_HOME","HOME",
 	}
-	out:=make([]string,0,len(keys))
+	out:=make([]string,0,len(keys)+2)
 	for _,k:=range keys{if v:=os.Getenv(k);v!=""{out=append(out,k+"="+v)}}
-	return out
+	out=append(out,"VPNX3_RELEASE_VERSION="+versionName)
+	out=append(out,"VPNX3_ANDROID_VERSION_CODE="+strconv.Itoa(versionCode))
+	return out,nil
+}
+
+func androidVersion(raw string)(string,int,error){
+	v:=strings.TrimSpace(strings.TrimPrefix(raw,"v"))
+	if i:=strings.IndexByte(v,'-');i>=0{v=v[:i]}
+	parts:=strings.Split(v,".")
+	if len(parts)<1||len(parts)>3{return "",0,fmt.Errorf("Android release version must contain 1-3 numeric components")}
+	nums:=[]int{0,0,0}
+	for i,part:=range parts{
+		if part==""{return "",0,fmt.Errorf("invalid Android release version")}
+		for _,r:=range part{if r<'0'||r>'9'{return "",0,fmt.Errorf("Android release version must be numeric")}}
+		n,err:=strconv.Atoi(part);if err!=nil{return "",0,fmt.Errorf("invalid Android release version")}
+		nums[i]=n
+	}
+	if nums[0]<0||nums[0]>2100||nums[1]<0||nums[1]>999||nums[2]<0||nums[2]>999{
+		return "",0,fmt.Errorf("Android release version is outside supported versionCode range")
+	}
+	code:=nums[0]*1_000_000+nums[1]*1_000+nums[2]
+	if code<=0||code>2_100_000_000{return "",0,fmt.Errorf("Android versionCode is outside Play range")}
+	return strings.Join(parts,"."),code,nil
 }
 func inspectArtifact(path string)(Result,error){
 	f,err:=os.Open(path);if err!=nil{return Result{},fmt.Errorf("open artifact: %w",err)};defer f.Close()
