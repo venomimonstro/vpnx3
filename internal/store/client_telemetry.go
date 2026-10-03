@@ -38,11 +38,11 @@ func (s *Store) RecordClientTelemetry(ctx context.Context,e ClientTelemetryEvent
 	}
 	_,err:=s.DB.Exec(ctx,`
 		INSERT INTO client_telemetry_daily(
-		  day,platform,client_version,event_type,config_version,worker_node_id,network_type,
+		  day,platform,client_version,event_type,config_version,worker_node_id,worker_node_key,network_type,
 		  event_count,duration_ms_sum
 		)
-		VALUES(current_date,$1,$2,$3,$4,NULLIF($5,'')::uuid,$6,1,$7)
-		ON CONFLICT(day,platform,client_version,event_type,config_version,worker_node_id,network_type)
+		VALUES(current_date,$1,$2,$3,$4,NULLIF($5,'')::uuid,$5,$6,1,$7)
+		ON CONFLICT(day,platform,client_version,event_type,config_version,worker_node_key,network_type)
 		DO UPDATE SET
 		  event_count=client_telemetry_daily.event_count+1,
 		  duration_ms_sum=client_telemetry_daily.duration_ms_sum+EXCLUDED.duration_ms_sum,
