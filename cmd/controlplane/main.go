@@ -13,6 +13,7 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/database"
 	"github.com/venomimonstro/vpnx3/internal/httpapi"
 	"github.com/venomimonstro/vpnx3/internal/nodemonitor"
+	"github.com/venomimonstro/vpnx3/internal/loginthrottle"
 	"github.com/venomimonstro/vpnx3/internal/probemonitor"
 	"github.com/venomimonstro/vpnx3/internal/signing"
 	"github.com/venomimonstro/vpnx3/internal/store"
@@ -55,6 +56,7 @@ func main() {
 	monitorCtx, monitorCancel := context.WithCancel(context.Background())
 	defer monitorCancel()
 	go nodemonitor.New(nodeStore,logger).Run(monitorCtx)
+	go loginthrottle.New(nodeStore,logger).Run(monitorCtx)
 	go probemonitor.New(nodeStore,logger).Run(monitorCtx)
 
 	srv := httpapi.NewServer(cfg,logger,db,configSigner,accessSigner)

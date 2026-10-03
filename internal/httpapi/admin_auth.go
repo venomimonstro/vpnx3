@@ -24,17 +24,31 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decodeJSON(w, r, &req); err != nil { return }
 
-	admin, err := s.store.AdminByEmail(r.Context(), strings.TrimSpace(req.Email))
-	if err != nil || admin.Status != "active" || !adminauth.VerifyPassword(admin.PasswordHash, req.Password) {
-		time.Sleep(250 * time.Millisecond)
-		writeError(w, http.StatusUnauthorized, "invalid_credentials")
+	email:=strings.ToLower(strings.TrimSpace(req.Email))
+	ip:=clientIP(r)
+	now:=time.Now().UTC()
+
+	blocked,_,blockErr:=s.store.AdminLoginBlocked(r.Context(),email,ip,now)
+	if blockErr!=nil { s.internalError(w,r,blockErr); return }
+	if blocked {
+		time.Sleep(250*time.Millisecond)
+		writeError(w,http.StatusTooManyRequests,"login_rate_limited")
 		return
 	}
+
+	admin, err := s.store.AdminByEmail(r.Context(), email)
+	valid:=err==nil && admin.Status=="active" && adminauth.VerifyPassword(admin.PasswordHash,req.Password)
+	if !valid {
+		_ = s.store.RecordAdminLoginFailure(r.Context(),email,ip,now)
+		time.Sleep(250*time.Millisecond)
+		writeError(w,http.StatusUnauthorized,"invalid_credentials")
+		return
+	}
+	s.store.ClearAdminLoginFailures(r.Context(),email,ip)
 
 	plain, hash, err := adminauth.NewSessionToken()
 	if err != nil { s.internalError(w, r, err); return }
 	expires := time.Now().UTC().Add(s.cfg.AdminSessionTTL)
-	ip := clientIP(r)
 	if err := s.store.CreateAdminSession(r.Context(), admin.ID, hash, ip, r.UserAgent(), expires); err != nil {
 		s.internalError(w, r, err)
 		return
