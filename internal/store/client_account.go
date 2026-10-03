@@ -141,6 +141,14 @@ func (s *Store) ClaimDevicePairingCode(ctx context.Context,deviceID,code string,
 	if err!=nil{return ClientAccountStatus{},err}
 	if targetUserID==sourceUserID{return ClientAccountStatus{},fmt.Errorf("device already belongs to this account")}
 
+	// Serialize all pairing claims into the same target account so concurrent
+	// devices cannot both observe a free slot and exceed plan.device_limit.
+	var targetStatus string
+	if err:=tx.QueryRow(ctx,"SELECT status FROM users WHERE id=$1 FOR UPDATE",targetUserID).Scan(&targetStatus);err!=nil{
+		return ClientAccountStatus{},err
+	}
+	if targetStatus!="active"{return ClientAccountStatus{},fmt.Errorf("target account inactive")}
+
 	var sourceDevices,sourceSubscriptions,sourcePayments int
 	if err:=tx.QueryRow(ctx,"SELECT count(*)::int FROM devices WHERE user_id=$1",sourceUserID).Scan(&sourceDevices);err!=nil{return ClientAccountStatus{},err}
 	if err:=tx.QueryRow(ctx,"SELECT count(*)::int FROM subscriptions WHERE user_id=$1",sourceUserID).Scan(&sourceSubscriptions);err!=nil{return ClientAccountStatus{},err}

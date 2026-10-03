@@ -13,13 +13,19 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -38,6 +44,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        currentViewModel?.refreshAccount()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -54,6 +65,8 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     onDisconnect = vm::disconnect,
+                    onCreatePairingCode = vm::createPairingCode,
+                    onClaimPairingCode = vm::claimPairingCode,
                     onBuy = { planId ->
                         vm.startPayment(planId) { url ->
                             runOnUiThread {
@@ -81,6 +94,8 @@ private fun HomeScreen(
     state: MainUiState,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
+    onCreatePairingCode: () -> Unit,
+    onClaimPairingCode: (String) -> Unit,
     onBuy: (String) -> Unit
 ) {
     val busy = state.connection == ConnectionState.PREPARING ||
@@ -106,7 +121,16 @@ private fun HomeScreen(
             }
         )
 
-        state.trialExpiresAt?.takeIf { it.isNotBlank() }?.let {
+        state.account?.let { account ->
+            Spacer(Modifier.height(8.dp))
+            Text(
+                if(account.planName!=null)
+                    "${account.planName}: до ${account.expiresAt}"
+                else
+                    "Доступ ${account.entitlement}: до ${account.expiresAt}"
+            )
+            Text("Устройства: ${account.activeDevices} / ${account.deviceLimit}")
+        } ?: state.trialExpiresAt?.takeIf { it.isNotBlank() }?.let {
             Spacer(Modifier.height(8.dp))
             Text("Пробный доступ до $it")
         }
@@ -119,6 +143,50 @@ private fun HomeScreen(
         state.error?.let {
             Spacer(Modifier.height(12.dp))
             Text(it, color = MaterialTheme.colorScheme.error)
+        }
+
+        if(state.account!=null) {
+            Spacer(Modifier.height(12.dp))
+            Button(
+                enabled=!state.pairingBusy && state.account.activeDevices < state.account.deviceLimit,
+                onClick=onCreatePairingCode
+            ) { Text("ДОБАВИТЬ УСТРОЙСТВО") }
+            state.pairingCode?.let {
+                Spacer(Modifier.height(8.dp))
+                Text("Код подключения: $it")
+                state.pairingCodeExpiresAt?.let { expires -> Text("Действует до $expires") }
+            }
+        }
+
+        var showPairDialog by remember { mutableStateOf(false) }
+        var pairInput by remember { mutableStateOf("") }
+        Spacer(Modifier.height(8.dp))
+        Button(enabled=!state.pairingBusy,onClick={showPairDialog=true}) {
+            Text("ПРИВЯЗАТЬ ЭТО УСТРОЙСТВО")
+        }
+        if(showPairDialog) {
+            AlertDialog(
+                onDismissRequest={showPairDialog=false},
+                title={Text("Код другого устройства")},
+                text={
+                    OutlinedTextField(
+                        value=pairInput,
+                        onValueChange={pairInput=it},
+                        singleLine=true,
+                        label={Text("Код подключения")}
+                    )
+                },
+                confirmButton={
+                    TextButton(onClick={
+                        showPairDialog=false
+                        onClaimPairingCode(pairInput)
+                        pairInput=""
+                    }) { Text("Привязать") }
+                },
+                dismissButton={
+                    TextButton(onClick={showPairDialog=false}) { Text("Отмена") }
+                }
+            )
         }
 
         if (state.plans.isNotEmpty()) {

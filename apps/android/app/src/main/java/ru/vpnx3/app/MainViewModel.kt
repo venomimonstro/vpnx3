@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import ru.vpnx3.app.data.ClientAccountStatus
 import ru.vpnx3.app.data.ClientPlan
 import ru.vpnx3.app.data.PreparedConnection
 import ru.vpnx3.app.data.VpnRepository
@@ -29,14 +30,19 @@ data class MainUiState(
     val error: String? = null,
     val availableVersion: String? = null,
     val plans: List<ClientPlan> = emptyList(),
-    val paymentLoading: Boolean = false
+    val paymentLoading: Boolean = false,
+    val account: ClientAccountStatus? = null,
+    val pairingCode: String? = null,
+    val pairingCodeExpiresAt: String? = null,
+    val pairingBusy: Boolean = false
 )
 
 private data class InitResult(
     val registration: ru.vpnx3.app.data.Registration,
     val update: ru.vpnx3.app.update.ReleaseInfo?,
     val plans: List<ClientPlan>,
-    val connected: Boolean
+    val connected: Boolean,
+    val account: ClientAccountStatus?
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -60,7 +66,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val update = runCatching { updates.latest() }.getOrNull()
                 val plans = runCatching { repository.plans() }.getOrDefault(emptyList())
                 val connected = repository.recoverConnectionState()
-                InitResult(registration,update,plans,connected)
+                val account=runCatching { repository.accountStatus() }.getOrNull()
+                InitResult(registration,update,plans,connected,account)
             }.onSuccess { result ->
                 val registration=result.registration
                 mutableState.value = MainUiState(
@@ -68,7 +75,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     trialExpiresAt = registration.trialExpiresAt,
                     connection = if(result.connected) ConnectionState.CONNECTED else ConnectionState.DISCONNECTED,
                     availableVersion = result.update?.version,
-                    plans = result.plans
+                    plans = result.plans,
+                    account = result.account
                 )
             }.onFailure {
                 mutableState.value = MainUiState(
@@ -76,6 +84,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     error = "Не удалось подготовить VPNX3"
                 )
             }
+        }
+    }
+
+    fun refreshAccount() {
+        if(!mutableState.value.registered) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.accountStatus() }
+                .onSuccess { mutableState.value=mutableState.value.copy(account=it,trialExpiresAt=null) }
+        }
+    }
+
+    fun createPairingCode() {
+        mutableState.value=mutableState.value.copy(pairingBusy=true,error=null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.createPairingCode() }
+                .onSuccess {
+                    mutableState.value=mutableState.value.copy(
+                        pairingBusy=false,pairingCode=it.code,pairingCodeExpiresAt=it.expiresAt
+                    )
+                }
+                .onFailure {
+                    mutableState.value=mutableState.value.copy(
+                        pairingBusy=false,error="Нельзя добавить ещё одно устройство"
+                    )
+                }
+        }
+    }
+
+    fun claimPairingCode(code:String) {
+        val normalized=code.trim()
+        if(normalized.isEmpty()) return
+        mutableState.value=mutableState.value.copy(pairingBusy=true,error=null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.claimPairingCode(normalized) }
+                .onSuccess {
+                    mutableState.value=mutableState.value.copy(
+                        pairingBusy=false,account=it,trialExpiresAt=null,pairingCode=null,pairingCodeExpiresAt=null
+                    )
+                }
+                .onFailure {
+                    mutableState.value=mutableState.value.copy(
+                        pairingBusy=false,error="Не удалось привязать устройство"
+                    )
+                }
         }
     }
 

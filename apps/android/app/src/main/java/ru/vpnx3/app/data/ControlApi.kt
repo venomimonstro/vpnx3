@@ -32,6 +32,23 @@ data class PaymentStart(
     val confirmationUrl: String
 )
 
+data class ClientAccountStatus(
+    val userId: String,
+    val entitlement: String,
+    val planCode: String?,
+    val planName: String?,
+    val expiresAt: String,
+    val graceUntil: String?,
+    val deviceLimit: Int,
+    val activeDevices: Int,
+    val autoRenew: Boolean
+)
+
+data class PairingCode(
+    val code: String,
+    val expiresAt: String
+)
+
 class ControlApi(
     private val baseUrl: String,
     private val identity: DeviceIdentity
@@ -90,6 +107,37 @@ class ControlApi(
             }
         }
     }
+
+    fun accountStatus(deviceId:String,sequence:Long): ClientAccountStatus {
+        val path="/api/v1/client/account/status"
+        val body=JSONObject().put("sequence",sequence).toString().toByteArray(Charsets.UTF_8)
+        return parseAccountStatus(JSONObject(signedRequest("POST",path,body,deviceId)))
+    }
+
+    fun createPairingCode(deviceId:String,sequence:Long): PairingCode {
+        val path="/api/v1/client/pairing-code"
+        val body=JSONObject().put("sequence",sequence).toString().toByteArray(Charsets.UTF_8)
+        val json=JSONObject(signedRequest("POST",path,body,deviceId))
+        return PairingCode(json.getString("code"),json.getString("expires_at"))
+    }
+
+    fun claimPairingCode(deviceId:String,sequence:Long,code:String): ClientAccountStatus {
+        val path="/api/v1/client/pairing-claim"
+        val body=JSONObject().put("sequence",sequence).put("code",code).toString().toByteArray(Charsets.UTF_8)
+        return parseAccountStatus(JSONObject(signedRequest("POST",path,body,deviceId)))
+    }
+
+    private fun parseAccountStatus(json:JSONObject): ClientAccountStatus = ClientAccountStatus(
+        userId=json.getString("user_id"),
+        entitlement=json.getString("entitlement"),
+        planCode=json.optString("plan_code").takeIf{it.isNotBlank()},
+        planName=json.optString("plan_name").takeIf{it.isNotBlank()},
+        expiresAt=json.getString("expires_at"),
+        graceUntil=json.optString("grace_until").takeIf{it.isNotBlank()},
+        deviceLimit=json.getInt("device_limit"),
+        activeDevices=json.getInt("active_devices"),
+        autoRenew=json.optBoolean("auto_renew",false)
+    )
 
     fun telemetry(
         deviceId:String,

@@ -65,6 +65,27 @@ class VpnRepository(private val context: Context) {
 
     fun plans(): List<ClientPlan> = api.plans()
 
+    fun accountStatus(): ClientAccountStatus {
+        val registration=ensureRegistered()
+        val sequence=state.reserveNextRequestSequence()
+        return api.accountStatus(registration.deviceId,sequence)
+    }
+
+    fun createPairingCode(): PairingCode {
+        val registration=ensureRegistered()
+        val sequence=state.reserveNextRequestSequence()
+        return api.createPairingCode(registration.deviceId,sequence)
+    }
+
+    fun claimPairingCode(code:String): ClientAccountStatus {
+        val registration=ensureRegistered()
+        val sequence=state.reserveNextRequestSequence()
+        val status=api.claimPairingCode(registration.deviceId,sequence,code)
+        state.userId=status.userId
+        state.trialExpiresAt=null
+        return status
+    }
+
     fun createPayment(planId:String): PaymentStart {
         val registration=ensureRegistered()
         val sequence=state.reserveNextRequestSequence()
