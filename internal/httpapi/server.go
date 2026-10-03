@@ -9,6 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/venomimonstro/vpnx3/internal/config"
+	"github.com/venomimonstro/vpnx3/internal/configservice"
+	"github.com/venomimonstro/vpnx3/internal/signing"
 	"github.com/venomimonstro/vpnx3/internal/store"
 )
 
@@ -18,9 +20,11 @@ type Server struct {
 	db     *pgxpool.Pool
 	store  *store.Store
 	cfg    config.Config
+	configService *configservice.Service
+	configSigner *signing.Signer
 }
 
-func NewServer(cfg config.Config, logger *slog.Logger, db *pgxpool.Pool) *Server {
+func NewServer(cfg config.Config, logger *slog.Logger, db *pgxpool.Pool, configSigner *signing.Signer) *Server {
 	mux := http.NewServeMux()
 
 	s := &Server{
@@ -28,6 +32,8 @@ func NewServer(cfg config.Config, logger *slog.Logger, db *pgxpool.Pool) *Server
 		db: db,
 		store: store.New(db),
 		cfg: cfg,
+		configService: configservice.New(store.New(db),configSigner),
+		configSigner: configSigner,
 	}
 
 	mux.HandleFunc("GET /health/live", s.handleLive)
@@ -44,8 +50,13 @@ func NewServer(cfg config.Config, logger *slog.Logger, db *pgxpool.Pool) *Server
 	mux.HandleFunc("POST /api/v1/admin/login", s.handleAdminLogin)
 	mux.HandleFunc("POST /api/v1/node/enroll", s.handleNodeEnroll)
 	mux.HandleFunc("POST /api/v1/node/heartbeat", s.handleNodeHeartbeat)
+	mux.HandleFunc("GET /api/v1/config/latest", s.handleLatestConfig)
+	mux.HandleFunc("GET /api/v1/config/signing-key", s.handleConfigSigningKey)
 	mux.Handle("GET /api/v1/admin/me", s.requireAdmin(http.HandlerFunc(s.handleAdminMe)))
 	mux.Handle("POST /api/v1/admin/logout", s.requireAdmin(http.HandlerFunc(s.handleAdminLogout)))
+
+	mux.Handle("POST /api/v1/config/publish",
+		s.requireAdmin(requirePermission("config.manage", http.HandlerFunc(s.handlePublishConfig))))
 
 	mux.Handle("GET /api/v1/nodes",
 		s.requireAdmin(requirePermission("nodes.read", http.HandlerFunc(s.handleListNodes))))

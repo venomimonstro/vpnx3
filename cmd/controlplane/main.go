@@ -13,6 +13,7 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/database"
 	"github.com/venomimonstro/vpnx3/internal/httpapi"
 	"github.com/venomimonstro/vpnx3/internal/nodemonitor"
+	"github.com/venomimonstro/vpnx3/internal/signing"
 	"github.com/venomimonstro/vpnx3/internal/store"
 )
 
@@ -37,12 +38,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	configSigner,err:=signing.FromSeedBase64(cfg.ConfigSigningKey)
+	if err!=nil {
+		logger.Error("config signing key initialization failed","error",err)
+		os.Exit(1)
+	}
+
 	nodeStore := store.New(db)
 	monitorCtx, monitorCancel := context.WithCancel(context.Background())
 	defer monitorCancel()
 	go nodemonitor.New(nodeStore,logger).Run(monitorCtx)
 
-	srv := httpapi.NewServer(cfg,logger,db)
+	srv := httpapi.NewServer(cfg,logger,db,configSigner)
 	serverErr := make(chan error,1)
 	go func() {
 		logger.Info("control plane starting","addr",cfg.HTTPAddr,"env",cfg.Environment)

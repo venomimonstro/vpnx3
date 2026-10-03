@@ -20,6 +20,7 @@ type Config struct {
 	AdminSessionTTL        time.Duration
 	BootstrapOwnerEmail    string
 	BootstrapOwnerPassword string
+	ConfigSigningKey       string
 }
 
 func Load() (Config, error) {
@@ -34,10 +35,14 @@ func Load() (Config, error) {
 		AdminSessionTTL:        duration("VPNX3_ADMIN_SESSION_TTL", 12*time.Hour),
 		BootstrapOwnerEmail:    strings.TrimSpace(os.Getenv("VPNX3_BOOTSTRAP_OWNER_EMAIL")),
 		BootstrapOwnerPassword: os.Getenv("VPNX3_BOOTSTRAP_OWNER_PASSWORD"),
+		ConfigSigningKey:       strings.TrimSpace(os.Getenv("VPNX3_CONFIG_SIGNING_KEY")),
 	}
 
 	if strings.TrimSpace(cfg.HTTPAddr) == "" {
 		return Config{}, fmt.Errorf("VPNX3_HTTP_ADDR must not be empty")
+	}
+	if cfg.ConfigSigningKey == "" {
+		return Config{}, fmt.Errorf("VPNX3_CONFIG_SIGNING_KEY must be set")
 	}
 	if cfg.AdminSessionTTL < 15*time.Minute || cfg.AdminSessionTTL > 7*24*time.Hour {
 		return Config{}, fmt.Errorf("VPNX3_ADMIN_SESSION_TTL must be between 15m and 168h")

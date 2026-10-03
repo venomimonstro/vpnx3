@@ -40,6 +40,7 @@ services:
       VPNX3_ADMIN_SESSION_TTL: 12h
       VPNX3_BOOTSTRAP_OWNER_EMAIL: ${VPNX3_BOOTSTRAP_OWNER_EMAIL}
       VPNX3_BOOTSTRAP_OWNER_PASSWORD: ${VPNX3_BOOTSTRAP_OWNER_PASSWORD}
+      VPNX3_CONFIG_SIGNING_KEY: ${VPNX3_CONFIG_SIGNING_KEY}
     depends_on:
       migrate:
         condition: service_completed_successfully
