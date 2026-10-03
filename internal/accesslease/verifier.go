@@ -24,11 +24,17 @@ func NewVerifier(publicKeyBase64 string) (*Verifier,error) {
 
 func (v *Verifier) Verify(env Envelope,now time.Time) (Claims,error) {
 	if env.KeyID!=v.keyID { return Claims{},fmt.Errorf("unexpected access signing key") }
+
+	payload,err:=base64.RawURLEncoding.DecodeString(env.Payload)
+	if err!=nil { return Claims{},fmt.Errorf("invalid payload encoding") }
 	sig,err:=base64.RawURLEncoding.DecodeString(env.Signature)
 	if err!=nil { return Claims{},fmt.Errorf("invalid signature encoding") }
-	if !ed25519.Verify(v.public,env.Claims,sig) { return Claims{},fmt.Errorf("invalid access lease signature") }
+	if !ed25519.Verify(v.public,payload,sig) {
+		return Claims{},fmt.Errorf("invalid access lease signature")
+	}
+
 	var claims Claims
-	if err:=json.Unmarshal(env.Claims,&claims); err!=nil { return Claims{},err }
+	if err:=json.Unmarshal(payload,&claims); err!=nil { return Claims{},err }
 	if claims.SchemaVersion!=1 || claims.LeaseID=="" || claims.DeviceID=="" || claims.UserID=="" {
 		return Claims{},fmt.Errorf("invalid access lease claims")
 	}

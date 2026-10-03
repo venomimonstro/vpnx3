@@ -11,7 +11,7 @@ import (
 )
 
 type Service struct {
-	store *store.Store
+	store  *store.Store
 	signer *signing.Signer
 }
 
@@ -29,9 +29,9 @@ type Manifest struct {
 }
 
 type Envelope struct {
-	Manifest  json.RawMessage `json:"manifest"`
-	Signature string          `json:"signature"`
-	KeyID     string          `json:"key_id"`
+	Payload   string `json:"payload"`
+	Signature string `json:"signature"`
+	KeyID     string `json:"key_id"`
 }
 
 func (s *Service) Publish(ctx context.Context,adminID string) (Envelope,error) {
@@ -47,9 +47,7 @@ func (s *Service) Publish(ctx context.Context,adminID string) (Envelope,error) {
 		CreatedAt:now,
 		ExpiresAt:now.Add(24*time.Hour),
 		Ingresses:ingresses,
-		Features:map[string]bool{
-			"automatic_routing":true,
-		},
+		Features:map[string]bool{"automatic_routing":true},
 	}
 	payload,err:=json.Marshal(manifest)
 	if err!=nil { return Envelope{},fmt.Errorf("marshal manifest: %w",err) }

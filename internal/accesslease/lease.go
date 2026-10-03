@@ -20,9 +20,9 @@ type Claims struct {
 }
 
 type Envelope struct {
-	Claims    json.RawMessage `json:"claims"`
-	Signature string          `json:"signature"`
-	KeyID     string          `json:"key_id"`
+	Payload   string `json:"payload"`
+	Signature string `json:"signature"`
+	KeyID     string `json:"key_id"`
 }
 
 func Issue(signer *signing.Signer,claims Claims) (Envelope,error) {
@@ -30,7 +30,7 @@ func Issue(signer *signing.Signer,claims Claims) (Envelope,error) {
 	if err!=nil { return Envelope{},fmt.Errorf("marshal access lease: %w",err) }
 	sig:=signer.Sign(raw)
 	return Envelope{
-		Claims:raw,
+		Payload:base64.RawURLEncoding.EncodeToString(raw),
 		Signature:base64.RawURLEncoding.EncodeToString(sig),
 		KeyID:signer.KeyID(),
 	},nil

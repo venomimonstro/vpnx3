@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -40,30 +39,30 @@ func (s *Store) NextConfigVersion(ctx context.Context) (int64,error) {
 }
 
 type StoredManifest struct {
-	Version   int64           `json:"version"`
-	Payload   json.RawMessage `json:"payload"`
-	Signature []byte          `json:"-"`
-	KeyID     string          `json:"key_id"`
-	CreatedAt time.Time       `json:"created_at"`
+	Version   int64
+	Payload   []byte
+	Signature []byte
+	KeyID     string
+	CreatedAt time.Time
 }
 
 func (s *Store) SaveConfigManifest(ctx context.Context,version int64,payload,signature []byte,keyID,adminID string) error {
 	_,err:=s.DB.Exec(ctx,`
-		INSERT INTO config_manifests(version,payload,signature,key_id,created_by)
-		VALUES($1,$2::jsonb,$3,$4,$5)
-	`,version,string(payload),signature,keyID,adminID)
+		INSERT INTO config_manifests(version,payload,payload_raw,signature,key_id,created_by)
+		VALUES($1,$2::jsonb,$3,$4,$5,$6)
+	`,version,string(payload),payload,signature,keyID,adminID)
 	if err!=nil { return fmt.Errorf("save config manifest: %w",err) }
 	return nil
 }
 
 func (s *Store) LatestConfigManifest(ctx context.Context) (StoredManifest,error) {
 	var m StoredManifest
-	var raw string
 	err:=s.DB.QueryRow(ctx,`
-		SELECT version,payload::text,signature,key_id,created_at
-		FROM config_manifests ORDER BY version DESC LIMIT 1
-	`).Scan(&m.Version,&raw,&m.Signature,&m.KeyID,&m.CreatedAt)
+		SELECT version,payload_raw,signature,key_id,created_at
+		FROM config_manifests
+		WHERE payload_raw IS NOT NULL
+		ORDER BY version DESC LIMIT 1
+	`).Scan(&m.Version,&m.Payload,&m.Signature,&m.KeyID,&m.CreatedAt)
 	if err!=nil { return StoredManifest{},err }
-	m.Payload=json.RawMessage(raw)
 	return m,nil
 }

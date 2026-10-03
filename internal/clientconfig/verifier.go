@@ -11,9 +11,9 @@ import (
 )
 
 type Envelope struct {
-	Manifest  json.RawMessage `json:"manifest"`
-	Signature string          `json:"signature"`
-	KeyID     string          `json:"key_id"`
+	Payload   string `json:"payload"`
+	Signature string `json:"signature"`
+	KeyID     string `json:"key_id"`
 }
 
 type ManifestMeta struct {
@@ -37,16 +37,18 @@ func NewVerifier(publicKeyBase64 string) (*Verifier,error) {
 }
 
 func (v *Verifier) Verify(env Envelope,minimumVersion int64,now time.Time) (ManifestMeta,error) {
-	if env.KeyID!=v.keyID {
-		return ManifestMeta{},fmt.Errorf("unexpected signing key")
-	}
+	if env.KeyID!=v.keyID { return ManifestMeta{},fmt.Errorf("unexpected signing key") }
+
+	payload,err:=base64.RawURLEncoding.DecodeString(env.Payload)
+	if err!=nil { return ManifestMeta{},fmt.Errorf("decode manifest payload: %w",err) }
 	sig,err:=base64.RawURLEncoding.DecodeString(env.Signature)
 	if err!=nil { return ManifestMeta{},fmt.Errorf("decode signature: %w",err) }
-	if !ed25519.Verify(v.public,env.Manifest,sig) {
+	if !ed25519.Verify(v.public,payload,sig) {
 		return ManifestMeta{},fmt.Errorf("invalid manifest signature")
 	}
+
 	var meta ManifestMeta
-	if err:=json.Unmarshal(env.Manifest,&meta); err!=nil {
+	if err:=json.Unmarshal(payload,&meta); err!=nil {
 		return ManifestMeta{},fmt.Errorf("decode manifest metadata: %w",err)
 	}
 	if meta.SchemaVersion!=1 { return ManifestMeta{},fmt.Errorf("unsupported schema version %d",meta.SchemaVersion) }
@@ -54,11 +56,13 @@ func (v *Verifier) Verify(env Envelope,minimumVersion int64,now time.Time) (Mani
 	if minimumVersion>0 && meta.Version<minimumVersion {
 		return ManifestMeta{},fmt.Errorf("manifest rollback detected: got %d, minimum %d",meta.Version,minimumVersion)
 	}
-	if !meta.ExpiresAt.After(now) {
-		return ManifestMeta{},fmt.Errorf("manifest expired")
-	}
-	if meta.CreatedAt.After(now.Add(5*time.Minute)) {
-		return ManifestMeta{},fmt.Errorf("manifest created in the future")
-	}
+	if !meta.ExpiresAt.After(now) { return ManifestMeta{},fmt.Errorf("manifest expired") }
+	if meta.CreatedAt.After(now.Add(5*time.Minute)) { return ManifestMeta{},fmt.Errorf("manifest created in the future") }
 	return meta,nil
+}
+
+func DecodePayload(env Envelope,dst any) error {
+	payload,err:=base64.RawURLEncoding.DecodeString(env.Payload)
+	if err!=nil { return fmt.Errorf("decode manifest payload: %w",err) }
+	return json.Unmarshal(payload,dst)
 }

@@ -21,13 +21,8 @@ func TestLeaseRoundTrip(t *testing.T) {
 
 	now:=time.Now().UTC().Truncate(time.Second)
 	env,err:=Issue(signer,Claims{
-		SchemaVersion:1,
-		LeaseID:"lease-1",
-		UserID:"user-1",
-		DeviceID:"device-1",
-		Entitlement:"trial",
-		IssuedAt:now,
-		ExpiresAt:now.Add(time.Hour),
+		SchemaVersion:1,LeaseID:"lease-1",UserID:"user-1",DeviceID:"device-1",
+		Entitlement:"trial",IssuedAt:now,ExpiresAt:now.Add(time.Hour),
 	})
 	if err!=nil { t.Fatal(err) }
 	claims,err:=verifier.Verify(env,now)

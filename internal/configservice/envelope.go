@@ -1,13 +1,10 @@
 package configservice
 
-import (
-	"encoding/base64"
-	"encoding/json"
-)
+import "encoding/base64"
 
 func encodeEnvelope(payload,signature []byte,keyID string) Envelope {
 	return Envelope{
-		Manifest:json.RawMessage(payload),
+		Payload:base64.RawURLEncoding.EncodeToString(payload),
 		Signature:base64.RawURLEncoding.EncodeToString(signature),
 		KeyID:keyID,
 	}
