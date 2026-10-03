@@ -72,6 +72,8 @@ func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSign
 	mux.HandleFunc("GET /api/v1/config/signing-key",s.handleConfigSigningKey)
 	mux.HandleFunc("POST /api/v1/client/register",s.handleClientRegister)
 	mux.HandleFunc("POST /api/v1/client/lease",s.handleClientLease)
+	mux.HandleFunc("POST /api/v1/client/proxy-lease",s.handleClientProxyLease)
+	mux.HandleFunc("GET /api/v1/access/signing-key",s.handleAccessSigningKey)
 	mux.HandleFunc("GET /api/v1/plans",s.handlePublicPlans)
 	mux.HandleFunc("GET /api/v1/releases/latest",s.handleLatestRelease)
 	mux.HandleFunc("GET /api/v1/releases/signing-key",s.handleReleaseSigningKey)
