@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -18,24 +20,30 @@ import (
 )
 
 type Client struct {
-	controlURL string
-	http *http.Client
-	identityPath string
-	identity agent.Identity
-	sequence int64
+	controlURL   string
+	http         *http.Client
+	identity     agent.Identity
+	sequencePath string
+	sequence     int64
 }
 
 func New(controlURL,identityPath string,id agent.Identity) *Client {
+	sequencePath:=filepath.Join(filepath.Dir(identityPath),"probe-sequence")
 	return &Client{
 		controlURL:strings.TrimRight(controlURL,"/"),
 		http:&http.Client{Timeout:10*time.Second},
-		identityPath:identityPath,
 		identity:id,
+		sequencePath:sequencePath,
+		sequence:loadSequence(sequencePath),
 	}
 }
 
 func (c *Client) Report(ctx context.Context,results []store.ProbeObservation) error {
 	c.sequence++
+	if err:=saveSequence(c.sequencePath,c.sequence); err!=nil {
+		return fmt.Errorf("persist probe sequence: %w",err)
+	}
+
 	body,err:=json.Marshal(map[string]any{"sequence":c.sequence,"results":results})
 	if err!=nil { return err }
 
@@ -102,4 +110,19 @@ func Observe(manifest clientconfig.Envelope) ([]store.ProbeObservation,error) {
 		}
 	}
 	return results,nil
+}
+
+func loadSequence(path string) int64 {
+	raw,err:=os.ReadFile(path)
+	if err!=nil { return 0 }
+	v,err:=strconv.ParseInt(strings.TrimSpace(string(raw)),10,64)
+	if err!=nil || v<0 { return 0 }
+	return v
+}
+
+func saveSequence(path string,value int64) error {
+	if err:=os.MkdirAll(filepath.Dir(path),0700); err!=nil { return err }
+	tmp:=path+".tmp"
+	if err:=os.WriteFile(tmp,[]byte(strconv.FormatInt(value,10)),0600); err!=nil { return err }
+	return os.Rename(tmp,path)
 }

@@ -60,8 +60,48 @@ func (s *Store) RecordProbeReport(ctx context.Context,probeNodeID string,sequenc
 	return tx.Commit(ctx)
 }
 
+type RecentProbeResult struct {
+	ProbeNodeID  string    `json:"probe_node_id"`
+	TargetNodeID string    `json:"target_node_id"`
+	EndpointKind string    `json:"endpoint_kind"`
+	Success      bool      `json:"success"`
+	LatencyMS    int       `json:"latency_ms"`
+	ObservedAt   time.Time `json:"observed_at"`
+}
+
+func (s *Store) RecentProbeResults(ctx context.Context,limit int) ([]RecentProbeResult,error) {
+	if limit<=0 || limit>1000 { limit=200 }
+	rows,err:=s.DB.Query(ctx,`
+		SELECT probe_node_id::text,target_node_id::text,endpoint_kind,success,latency_ms,observed_at
+		FROM probe_results ORDER BY observed_at DESC LIMIT $1
+	`,limit)
+	if err!=nil { return nil,err }
+	defer rows.Close()
+	out:=make([]RecentProbeResult,0)
+	for rows.Next() {
+		var row RecentProbeResult
+		if err:=rows.Scan(&row.ProbeNodeID,&row.TargetNodeID,&row.EndpointKind,&row.Success,&row.LatencyMS,&row.ObservedAt); err!=nil {
+			return nil,err
+		}
+		out=append(out,row)
+	}
+	return out,rows.Err()
+}
+
 func (s *Store) RecalculateProbeHealth(ctx context.Context,window time.Duration) error {
 	cutoff:=time.Now().UTC().Add(-window)
+	if _,err:=s.DB.Exec(ctx,`
+		UPDATE nodes n
+		SET health_score=NULL,updated_at=now()
+		WHERE n.role IN ('worker','ingress')
+		  AND n.status IN ('active','degraded','testing')
+		  AND NOT EXISTS (
+		    SELECT 1 FROM probe_results p
+		    WHERE p.target_node_id=n.id AND p.observed_at >= $1
+		  )
+	`,cutoff); err!=nil {
+		return fmt.Errorf("clear stale probe health: %w",err)
+	}
 	_,err:=s.DB.Exec(ctx,`
 		WITH scores AS (
 			SELECT target_node_id,
