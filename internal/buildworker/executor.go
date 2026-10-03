@@ -64,11 +64,13 @@ func (e Executor) Run(ctx context.Context,job Job) (Result,error) {
 	case "chrome_zip":
 		dir:=filepath.Join(src,"apps","browser-extension","chrome")
 		if _,err:=os.Stat(dir);err!=nil{return Result{},fmt.Errorf("chrome extension source unavailable")}
+		if err:=writeBrowserRuntimeConfig(dir);err!=nil{return Result{},err}
 		artifact=filepath.Join(work,"vpnx3-chrome.zip")
 		if err:=run(buildCtx,dir,nil,"zip","-qr",artifact,".");err!=nil{return Result{},err}
 	case "firefox_zip":
 		dir:=filepath.Join(src,"apps","browser-extension","firefox")
 		if _,err:=os.Stat(dir);err!=nil{return Result{},fmt.Errorf("firefox extension source unavailable")}
+		if err:=writeBrowserRuntimeConfig(dir);err!=nil{return Result{},err}
 		artifact=filepath.Join(work,"vpnx3-firefox.zip")
 		if err:=run(buildCtx,dir,nil,"zip","-qr",artifact,".");err!=nil{return Result{},err}
 	case "ios_ipa":
@@ -115,4 +117,14 @@ func inspectArtifact(path string)(Result,error){
 	f,err:=os.Open(path);if err!=nil{return Result{},fmt.Errorf("open artifact: %w",err)};defer f.Close()
 	h:=sha256.New();n,err:=io.Copy(h,f);if err!=nil{return Result{},err}
 	return Result{Path:path,FileName:filepath.Base(path),SHA256:hex.EncodeToString(h.Sum(nil)),SizeBytes:n},nil
+}
+
+func writeBrowserRuntimeConfig(dir string) error {
+	control:=strings.TrimSpace(os.Getenv("VPNX3_CLIENT_CONTROL_URL"))
+	key:=strings.TrimSpace(os.Getenv("VPNX3_CONFIG_PUBLIC_KEY"))
+	if !strings.HasPrefix(control,"https://") || key=="" {
+		return fmt.Errorf("browser build requires VPNX3_CLIENT_CONTROL_URL and VPNX3_CONFIG_PUBLIC_KEY")
+	}
+	content:=fmt.Sprintf("const VPNX3_CONTROL_URL=%q;\nconst VPNX3_CONFIG_PUBLIC_KEY=%q;\n",control,key)
+	return os.WriteFile(filepath.Join(dir,"runtime-config.js"),[]byte(content),0644)
 }

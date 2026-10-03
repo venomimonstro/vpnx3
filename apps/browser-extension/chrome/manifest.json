@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "VPNX3",
+  "version": "0.1.0",
+  "description": "Защищённое браузерное подключение VPNX3",
+  "permissions": ["proxy","storage","webRequest","webRequestAuthProvider"],
+  "host_permissions": ["https://*/*","http://*/*"],
+  "background": {"service_worker": "background.js"},
+  "action": {"default_popup": "popup.html"}
+}

@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "VPNX3",
+  "version": "0.1.0",
+  "description": "Защищённое браузерное подключение VPNX3",
+  "permissions": ["proxy","storage","webRequest","webRequestBlocking"],
+  "host_permissions": ["https://*/*","http://*/*"],
+  "background": {"scripts": ["background.js"]},
+  "action": {"default_popup": "popup.html"},
+  "browser_specific_settings": {
+    "gecko": {"id": "vpnx3@local","strict_min_version": "128.0"}
+  }
+}

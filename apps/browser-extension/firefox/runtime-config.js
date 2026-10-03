@@ -1,0 +1,2 @@
+const VPNX3_CONTROL_URL="https://127.0.0.1";
+const VPNX3_CONFIG_PUBLIC_KEY="";
