@@ -44,11 +44,16 @@ services:
       VPNX3_ACCESS_SIGNING_KEY: ${VPNX3_ACCESS_SIGNING_KEY}
       VPNX3_ACCESS_LEASE_TTL: 6h
       VPNX3_TRIAL_DAYS: 7
+      VPNX3_ARTIFACT_DIR: /var/lib/vpnx3/artifacts
+      VPNX3_ARTIFACT_MAX_MB: 300
     depends_on:
       migrate:
         condition: service_completed_successfully
     ports:
       - "127.0.0.1:8080:8080"
+    volumes:
+      - vpnx3_artifacts:/var/lib/vpnx3/artifacts
 
 volumes:
   vpnx3_pgdata:
+  vpnx3_artifacts:

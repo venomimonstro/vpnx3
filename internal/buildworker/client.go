@@ -3,6 +3,8 @@ package buildworker
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -58,6 +60,35 @@ func (c *Client) Claim(ctx context.Context,targets []string) (*Job,error) {
 	var job Job
 	if err:=json.Unmarshal(raw,&job); err!=nil { return nil,err }
 	return &job,nil
+}
+
+func (c *Client) UploadArtifact(ctx context.Context,jobID,path string) error {
+	f,err:=os.Open(path);if err!=nil{return err}
+	h:=sha256.New()
+	if _,err:=io.Copy(h,f);err!=nil{f.Close();return err}
+	hash:=hex.EncodeToString(h.Sum(nil))
+	if _,err:=f.Seek(0,io.SeekStart);err!=nil{f.Close();return err}
+
+	c.sequence++
+	if err:=saveSequence(c.sequencePath,c.sequence);err!=nil{f.Close();return err}
+	endpoint:="/api/v1/build/jobs/"+jobID+"/artifact"
+	ts:=strconv.FormatInt(time.Now().UTC().Unix(),10)
+	key,err:=c.id.Private();if err!=nil{f.Close();return err}
+	sig:=nodeauth.Sign(key,http.MethodPut,endpoint,ts,[]byte(hash))
+	req,err:=http.NewRequestWithContext(ctx,http.MethodPut,c.controlURL+endpoint,f)
+	if err!=nil{f.Close();return err}
+	req.Header.Set("Content-Type","application/octet-stream")
+	req.Header.Set("X-VPNX3-Node-ID",c.id.NodeID)
+	req.Header.Set("X-VPNX3-Timestamp",ts)
+	req.Header.Set("X-VPNX3-Signature",sig)
+	req.Header.Set("X-VPNX3-Sequence",strconv.FormatInt(c.sequence,10))
+	req.Header.Set("X-VPNX3-Content-SHA256",hash)
+	resp,err:=c.http.Do(req);f.Close()
+	if err!=nil{return err}
+	defer resp.Body.Close()
+	raw,_:=io.ReadAll(io.LimitReader(resp.Body,1<<20))
+	if resp.StatusCode!=http.StatusCreated{return fmt.Errorf("artifact upload status=%d body=%s",resp.StatusCode,string(raw))}
+	return nil
 }
 
 func (c *Client) Complete(ctx context.Context,jobID,status,errorSummary string) error {

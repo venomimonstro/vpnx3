@@ -59,9 +59,10 @@ func main(){
 				_ = client.Complete(runCtx,job.ID,"failed",buildErr.Error())
 			}else{
 				logger.Info("build succeeded","job_id",job.ID,"file",result.FileName,"sha256",result.SHA256,"size_bytes",result.SizeBytes)
-				// Artifact upload/registration is intentionally the next sub-sprint.
-				// Do not mark succeeded before durable artifact storage exists.
-				_ = client.Complete(runCtx,job.ID,"failed","artifact built but artifact storage is not configured yet")
+				if uploadErr:=client.UploadArtifact(runCtx,job.ID,result.Path);uploadErr!=nil{
+					logger.Error("artifact upload failed","job_id",job.ID,"error",uploadErr)
+					_ = client.Complete(runCtx,job.ID,"failed","artifact upload failed: "+uploadErr.Error())
+				}
 			}
 		}
 		runCancel()
