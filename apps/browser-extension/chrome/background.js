@@ -328,14 +328,40 @@ if(isFirefox&&api.proxy.onRequest){
   },{urls:["<all_urls>"]});
 }
 
+const authAttempts=new Map();
+
 api.webRequest.onAuthRequired.addListener(
   (details,callback)=>{
-    ensureCredential()
+    const attempts=(authAttempts.get(details.requestId)||0)+1;
+    authAttempts.set(details.requestId,attempts);
+
+    let credentialPromise;
+    if(attempts===1) credentialPromise=ensureCredential();
+    else if(attempts===2) credentialPromise=newProxyCredential();
+    else {
+      authAttempts.delete(details.requestId);
+      callback({cancel:true});
+      return;
+    }
+
+    credentialPromise
       .then(credential=>callback({authCredentials:{username:"vpnx3",password:credential}}))
-      .catch(()=>callback({cancel:true}));
+      .catch(()=>{
+        authAttempts.delete(details.requestId);
+        callback({cancel:true});
+      });
   },
   {urls:["<all_urls>"]},
   ["asyncBlocking"]
+);
+
+api.webRequest.onCompleted.addListener(
+  details=>authAttempts.delete(details.requestId),
+  {urls:["<all_urls>"]}
+);
+api.webRequest.onErrorOccurred.addListener(
+  details=>authAttempts.delete(details.requestId),
+  {urls:["<all_urls>"]}
 );
 
 api.runtime.onMessage.addListener((message,sender,sendResponse)=>{
