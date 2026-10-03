@@ -95,7 +95,8 @@ const sections=[
   ["billing","Тарифы и платежи","billing.read"],
   ["incidents","Инциденты","incidents.read"],
   ["releases","Релизы","releases.read"],
-  ["audit","Аудит","audit.read"]
+  ["audit","Аудит","audit.read"],
+  ["admins","Администраторы","admin.manage"]
 ];
 
 function shell(){
@@ -327,11 +328,41 @@ async function audit(){
   ])));
 }
 
+async function admins(){
+  const d=await api("/api/v1/admin/admins");
+  const toolbar=$("div",{class:"toolbar"},$("button",{class:"btn primary",onclick:createAdmin},"Новый администратор"));
+  const rows=d.admins.map(a=>[
+    a.email,badge(a.status),a.roles.join(", "),dt(a.created_at),
+    a.id===state.admin.id?"текущая учётная запись":
+      $("button",{class:"btn",onclick:async()=>{
+        const cmd=prompt("Команда: roles role1,role2 / status active|disabled","");
+        if(!cmd)return;
+        try{
+          if(cmd.startsWith("roles ")){
+            const roles=cmd.slice(6).split(",").map(x=>x.trim()).filter(Boolean);
+            await api("/api/v1/admin/admins/"+a.id+"/roles",{method:"PUT",body:JSON.stringify({roles})});
+          }else if(cmd.startsWith("status ")){
+            await api("/api/v1/admin/admins/"+a.id+"/status",{method:"PUT",body:JSON.stringify({status:cmd.slice(7).trim()})});
+          }
+          renderSection();
+        }catch(e){alert(e.message)}
+      }},"Изменить")
+  ]);
+  return sectionFrame("Администраторы",$("div",{},toolbar,table(["Email","Статус","Роли","Создан","Действие"],rows)));
+}
+async function createAdmin(){
+  const email=prompt("Email");if(!email)return;
+  const password=prompt("Временный пароль (минимум 14 символов)");if(!password)return;
+  const raw=prompt("Роли через запятую","read_only");if(!raw)return;
+  const roles=raw.split(",").map(x=>x.trim()).filter(Boolean);
+  try{await api("/api/v1/admin/admins",{method:"POST",body:JSON.stringify({email,password,roles})});renderSection()}catch(e){alert(e.message)}
+}
+
 async function renderSection(){
   const target=document.getElementById("section");if(!target)return;
   target.replaceChildren($("div",{class:"card"},"Загрузка…"));
   try{
-    const fn={dashboard,nodes,probes,users,billing,incidents,releases,audit}[state.section]||dashboard;
+    const fn={dashboard,nodes,probes,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
     target.replaceChildren(await fn());
   }catch(e){target.replaceChildren(sectionError("VPNX3",e))}
 }
