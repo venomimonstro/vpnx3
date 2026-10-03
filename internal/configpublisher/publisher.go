@@ -56,13 +56,14 @@ func (p *Publisher) Run(ctx context.Context){
 				return
 			case <-timer.C:
 			}
+		drainLoop:
 			for{
 				select{
 				case <-p.trigger:
 					continue
 				default:
 					p.publish(ctx,"triggered")
-					break
+					break drainLoop
 				}
 			}
 	}
