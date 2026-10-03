@@ -54,7 +54,7 @@ func (s *Store) ListNodes(ctx context.Context) ([]Node, error) {
 }
 
 func (s *Store) CreateEnrollmentToken(ctx context.Context, role, adminID string, ttl time.Duration) (plain string, expires time.Time, err error) {
-	if role != "ingress" && role != "worker" && role != "probe" && role != "config_mirror" {
+	if role != "ingress" && role != "worker" && role != "probe" && role != "config_mirror" && role != "build_worker" {
 		return "", time.Time{}, fmt.Errorf("invalid node role")
 	}
 	raw := make([]byte, 32)
