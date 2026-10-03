@@ -102,14 +102,9 @@ func (s *Server) handleDownloadArtifact(w http.ResponseWriter,r *http.Request) {
 	if errors.Is(err,artifactstorage.ErrNotFound){
 		writeError(w,http.StatusNotFound,"artifact_file_missing");return
 	}
+	if errors.Is(err,errArtifactStreamStarted){return}
 	if err!=nil{
 		s.logger.Error("admin artifact download failed","artifact_id",artifact.ID,"error",err)
-		if !responseStarted(w){writeError(w,http.StatusConflict,"artifact_integrity_failed")}
+		writeError(w,http.StatusConflict,"artifact_integrity_failed")
 	}
-}
-
-func responseStarted(w http.ResponseWriter) bool {
-	// net/http does not expose write state. This helper intentionally stays
-	// conservative; serveArtifact returns integrity errors before WriteHeader.
-	return false
 }
