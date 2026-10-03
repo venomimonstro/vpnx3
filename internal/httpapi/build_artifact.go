@@ -1,13 +1,10 @@
 package httpapi
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
-	"path/filepath"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -36,36 +33,25 @@ func (s *Server) handleBuildArtifact(w http.ResponseWriter,r *http.Request) {
 	}
 	fileName,err:=store.SafeArtifactFileName(job.Version,job.Target)
 	if err!=nil{s.internalError(w,r,err);return}
-
-	dir:=filepath.Join(s.cfg.ArtifactDir,job.ReleaseID)
-	if err:=os.MkdirAll(dir,0750);err!=nil{s.internalError(w,r,err);return}
-	finalPath:=filepath.Join(dir,job.JobID+filepath.Ext(fileName))
-	tmp,err:=os.CreateTemp(dir,"upload-*")
-	if err!=nil{s.internalError(w,r,err);return}
-	tmpPath:=tmp.Name()
-	defer func(){tmp.Close();os.Remove(tmpPath)}()
+	storageKey:=path.Join(job.ReleaseID,job.JobID+path.Ext(fileName))
 
 	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(s.cfg.ArtifactTransferTimeout))
-	hasher:=sha256.New()
-	limited:=http.MaxBytesReader(w,r.Body,s.cfg.ArtifactMaxBytes)
-	written,copyErr:=io.Copy(io.MultiWriter(tmp,hasher),limited)
-	closeErr:=tmp.Close()
-	if copyErr!=nil || closeErr!=nil {
-		writeError(w,http.StatusBadRequest,"artifact_upload_failed");return
+	info,err:=s.artifacts.PutVerified(r.Context(),storageKey,r.Body,s.cfg.ArtifactMaxBytes,contentHash)
+	if err!=nil{
+		if strings.Contains(err.Error(),"size limit") || strings.Contains(err.Error(),"hash mismatch"){
+			writeJSON(w,http.StatusBadRequest,map[string]string{"error":"artifact_upload_failed","detail":err.Error()})
+			return
+		}
+		s.internalError(w,r,fmt.Errorf("store artifact: %w",err));return
 	}
-	actual:=hex.EncodeToString(hasher.Sum(nil))
-	if actual!=contentHash {
-		writeError(w,http.StatusBadRequest,"artifact_hash_mismatch");return
-	}
-	if err:=os.Chmod(tmpPath,0640);err!=nil{s.internalError(w,r,err);return}
-	if err:=os.Rename(tmpPath,finalPath);err!=nil{s.internalError(w,r,err);return}
 
-	storageKey:=filepath.ToSlash(filepath.Join(job.ReleaseID,filepath.Base(finalPath)))
-	if err:=s.store.RegisterArtifactAndSucceed(r.Context(),job.JobID,nodeID,fileName,storageKey,actual,written);err!=nil{
-		_ = os.Remove(finalPath)
+	if err:=s.store.RegisterArtifactAndSucceed(
+		r.Context(),job.JobID,nodeID,fileName,storageKey,contentHash,info.Size,
+	);err!=nil{
+		_ = s.artifacts.Delete(r.Context(),storageKey)
 		s.internalError(w,r,fmt.Errorf("finalize artifact: %w",err));return
 	}
 	writeJSON(w,http.StatusCreated,map[string]any{
-		"file_name":fileName,"sha256":actual,"size_bytes":written,
+		"file_name":fileName,"sha256":contentHash,"size_bytes":info.Size,
 	})
 }

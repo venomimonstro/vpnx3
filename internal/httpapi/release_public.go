@@ -1,18 +1,15 @@
 package httpapi
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/venomimonstro/vpnx3/internal/artifactstorage"
 	"github.com/venomimonstro/vpnx3/internal/store"
 )
 
@@ -71,30 +68,12 @@ func (s *Server) handleReleaseSigningKey(w http.ResponseWriter,r *http.Request) 
 func (s *Server) handlePublicArtifactDownload(w http.ResponseWriter,r *http.Request) {
 	a,err:=s.store.PublishedArtifactByID(r.Context(),r.PathValue("id"),r.PathValue("artifactId"))
 	if err!=nil{writeError(w,http.StatusNotFound,"artifact_not_found");return}
-	root,err:=filepath.Abs(s.cfg.ArtifactDir);if err!=nil{s.internalError(w,r,err);return}
-	full,err:=filepath.Abs(filepath.Join(root,filepath.FromSlash(a.StorageKey)));if err!=nil{s.internalError(w,r,err);return}
-	rel,err:=filepath.Rel(root,full)
-	if err!=nil||rel==".."||strings.HasPrefix(rel,".."+string(os.PathSeparator)){
-		s.internalError(w,r,fmt.Errorf("artifact path escaped storage root"));return
+	err=s.serveArtifact(w,r,a.StorageKey,a.FileName,a.SHA256,true)
+	if errors.Is(err,artifactstorage.ErrNotFound){
+		writeError(w,http.StatusNotFound,"artifact_file_missing");return
 	}
-	f,err:=os.Open(full);if err!=nil{writeError(w,http.StatusNotFound,"artifact_file_missing");return}
-	defer f.Close()
-	stat,err:=f.Stat();if err!=nil{s.internalError(w,r,err);return}
-
-	h:=sha256.New()
-	if _,err:=io.Copy(h,f);err!=nil{s.internalError(w,r,err);return}
-	actual:=hex.EncodeToString(h.Sum(nil))
-	if actual!=a.SHA256{
-		s.logger.Error("public artifact integrity mismatch","release_id",a.ReleaseID,"artifact_id",a.ArtifactID)
+	if err!=nil{
+		s.logger.Error("public artifact download failed","release_id",a.ReleaseID,"artifact_id",a.ArtifactID,"error",err)
 		writeError(w,http.StatusConflict,"artifact_integrity_failed")
-		return
 	}
-	if _,err:=f.Seek(0,io.SeekStart);err!=nil{s.internalError(w,r,err);return}
-
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(s.cfg.ArtifactTransferTimeout))
-	w.Header().Set("Content-Disposition",fmt.Sprintf("attachment; filename=%q",a.FileName))
-	w.Header().Set("X-VPNX3-SHA256",a.SHA256)
-	w.Header().Set("ETag",fmt.Sprintf("%q",a.SHA256))
-	w.Header().Set("Cache-Control","public, max-age=300, immutable")
-	http.ServeContent(w,r,a.FileName,stat.ModTime(),f)
 }

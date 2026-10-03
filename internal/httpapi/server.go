@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/venomimonstro/vpnx3/internal/artifactstorage"
 	"github.com/venomimonstro/vpnx3/internal/config"
 	"github.com/venomimonstro/vpnx3/internal/configservice"
 	"github.com/venomimonstro/vpnx3/internal/billing"
@@ -29,9 +30,16 @@ type Server struct {
 	releaseSigner *signing.Signer
 	billing *billing.Service
 	yooKassa *yookassa.Adapter
+	artifacts artifactstorage.Storage
 }
 
-func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSigner,accessSigner,releaseSigner *signing.Signer) *Server {
+func NewServer(
+	cfg config.Config,
+	logger *slog.Logger,
+	db *pgxpool.Pool,
+	configSigner,accessSigner,releaseSigner *signing.Signer,
+	artifacts artifactstorage.Storage,
+) *Server {
 	mux:=http.NewServeMux()
 	var yoo *yookassa.Adapter
 	if cfg.YooKassaShopID!="" {
@@ -51,7 +59,7 @@ func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSign
 			},
 		),
 		configSigner:configSigner,accessSigner:accessSigner,releaseSigner:releaseSigner,
-		billing:billing.New(store.New(db)),yooKassa:yoo,
+		billing:billing.New(store.New(db)),yooKassa:yoo,artifacts:artifacts,
 	}
 	adminHandler:=http.StripPrefix("/admin/",adminui.Handler())
 	mux.HandleFunc("GET /admin",func(w http.ResponseWriter,r *http.Request){ http.Redirect(w,r,"/admin/",http.StatusTemporaryRedirect) })

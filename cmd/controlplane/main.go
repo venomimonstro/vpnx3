@@ -10,6 +10,7 @@ import (
 
 	"github.com/venomimonstro/vpnx3/internal/accountcleaner"
 	"github.com/venomimonstro/vpnx3/internal/artifactcleaner"
+	"github.com/venomimonstro/vpnx3/internal/artifactstorage"
 	"github.com/venomimonstro/vpnx3/internal/bootstrap"
 	"github.com/venomimonstro/vpnx3/internal/buildwatchdog"
 	"github.com/venomimonstro/vpnx3/internal/config"
@@ -66,6 +67,12 @@ func main() {
 		}
 	}
 
+	artifactStorage,err:=artifactstorage.NewLocal(cfg.ArtifactDir)
+	if err!=nil{
+		logger.Error("artifact storage initialization failed","error",err)
+		os.Exit(1)
+	}
+
 	nodeStore := store.New(db)
 	configurationService:=configservice.New(
 		nodeStore,
@@ -84,11 +91,11 @@ func main() {
 	go loginthrottle.New(nodeStore,logger).Run(monitorCtx)
 	go publisher.Run(monitorCtx)
 	go probemonitor.New(nodeStore,logger,publisher.Trigger).Run(monitorCtx)
-	go artifactcleaner.New(nodeStore,logger,cfg.ArtifactDir,cfg.ArtifactRetentionDays).Run(monitorCtx)
+	go artifactcleaner.New(nodeStore,logger,artifactStorage,cfg.ArtifactRetentionDays).Run(monitorCtx)
 	go accountcleaner.New(nodeStore,logger).Run(monitorCtx)
 	go buildwatchdog.New(nodeStore,logger,2*time.Minute).Run(monitorCtx)
 
-	srv := httpapi.NewServer(cfg,logger,db,configSigner,accessSigner,releaseSigner)
+	srv := httpapi.NewServer(cfg,logger,db,configSigner,accessSigner,releaseSigner,artifactStorage)
 	serverErr := make(chan error,1)
 	go func() {
 		logger.Info("control plane starting","addr",cfg.HTTPAddr,"env",cfg.Environment)

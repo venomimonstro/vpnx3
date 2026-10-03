@@ -1,16 +1,12 @@
 package httpapi
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
-	"io"
+	"errors"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
+
+	"github.com/venomimonstro/vpnx3/internal/artifactstorage"
 )
 
 func (s *Server) handleReleases(w http.ResponseWriter,r *http.Request) {
@@ -51,7 +47,6 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter,r *http.Request) {
 	writeJSON(w,http.StatusCreated,release)
 }
 
-
 func (s *Server) handleRetryBuildJob(w http.ResponseWriter,r *http.Request) {
 	releaseID,err:=s.store.RetryBuildJob(r.Context(),r.PathValue("jobId"))
 	if err!=nil {
@@ -66,7 +61,6 @@ func (s *Server) handleRetryBuildJob(w http.ResponseWriter,r *http.Request) {
 		requestIDFromContext(r.Context()),ipString(clientIP(r)),"success")
 	w.WriteHeader(http.StatusNoContent)
 }
-
 
 func (s *Server) handleReleaseArtifacts(w http.ResponseWriter,r *http.Request) {
 	rows,err:=s.store.ReleaseArtifacts(r.Context(),r.PathValue("id"))
@@ -104,24 +98,18 @@ func (s *Server) handleWithdrawRelease(w http.ResponseWriter,r *http.Request) {
 func (s *Server) handleDownloadArtifact(w http.ResponseWriter,r *http.Request) {
 	artifact,err:=s.store.ReleaseArtifactByID(r.Context(),r.PathValue("id"),r.PathValue("artifactId"))
 	if err!=nil{writeError(w,http.StatusNotFound,"artifact_not_found");return}
-	root,err:=filepath.Abs(s.cfg.ArtifactDir);if err!=nil{s.internalError(w,r,err);return}
-	full,err:=filepath.Abs(filepath.Join(root,filepath.FromSlash(artifact.StorageKey)));if err!=nil{s.internalError(w,r,err);return}
-	rel,err:=filepath.Rel(root,full)
-	if err!=nil || rel==".." || strings.HasPrefix(rel,".."+string(os.PathSeparator)){
-		s.internalError(w,r,fmt.Errorf("artifact path escaped storage root"));return
+	err=s.serveArtifact(w,r,artifact.StorageKey,artifact.FileName,artifact.SHA256,false)
+	if errors.Is(err,artifactstorage.ErrNotFound){
+		writeError(w,http.StatusNotFound,"artifact_file_missing");return
 	}
-	f,err:=os.Open(full);if err!=nil{writeError(w,http.StatusNotFound,"artifact_file_missing");return}
-	defer f.Close()
-	stat,err:=f.Stat();if err!=nil{s.internalError(w,r,err);return}
-	h:=sha256.New()
-	if _,err:=io.Copy(h,f);err!=nil{s.internalError(w,r,err);return}
-	if hex.EncodeToString(h.Sum(nil))!=artifact.SHA256{
-		s.logger.Error("artifact integrity mismatch","artifact_id",artifact.ID,"path",full)
-		writeError(w,http.StatusConflict,"artifact_integrity_failed");return
+	if err!=nil{
+		s.logger.Error("admin artifact download failed","artifact_id",artifact.ID,"error",err)
+		if !responseStarted(w){writeError(w,http.StatusConflict,"artifact_integrity_failed")}
 	}
-	if _,err:=f.Seek(0,io.SeekStart);err!=nil{s.internalError(w,r,err);return}
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(s.cfg.ArtifactTransferTimeout))
-	w.Header().Set("Content-Disposition",fmt.Sprintf("attachment; filename=%q",artifact.FileName))
-	w.Header().Set("X-VPNX3-SHA256",artifact.SHA256)
-	http.ServeContent(w,r,artifact.FileName,stat.ModTime(),f)
+}
+
+func responseStarted(w http.ResponseWriter) bool {
+	// net/http does not expose write state. This helper intentionally stays
+	// conservative; serveArtifact returns integrity errors before WriteHeader.
+	return false
 }
