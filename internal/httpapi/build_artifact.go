@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/venomimonstro/vpnx3/internal/store"
 )
@@ -44,6 +45,7 @@ func (s *Server) handleBuildArtifact(w http.ResponseWriter,r *http.Request) {
 	tmpPath:=tmp.Name()
 	defer func(){tmp.Close();os.Remove(tmpPath)}()
 
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(s.cfg.ArtifactTransferTimeout))
 	hasher:=sha256.New()
 	limited:=http.MaxBytesReader(w,r.Body,s.cfg.ArtifactMaxBytes)
 	written,copyErr:=io.Copy(io.MultiWriter(tmp,hasher),limited)
