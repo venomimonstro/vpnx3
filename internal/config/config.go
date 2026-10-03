@@ -10,28 +10,37 @@ import (
 )
 
 type Config struct {
-	Environment string
-	HTTPAddr    string
-	DatabaseURL string
-	LogLevel    slog.Level
-	ReadTimeout time.Duration
-	WriteTimeout time.Duration
-	IdleTimeout time.Duration
+	Environment            string
+	HTTPAddr               string
+	DatabaseURL            string
+	LogLevel               slog.Level
+	ReadTimeout            time.Duration
+	WriteTimeout           time.Duration
+	IdleTimeout            time.Duration
+	AdminSessionTTL        time.Duration
+	BootstrapOwnerEmail    string
+	BootstrapOwnerPassword string
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		Environment: env("VPNX3_ENV", "development"),
-		HTTPAddr: env("VPNX3_HTTP_ADDR", ":8080"),
-		DatabaseURL: os.Getenv("VPNX3_DATABASE_URL"),
-		LogLevel: parseLogLevel(env("VPNX3_LOG_LEVEL", "info")),
-		ReadTimeout: duration("VPNX3_HTTP_READ_TIMEOUT", 10*time.Second),
-		WriteTimeout: duration("VPNX3_HTTP_WRITE_TIMEOUT", 15*time.Second),
-		IdleTimeout: duration("VPNX3_HTTP_IDLE_TIMEOUT", 60*time.Second),
+		Environment:            env("VPNX3_ENV", "development"),
+		HTTPAddr:               env("VPNX3_HTTP_ADDR", ":8080"),
+		DatabaseURL:            os.Getenv("VPNX3_DATABASE_URL"),
+		LogLevel:               parseLogLevel(env("VPNX3_LOG_LEVEL", "info")),
+		ReadTimeout:            duration("VPNX3_HTTP_READ_TIMEOUT", 10*time.Second),
+		WriteTimeout:           duration("VPNX3_HTTP_WRITE_TIMEOUT", 15*time.Second),
+		IdleTimeout:            duration("VPNX3_HTTP_IDLE_TIMEOUT", 60*time.Second),
+		AdminSessionTTL:        duration("VPNX3_ADMIN_SESSION_TTL", 12*time.Hour),
+		BootstrapOwnerEmail:    strings.TrimSpace(os.Getenv("VPNX3_BOOTSTRAP_OWNER_EMAIL")),
+		BootstrapOwnerPassword: os.Getenv("VPNX3_BOOTSTRAP_OWNER_PASSWORD"),
 	}
 
 	if strings.TrimSpace(cfg.HTTPAddr) == "" {
 		return Config{}, fmt.Errorf("VPNX3_HTTP_ADDR must not be empty")
+	}
+	if cfg.AdminSessionTTL < 15*time.Minute || cfg.AdminSessionTTL > 7*24*time.Hour {
+		return Config{}, fmt.Errorf("VPNX3_ADMIN_SESSION_TTL must be between 15m and 168h")
 	}
 
 	return cfg, nil

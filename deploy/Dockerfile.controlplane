@@ -2,10 +2,13 @@ FROM golang:1.25-bookworm AS build
 WORKDIR /src
 COPY go.mod ./
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/controlplane ./cmd/controlplane
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/controlplane ./cmd/controlplane \
+ && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/controlplane /controlplane
+COPY --from=build /out/migrate /migrate
+COPY migrations /migrations
 USER nonroot:nonroot
 EXPOSE 8080
 ENTRYPOINT ["/controlplane"]
