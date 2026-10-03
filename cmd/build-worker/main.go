@@ -29,6 +29,13 @@ func main(){
 		IdentityPath:env("VPNX3_AGENT_IDENTITY_PATH","/var/lib/vpnx3-build-worker/identity.json"),
 	}
 	if cfg.ControlURL=="" { logger.Error("VPNX3_CONTROL_URL is required");os.Exit(1) }
+	if strings.Contains(env("VPNX3_BUILD_TARGETS","android_apk,android_aab"),"android_") {
+		if !strings.HasPrefix(env("VPNX3_CLIENT_CONTROL_URL",""),"https://") ||
+			strings.TrimSpace(os.Getenv("VPNX3_CONFIG_PUBLIC_KEY"))=="" {
+			logger.Error("Android build worker requires VPNX3_CLIENT_CONTROL_URL=https://... and VPNX3_CONFIG_PUBLIC_KEY")
+			os.Exit(1)
+		}
+	}
 	id,err:=agent.LoadOrCreate(cfg.IdentityPath);if err!=nil{logger.Error("identity failed","error",err);os.Exit(1)}
 	node:=agent.New(cfg,id)
 	ctx,cancel:=context.WithTimeout(context.Background(),30*time.Second)

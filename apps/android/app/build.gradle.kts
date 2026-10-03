@@ -32,18 +32,30 @@ android {
         versionName = "0.2.0"
 
         val controlUrl = providers.gradleProperty("VPNX3_CONTROL_URL")
+            .orElse(providers.environmentVariable("VPNX3_CLIENT_CONTROL_URL"))
             .orElse("https://127.0.0.1")
             .get()
         val configPublicKey = providers.gradleProperty("VPNX3_CONFIG_PUBLIC_KEY")
+            .orElse(providers.environmentVariable("VPNX3_CONFIG_PUBLIC_KEY"))
             .orElse("")
             .get()
         val releasePublicKey = providers.gradleProperty("VPNX3_RELEASE_PUBLIC_KEY")
+            .orElse(providers.environmentVariable("VPNX3_RELEASE_PUBLIC_KEY"))
             .orElse("")
             .get()
 
         buildConfigField("String", "CONTROL_URL", "\"$controlUrl\"")
         buildConfigField("String", "CONFIG_PUBLIC_KEY", "\"$configPublicKey\"")
         buildConfigField("String", "RELEASE_PUBLIC_KEY", "\"$releasePublicKey\"")
+
+        if (gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }) {
+            require(controlUrl.startsWith("https://") && !controlUrl.contains("127.0.0.1")) {
+                "Release build requires VPNX3_CLIENT_CONTROL_URL or VPNX3_CONTROL_URL with public HTTPS endpoint"
+            }
+            require(configPublicKey.isNotBlank()) {
+                "Release build requires VPNX3_CONFIG_PUBLIC_KEY"
+            }
+        }
     }
 
     buildTypes {

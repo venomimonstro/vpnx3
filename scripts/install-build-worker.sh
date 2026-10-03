@@ -8,6 +8,9 @@ ENROLLMENT_TOKEN=""
 NODE_NAME="build-worker"
 SOURCE_REPO="https://github.com/venomimonstro/vpnx3.git"
 TARGETS="android_apk,android_aab"
+CLIENT_CONTROL_URL=""
+CONFIG_PUBLIC_KEY=""
+RELEASE_PUBLIC_KEY=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -18,6 +21,9 @@ while [[ $# -gt 0 ]]; do
     --node-name) NODE_NAME="${2:-}"; shift 2;;
     --source-repo) SOURCE_REPO="${2:-}"; shift 2;;
     --targets) TARGETS="${2:-}"; shift 2;;
+    --client-control-url) CLIENT_CONTROL_URL="${2:-}"; shift 2;;
+    --config-public-key) CONFIG_PUBLIC_KEY="${2:-}"; shift 2;;
+    --release-public-key) RELEASE_PUBLIC_KEY="${2:-}"; shift 2;;
     *) echo "Unknown argument: $1" >&2; exit 2;;
   esac
 done
@@ -43,6 +49,9 @@ VPNX3_ENROLLMENT_TOKEN=$ENROLLMENT_TOKEN
 VPNX3_NODE_NAME=$NODE_NAME
 VPNX3_SOURCE_REPO=$SOURCE_REPO
 VPNX3_BUILD_TARGETS=$TARGETS
+VPNX3_CLIENT_CONTROL_URL=$CLIENT_CONTROL_URL
+VPNX3_CONFIG_PUBLIC_KEY=$CONFIG_PUBLIC_KEY
+VPNX3_RELEASE_PUBLIC_KEY=$RELEASE_PUBLIC_KEY
 VPNX3_AGENT_IDENTITY_PATH=/var/lib/vpnx3-build-worker/identity.json
 VPNX3_BUILD_WORK_ROOT=/var/lib/vpnx3-build-worker/work
 EOF

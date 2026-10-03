@@ -102,7 +102,11 @@ func output(ctx context.Context,dir,name string,args ...string)(string,error){
 	cmd:=exec.CommandContext(ctx,name,args...);cmd.Dir=dir;b,err:=cmd.Output();return string(b),err
 }
 func buildEnv() []string {
-	keys:=[]string{"VPNX3_ANDROID_KEYSTORE_PATH","VPNX3_ANDROID_KEYSTORE_PASSWORD","VPNX3_ANDROID_KEY_ALIAS","VPNX3_ANDROID_KEY_PASSWORD"}
+	keys:=[]string{
+		"VPNX3_ANDROID_KEYSTORE_PATH","VPNX3_ANDROID_KEYSTORE_PASSWORD",
+		"VPNX3_ANDROID_KEY_ALIAS","VPNX3_ANDROID_KEY_PASSWORD",
+		"VPNX3_CLIENT_CONTROL_URL","VPNX3_CONFIG_PUBLIC_KEY","VPNX3_RELEASE_PUBLIC_KEY",
+	}
 	out:=make([]string,0,len(keys))
 	for _,k:=range keys{if v:=os.Getenv(k);v!=""{out=append(out,k+"="+v)}}
 	return out
