@@ -11,6 +11,7 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/accountcleaner"
 	"github.com/venomimonstro/vpnx3/internal/artifactcleaner"
 	"github.com/venomimonstro/vpnx3/internal/bootstrap"
+	"github.com/venomimonstro/vpnx3/internal/buildwatchdog"
 	"github.com/venomimonstro/vpnx3/internal/config"
 	"github.com/venomimonstro/vpnx3/internal/database"
 	"github.com/venomimonstro/vpnx3/internal/httpapi"
@@ -71,6 +72,7 @@ func main() {
 	go probemonitor.New(nodeStore,logger).Run(monitorCtx)
 	go artifactcleaner.New(nodeStore,logger,cfg.ArtifactDir,cfg.ArtifactRetentionDays).Run(monitorCtx)
 	go accountcleaner.New(nodeStore,logger).Run(monitorCtx)
+	go buildwatchdog.New(nodeStore,logger,2*time.Minute).Run(monitorCtx)
 
 	srv := httpapi.NewServer(cfg,logger,db,configSigner,accessSigner,releaseSigner)
 	serverErr := make(chan error,1)
