@@ -49,6 +49,10 @@ func NewServer(cfg config.Config, logger *slog.Logger, db *pgxpool.Pool) *Server
 
 	mux.Handle("GET /api/v1/nodes",
 		s.requireAdmin(requirePermission("nodes.read", http.HandlerFunc(s.handleListNodes))))
+	mux.Handle("GET /api/v1/nodes/{id}",
+		s.requireAdmin(requirePermission("nodes.read", http.HandlerFunc(s.handleGetNode))))
+	mux.Handle("GET /api/v1/nodes/{id}/events",
+		s.requireAdmin(requirePermission("nodes.read", http.HandlerFunc(s.handleNodeEvents))))
 	mux.Handle("POST /api/v1/nodes/enrollment-tokens",
 		s.requireAdmin(requirePermission("nodes.manage", http.HandlerFunc(s.handleCreateEnrollmentToken))))
 	mux.Handle("POST /api/v1/nodes/{id}/publish",

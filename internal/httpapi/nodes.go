@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,26 @@ func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"nodes": nodes})
+}
+
+func (s *Server) handleGetNode(w http.ResponseWriter,r *http.Request) {
+	node,err:=s.store.NodeByID(r.Context(),r.PathValue("id"))
+	if errors.Is(err,store.ErrNotFound) {
+		writeError(w,http.StatusNotFound,"node_not_found")
+		return
+	}
+	if err!=nil { s.internalError(w,r,err); return }
+	writeJSON(w,http.StatusOK,node)
+}
+
+func (s *Server) handleNodeEvents(w http.ResponseWriter,r *http.Request) {
+	limit:=100
+	if raw:=r.URL.Query().Get("limit"); raw!="" {
+		if parsed,err:=strconv.Atoi(raw); err==nil { limit=parsed }
+	}
+	events,err:=s.store.NodeStateEvents(r.Context(),r.PathValue("id"),limit)
+	if err!=nil { s.internalError(w,r,err); return }
+	writeJSON(w,http.StatusOK,map[string]any{"events":events})
 }
 
 func (s *Server) handleCreateEnrollmentToken(w http.ResponseWriter, r *http.Request) {
@@ -42,7 +63,9 @@ func (s *Server) handleCreateEnrollmentToken(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	ip := clientIP(r)
-	_ = s.store.WriteAudit(r.Context(), "admin", admin.ID, "node.enrollment_token.create", "enrollment_token", "", requestIDFromContext(r.Context()), ip.String(), "success")
+	ipValue:=""
+	if ip!=nil { ipValue=ip.String() }
+	_ = s.store.WriteAudit(r.Context(), "admin", admin.ID, "node.enrollment_token.create", "enrollment_token", "", requestIDFromContext(r.Context()), ipValue, "success")
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"token": token,
 		"expires_at": expires,
@@ -72,8 +95,10 @@ func (s *Server) handleNodeTransition(target string) http.HandlerFunc {
 			return
 		}
 		ip := clientIP(r)
+		ipValue:=""
+		if ip!=nil { ipValue=ip.String() }
 		action := fmt.Sprintf("node.%s", target)
-		_ = s.store.WriteAudit(r.Context(), "admin", admin.ID, action, "node", node.ID, requestIDFromContext(r.Context()), ip.String(), "success")
+		_ = s.store.WriteAudit(r.Context(), "admin", admin.ID, action, "node", node.ID, requestIDFromContext(r.Context()), ipValue, "success")
 		writeJSON(w, http.StatusOK, node)
 	}
 }

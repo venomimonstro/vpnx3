@@ -12,6 +12,7 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/config"
 	"github.com/venomimonstro/vpnx3/internal/database"
 	"github.com/venomimonstro/vpnx3/internal/httpapi"
+	"github.com/venomimonstro/vpnx3/internal/nodemonitor"
 	"github.com/venomimonstro/vpnx3/internal/store"
 )
 
@@ -35,6 +36,11 @@ func main() {
 		logger.Error("bootstrap initialization failed","error",err)
 		os.Exit(1)
 	}
+
+	nodeStore := store.New(db)
+	monitorCtx, monitorCancel := context.WithCancel(context.Background())
+	defer monitorCancel()
+	go nodemonitor.New(nodeStore,logger).Run(monitorCtx)
 
 	srv := httpapi.NewServer(cfg,logger,db)
 	serverErr := make(chan error,1)
