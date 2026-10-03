@@ -8,13 +8,22 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import ru.vpnx3.app.data.PreparedConnection
 import ru.vpnx3.app.data.VpnRepository
 
+enum class ConnectionState {
+    PREPARING,
+    DISCONNECTED,
+    CONNECTING,
+    CONNECTED,
+    DISCONNECTING,
+    ERROR
+}
+
 data class MainUiState(
-    val loading: Boolean = true,
     val registered: Boolean = false,
     val trialExpiresAt: String? = null,
-    val leaseReady: Boolean = false,
+    val connection: ConnectionState = ConnectionState.PREPARING,
     val error: String? = null
 )
 
@@ -22,6 +31,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = VpnRepository(application)
     private val mutableState = MutableStateFlow(MainUiState())
     val state: StateFlow<MainUiState> = mutableState.asStateFlow()
+
+    @Volatile
+    private var pending: PreparedConnection? = null
 
     init {
         initialize()
@@ -35,36 +47,77 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 registration
             }.onSuccess { registration ->
                 mutableState.value = MainUiState(
-                    loading = false,
                     registered = true,
-                    trialExpiresAt = registration.trialExpiresAt
+                    trialExpiresAt = registration.trialExpiresAt,
+                    connection = ConnectionState.DISCONNECTED
                 )
             }.onFailure {
                 mutableState.value = MainUiState(
-                    loading = false,
-                    error = "Не удалось подготовить соединение"
+                    connection = ConnectionState.ERROR,
+                    error = "Не удалось подготовить VPNX3"
                 )
             }
         }
     }
 
-    fun prepareAccess(onReady: () -> Unit) {
-        mutableState.value = mutableState.value.copy(loading = true, error = null)
+    fun prepareConnection(onPrepared: () -> Unit) {
+        mutableState.value = mutableState.value.copy(
+            connection = ConnectionState.CONNECTING,
+            error = null
+        )
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repository.obtainLease() }
+            runCatching { repository.prepareConnection() }
                 .onSuccess {
-                    mutableState.value = mutableState.value.copy(
-                        loading = false,
-                        leaseReady = true
-                    )
-                    onReady()
+                    pending = it
+                    onPrepared()
                 }
                 .onFailure {
                     mutableState.value = mutableState.value.copy(
-                        loading = false,
-                        error = "Не удалось получить доступ"
+                        connection = ConnectionState.ERROR,
+                        error = "Не удалось подготовить VPN-сессию"
                     )
                 }
+        }
+    }
+
+    fun connectPrepared() {
+        val prepared = pending ?: run {
+            mutableState.value = mutableState.value.copy(
+                connection = ConnectionState.ERROR,
+                error = "VPN-сессия не подготовлена"
+            )
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.connect(prepared) }
+                .onSuccess {
+                    pending = null
+                    mutableState.value = mutableState.value.copy(
+                        connection = ConnectionState.CONNECTED,
+                        error = null
+                    )
+                }
+                .onFailure {
+                    repository.disconnect()
+                    pending = null
+                    mutableState.value = mutableState.value.copy(
+                        connection = ConnectionState.ERROR,
+                        error = "Не удалось установить VPN-туннель"
+                    )
+                }
+        }
+    }
+
+    fun disconnect() {
+        mutableState.value = mutableState.value.copy(
+            connection = ConnectionState.DISCONNECTING,
+            error = null
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.disconnect()
+            mutableState.value = mutableState.value.copy(
+                connection = ConnectionState.DISCONNECTED
+            )
         }
     }
 }
