@@ -91,6 +91,7 @@ func (s *Server) handlePublicArtifactDownload(w http.ResponseWriter,r *http.Requ
 	}
 	if _,err:=f.Seek(0,io.SeekStart);err!=nil{s.internalError(w,r,err);return}
 
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(s.cfg.ArtifactTransferTimeout))
 	w.Header().Set("Content-Disposition",fmt.Sprintf("attachment; filename=%q",a.FileName))
 	w.Header().Set("X-VPNX3-SHA256",a.SHA256)
 	w.Header().Set("ETag",fmt.Sprintf("%q",a.SHA256))
