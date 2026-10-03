@@ -17,7 +17,12 @@ android {
         val controlUrl = providers.gradleProperty("VPNX3_CONTROL_URL")
             .orElse("https://127.0.0.1")
             .get()
+        val configPublicKey = providers.gradleProperty("VPNX3_CONFIG_PUBLIC_KEY")
+            .orElse("")
+            .get()
+
         buildConfigField("String", "CONTROL_URL", "\"$controlUrl\"")
+        buildConfigField("String", "CONFIG_PUBLIC_KEY", "\"$configPublicKey\"")
     }
 
     buildFeatures {
@@ -44,6 +49,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+    implementation("com.google.crypto.tink:tink-android:1.23.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

@@ -4,11 +4,24 @@ import android.content.Context
 import android.os.Build
 import ru.vpnx3.app.BuildConfig
 import ru.vpnx3.app.security.DeviceIdentity
+import ru.vpnx3.app.security.VerifiedConfig
 
 class VpnRepository(context: Context) {
     private val state = LocalState(context)
     private val identity = DeviceIdentity()
     private val api = ControlApi(BuildConfig.CONTROL_URL, identity)
+    private val configRepository: ConfigRepository
+
+    init {
+        require(BuildConfig.CONFIG_PUBLIC_KEY.isNotBlank()) {
+            "VPNX3_CONFIG_PUBLIC_KEY must be pinned at build time"
+        }
+        configRepository = ConfigRepository(
+            api = api,
+            state = state,
+            publicKey = BuildConfig.CONFIG_PUBLIC_KEY
+        )
+    }
 
     fun ensureRegistered(): Registration {
         val existingDevice = state.deviceId
@@ -38,5 +51,5 @@ class VpnRepository(context: Context) {
         return lease
     }
 
-    fun latestConfig(): String = api.latestConfig()
+    fun latestConfig(): VerifiedConfig = configRepository.refreshOrFallback()
 }

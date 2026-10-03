@@ -20,4 +20,12 @@ class LocalState(context: Context) {
     var requestSequence: Long
         get() = prefs.getLong("request_sequence", 0L)
         set(value) { prefs.edit().putLong("request_sequence", value).apply() }
+
+    var configEnvelope: String?
+        get() = prefs.getString("config_envelope", null)
+        set(value) { prefs.edit().putString("config_envelope", value).apply() }
+
+    var highestConfigVersion: Long
+        get() = prefs.getLong("highest_config_version", 0L)
+        set(value) { prefs.edit().putLong("highest_config_version", value).apply() }
 }
