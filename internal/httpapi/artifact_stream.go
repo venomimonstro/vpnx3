@@ -13,6 +13,8 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/artifactstorage"
 )
 
+var errArtifactStreamStarted=errors.New("artifact response stream started")
+
 func (s *Server) serveArtifact(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -53,6 +55,9 @@ func (s *Server) serveArtifact(
 		w.Header().Set("Cache-Control","no-store")
 	}
 	w.WriteHeader(http.StatusOK)
-	_,err=io.Copy(w,body)
-	return err
+	if _,err=io.Copy(w,body);err!=nil{
+		s.logger.Warn("artifact response stream interrupted","storage_key",storageKey,"error",err)
+		return fmt.Errorf("%w: %v",errArtifactStreamStarted,err)
+	}
+	return nil
 }
