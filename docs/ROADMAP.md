@@ -62,8 +62,11 @@ Ed25519 Configuration Manifest, точные подписанные payload byte
 ### Спринт 5 — распределённое наблюдение
 Probes, региональная доступность, клиентская агрегированная телеметрия, health score и circuit breakers.
 
-### Спринт 6 — биллинг
-Платёжный abstraction layer, webhooks, продления, возвраты, аналитика.
+### Спринт 6 — биллинг: В РАБОТЕ
+
+Уже реализованы версионируемые тарифы, публичный read-only каталог продаваемых тарифов, admin API тарифов, provider-neutral billing core, таблицы payments/billing_events, SHA-256 payload audit, идемпотентность provider events и транзакционное создание/продление подписки. Версионирование одного plan code защищено PostgreSQL advisory lock от конкурентной гонки.
+
+Следующий шаг — конкретный payment provider adapter с обязательной проверкой подписи webhook, затем refund/cancel lifecycle и финансовая аналитика.
 
 ### Спринт 7 — административный интерфейс
 Сеть, устойчивость, пользователи, тарифы, платежи, релизы, инциденты.

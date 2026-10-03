@@ -53,6 +53,7 @@ func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSign
 	mux.HandleFunc("GET /api/v1/config/signing-key",s.handleConfigSigningKey)
 	mux.HandleFunc("POST /api/v1/client/register",s.handleClientRegister)
 	mux.HandleFunc("POST /api/v1/client/lease",s.handleClientLease)
+	mux.HandleFunc("GET /api/v1/plans",s.handlePublicPlans)
 	mux.Handle("GET /api/v1/admin/me",s.requireAdmin(http.HandlerFunc(s.handleAdminMe)))
 	mux.Handle("POST /api/v1/admin/logout",s.requireAdmin(http.HandlerFunc(s.handleAdminLogout)))
 	mux.Handle("POST /api/v1/config/publish",s.requireAdmin(requirePermission("config.manage",http.HandlerFunc(s.handlePublishConfig))))

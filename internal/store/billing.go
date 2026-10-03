@@ -73,8 +73,18 @@ func (s *Store) CreatePlanVersion(ctx context.Context,in CreatePlanInput) (Plan,
 		return Plan{},fmt.Errorf("invalid plan values")
 	}
 
+	tx,err:=s.DB.Begin(ctx)
+	if err!=nil { return Plan{},err }
+	defer tx.Rollback(ctx)
+
+	// One plan code may be versioned concurrently from several admin processes.
+	// Serialize only this code, not the whole plans table.
+	if _,err:=tx.Exec(ctx,"SELECT pg_advisory_xact_lock(hashtext($1))",in.Code); err!=nil {
+		return Plan{},fmt.Errorf("lock plan code: %w",err)
+	}
+
 	var p Plan
-	err:=s.DB.QueryRow(ctx,`
+	err=tx.QueryRow(ctx,`
 		INSERT INTO plans(code,version,name,price_minor,currency,billing_period_days,
 		                  device_limit,trial_days,grace_days,sale_enabled)
 		SELECT $1,COALESCE(max(version),0)+1,$2,$3,$4,$5,$6,$7,$8,true
@@ -85,6 +95,7 @@ func (s *Store) CreatePlanVersion(ctx context.Context,in CreatePlanInput) (Plan,
 		Scan(&p.ID,&p.Code,&p.Version,&p.Name,&p.PriceMinor,&p.Currency,&p.BillingPeriodDays,
 			&p.DeviceLimit,&p.TrialDays,&p.GraceDays,&p.SaleEnabled,&p.CreatedAt)
 	if err!=nil { return Plan{},fmt.Errorf("create plan version: %w",err) }
+	if err:=tx.Commit(ctx); err!=nil { return Plan{},err }
 	return p,nil
 }
 
