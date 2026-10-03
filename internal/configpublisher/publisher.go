@@ -62,11 +62,9 @@ func (p *Publisher) Run(ctx context.Context){
 					continue
 				default:
 					p.publish(ctx,"triggered")
-					goto drained
+					break
 				}
 			}
-		drained:
-		}
 	}
 }
 
