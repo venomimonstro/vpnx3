@@ -28,8 +28,16 @@ android {
         applicationId = "ru.vpnx3.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.2.0"
+        val releaseVersion = providers.environmentVariable("VPNX3_RELEASE_VERSION")
+            .orElse("0.2.0")
+            .get()
+        val releaseVersionCode = providers.environmentVariable("VPNX3_ANDROID_VERSION_CODE")
+            .orElse("1")
+            .get()
+            .toInt()
+
+        versionCode = releaseVersionCode
+        versionName = releaseVersion
 
         val controlUrl = providers.gradleProperty("VPNX3_CONTROL_URL")
             .orElse(providers.environmentVariable("VPNX3_CLIENT_CONTROL_URL"))
