@@ -128,7 +128,7 @@ func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSign
 	mux.Handle("POST /api/v1/nodes/{id}/quarantine",s.requireAdmin(requirePermission("nodes.manage",s.handleNodeTransition("quarantined"))))
 	mux.Handle("POST /api/v1/nodes/{id}/retire",s.requireAdmin(requirePermission("nodes.manage",s.handleNodeTransition("retired"))))
 
-	handler:=requestContext(securityHeaders(requestLog(logger,recoverer(logger,mux))))
+	handler:=trustedProxyContext(cfg.TrustedProxyCIDRs,requestContext(securityHeaders(requestLog(logger,recoverer(logger,mux)))))
 	s.http=&http.Server{Addr:cfg.HTTPAddr,Handler:handler,ReadTimeout:cfg.ReadTimeout,WriteTimeout:cfg.WriteTimeout,IdleTimeout:cfg.IdleTimeout,ReadHeaderTimeout:5*time.Second}
 	return s
 }
