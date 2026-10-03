@@ -58,16 +58,21 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - официальный WireGuard Android GoBackend;
 - CONNECTING/CONNECTED/DISCONNECTED/ERROR;
 - disconnect с удалением peer;
-- sequence durability: номер резервируется до сетевого запроса.
+- sequence durability: номер резервируется до сетевого запроса;
+- process recovery через реальное состояние WireGuard GoBackend;
+- cleanup stale worker session после process death;
+- агрегированная подписанная client telemetry без истории трафика;
+- server-priced billing flow;
+- account/subscription status;
+- multi-device pairing в пределах тарифа;
+- переход в системные VPN settings для Always-on VPN / kill switch.
 
 Следующие задачи:
 
-1. сборка APK на Android SDK/Gradle окружении;
+1. физическая сборка APK/AAB на Android SDK build-host;
 2. device/emulator smoke test;
-3. process/always-on recovery;
-4. foreground UX/notification;
-5. connection diagnostics/telemetry;
-6. kill-switch UX.
+3. проверка Always-on/lockdown поведения на реальных версиях Android;
+4. UX-полировка и локализация.
 
 ## Спринт 5 — распределённое наблюдение: В РАБОТЕ
 
@@ -83,12 +88,13 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - multi-probe circuit breaker;
 - автоматическое восстановление только circuit-breaker-degraded нод.
 
+Дополнительно реализованы latency-aware routing по свежим независимым probe observations и агрегированная client telemetry.
+
 Следующие задачи:
 
-1. минимум 2–3 probes в разных сетях/регионах;
+1. физически развернуть минимум 2–3 probes в разных сетях/регионах;
 2. synthetic WireGuard data-plane probe;
-3. latency-aware routing;
-4. client aggregate telemetry.
+3. проверить circuit-breaker/failover на реальной распределённой сети.
 
 ## Спринт 6 — биллинг: В РАБОТЕ
 
@@ -132,7 +138,9 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - append-only audit log;
 - releases/build jobs/artifacts.
 
-Следующие задачи: детальные карточки пользователей/устройств, фильтры/поиск, финансовые графики, управление администраторами/ролями и UX без prompt-dialogs.
+Дополнительно реализованы управление администраторами/ролями, отзыв устройств, account device limits, клиентская диагностика, release management и финансовые показатели/refund ledger.
+
+Следующие задачи: фильтры/поиск, полноценные карточки пользователей, графики без prompt-dialog UX и support tooling.
 
 ## Спринт 8 — Build Factory: В РАБОТЕ
 
@@ -155,7 +163,9 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - подписанный публичный release manifest;
 - Android проверяет release metadata локально.
 
-Следующие задачи: готовый Android SDK build image/host, browser extension sources/recipes, macOS worker + Xcode для iOS, S3-compatible artifact adapter и cleanup retention policy.
+Дополнительно реализованы Chrome/Firefox extension sources и recipes, server binary targets, browser ingress binary, version injection, verified ingress installer, artifact retention и signed release distribution.
+
+Следующие задачи: готовый Android SDK build-host, macOS worker + Xcode для iOS и S3-compatible artifact adapter.
 
 ## Обязательные проверки вне текущей GitHub-среды
 
@@ -166,3 +176,28 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - YooKassa sandbox payment/webhook.
 
 Кодовые контуры для этих тестов реализованы; следующий эксплуатационный этап должен прогнать именно эти проверки.
+
+
+## Спринт 9 — Browser Transport: В РАБОТЕ
+
+Реализовано:
+
+- отдельный scoped Proxy Lease с browser_proxy scope;
+- HTTPS CONNECT ingress;
+- SSRF-защита private/loopback/link-local/CGNAT и ограничение ports 80/443;
+- Chrome и Firefox extensions;
+- ECDSA P-256 device identity;
+- signed Configuration Manifest verification и rollback protection;
+- proxy auth короткоживущим signed credential;
+- ingress probing/circuit breaker;
+- latency-aware ingress routing;
+- shared paid account через pairing code;
+- build recipes и version injection;
+- verified systemd installer ingress-ноды.
+
+Следующие задачи:
+
+1. физический smoke-test Chrome/Firefox;
+2. store-specific packaging/signing;
+3. проверить auth callback compatibility на актуальных Chrome/Firefox;
+4. UX reconnect/failover на сетевых переключениях.

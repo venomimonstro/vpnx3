@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.net.VpnService
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -67,6 +68,9 @@ class MainActivity : ComponentActivity() {
                     onDisconnect = vm::disconnect,
                     onCreatePairingCode = vm::createPairingCode,
                     onClaimPairingCode = vm::claimPairingCode,
+                    onVpnSettings = {
+                        startActivity(Intent(Settings.ACTION_VPN_SETTINGS))
+                    },
                     onBuy = { planId ->
                         vm.startPayment(planId) { url ->
                             runOnUiThread {
@@ -96,6 +100,7 @@ private fun HomeScreen(
     onDisconnect: () -> Unit,
     onCreatePairingCode: () -> Unit,
     onClaimPairingCode: (String) -> Unit,
+    onVpnSettings: () -> Unit,
     onBuy: (String) -> Unit
 ) {
     val busy = state.connection == ConnectionState.PREPARING ||
@@ -188,6 +193,15 @@ private fun HomeScreen(
                 }
             )
         }
+
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick=onVpnSettings) {
+            Text("НАСТРОИТЬ ALWAYS-ON / KILL SWITCH")
+        }
+        Text(
+            "В системных настройках VPN можно включить постоянный VPN и блокировку соединений без VPN.",
+            style = MaterialTheme.typography.bodySmall
+        )
 
         if (state.plans.isNotEmpty()) {
             Spacer(Modifier.height(20.dp))
