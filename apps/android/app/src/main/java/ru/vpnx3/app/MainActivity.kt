@@ -145,10 +145,10 @@ private fun HomeScreen(
             Text(it, color = MaterialTheme.colorScheme.error)
         }
 
-        if(state.account!=null) {
+        state.account?.let { account ->
             Spacer(Modifier.height(12.dp))
             Button(
-                enabled=!state.pairingBusy && state.account.activeDevices < state.account.deviceLimit,
+                enabled=!state.pairingBusy && account.activeDevices < account.deviceLimit,
                 onClick=onCreatePairingCode
             ) { Text("ДОБАВИТЬ УСТРОЙСТВО") }
             state.pairingCode?.let {

@@ -179,6 +179,26 @@ async function latestIngress(){
   return candidates[0];
 }
 
+async function accountStatus(){
+  const reg=await ensureRegistered();
+  const sequence=await nextSequence();
+  return request("POST","/api/v1/client/account/status",{sequence},reg[STATE_KEYS.deviceId]);
+}
+
+async function createPairingCode(){
+  const reg=await ensureRegistered();
+  const sequence=await nextSequence();
+  return request("POST","/api/v1/client/pairing-code",{sequence},reg[STATE_KEYS.deviceId]);
+}
+
+async function claimPairingCode(code){
+  const reg=await ensureRegistered();
+  const sequence=await nextSequence();
+  const status=await request("POST","/api/v1/client/pairing-claim",{sequence,code},reg[STATE_KEYS.deviceId]);
+  await storageSet({[STATE_KEYS.userId]:status.user_id});
+  return status;
+}
+
 async function newProxyCredential(){
   const reg=await ensureRegistered();
   const sequence=await nextSequence();
@@ -252,16 +272,13 @@ if(isFirefox&&api.proxy.onRequest){
 }
 
 api.webRequest.onAuthRequired.addListener(
-  async details => {
-    try {
-      const credential=await ensureCredential();
-      return {authCredentials:{username:"vpnx3",password:credential}};
-    } catch {
-      return {cancel:true};
-    }
+  (details,callback)=>{
+    ensureCredential()
+      .then(credential=>callback({authCredentials:{username:"vpnx3",password:credential}}))
+      .catch(()=>callback({cancel:true}));
   },
   {urls:["<all_urls>"]},
-  ["blocking"]
+  ["asyncBlocking"]
 );
 
 api.runtime.onMessage.addListener((message,sender,sendResponse)=>{
@@ -274,8 +291,25 @@ api.runtime.onMessage.addListener((message,sender,sendResponse)=>{
     return true;
   }
   if(message?.type==="status"){
-    storageGet([STATE_KEYS.enabled,STATE_KEYS.ingress,STATE_KEYS.credentialExpires])
-      .then(s=>sendResponse({ok:true,enabled:!!s[STATE_KEYS.enabled],ingress:s[STATE_KEYS.ingress]||null,expires:s[STATE_KEYS.credentialExpires]||null}));
+    Promise.all([
+      storageGet([STATE_KEYS.enabled,STATE_KEYS.ingress,STATE_KEYS.credentialExpires]),
+      accountStatus().catch(()=>null)
+    ]).then(([s,account])=>sendResponse({
+      ok:true,enabled:!!s[STATE_KEYS.enabled],ingress:s[STATE_KEYS.ingress]||null,
+      expires:s[STATE_KEYS.credentialExpires]||null,account
+    }));
+    return true;
+  }
+  if(message?.type==="pairing-create"){
+    createPairingCode()
+      .then(x=>sendResponse({ok:true,code:x.code,expires:x.expires_at}))
+      .catch(e=>sendResponse({ok:false,error:e.message}));
+    return true;
+  }
+  if(message?.type==="pairing-claim"){
+    claimPairingCode(message.code||"")
+      .then(account=>sendResponse({ok:true,account}))
+      .catch(e=>sendResponse({ok:false,error:e.message}));
     return true;
   }
 });
