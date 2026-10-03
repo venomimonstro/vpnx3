@@ -13,7 +13,7 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/agent"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout,nil))
@@ -27,6 +27,7 @@ func main() {
 		Capacity:intEnv("VPNX3_NODE_CAPACITY",1000),
 		AgentVersion:version,
 		IdentityPath:env("VPNX3_AGENT_IDENTITY_PATH","/var/lib/vpnx3-agent/identity.json"),
+		WorkerStatusURL:strings.TrimSpace(os.Getenv("VPNX3_WORKER_STATUS_URL")),
 	}
 	if cfg.ControlURL=="" || cfg.NodeName=="" {
 		logger.Error("VPNX3_CONTROL_URL and VPNX3_NODE_NAME are required")
@@ -56,7 +57,21 @@ func main() {
 
 	for {
 		ctx,cancel := context.WithTimeout(context.Background(),15*time.Second)
-		err := client.Heartbeat(ctx,agent.LocalMetadata())
+		metadata:=agent.LocalMetadata()
+		currentSessions:=0
+		if cfg.WorkerStatusURL!="" {
+			status,statusErr:=client.WorkerStatus(ctx)
+			if statusErr!=nil {
+				metadata["worker_status"]="unavailable"
+				metadata["worker_error"]=statusErr.Error()
+			} else {
+				currentSessions=status.Sessions
+				metadata["worker_status"]=status.Status
+				metadata["worker_transport"]=status.Transport
+				metadata["worker_healthy"]=status.Healthy
+			}
+		}
+		err := client.Heartbeat(ctx,metadata,currentSessions)
 		cancel()
 		if err != nil { logger.Warn("heartbeat failed","error",err) }
 

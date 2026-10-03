@@ -34,7 +34,7 @@ func main() {
 
 	manager:=sessions.New(verifier,pool,adapter)
 	addr:=env("VPNX3_WORKER_AUTH_ADDR","127.0.0.1:9090")
-	srv:=workerauth.New(addr,logger,verifier,manager)
+	srv:=workerauth.New(addr,logger,verifier,manager,adapter)
 
 	runCtx,runCancel:=context.WithCancel(context.Background())
 	defer runCancel()

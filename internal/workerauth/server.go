@@ -9,21 +9,22 @@ import (
 
 	"github.com/venomimonstro/vpnx3/internal/accesslease"
 	"github.com/venomimonstro/vpnx3/internal/sessions"
+	"github.com/venomimonstro/vpnx3/network/transport"
 )
 
 type Server struct {
-	http *http.Server
-	logger *slog.Logger
+	http     *http.Server
+	logger   *slog.Logger
 	verifier *accesslease.Verifier
 	sessions *sessions.Manager
+	adapter  transport.Adapter
 }
 
-func New(addr string,logger *slog.Logger,verifier *accesslease.Verifier,manager *sessions.Manager) *Server {
-	s:=&Server{logger:logger,verifier:verifier,sessions:manager}
+func New(addr string,logger *slog.Logger,verifier *accesslease.Verifier,manager *sessions.Manager,adapter transport.Adapter) *Server {
+	s:=&Server{logger:logger,verifier:verifier,sessions:manager,adapter:adapter}
 	mux:=http.NewServeMux()
-	mux.HandleFunc("GET /health/live",func(w http.ResponseWriter,r *http.Request){
-		writeJSON(w,http.StatusOK,map[string]any{"status":"ok","service":"vpn-worker","sessions":manager.Count()})
-	})
+	mux.HandleFunc("GET /health/live",s.handleStatus)
+	mux.HandleFunc("GET /internal/v1/status",s.handleStatus)
 	mux.HandleFunc("POST /internal/v1/authorize",s.handleAuthorize)
 	mux.HandleFunc("POST /internal/v1/sessions",s.handleCreateSession)
 	mux.HandleFunc("DELETE /internal/v1/sessions/{id}",s.handleDeleteSession)
@@ -32,6 +33,19 @@ func New(addr string,logger *slog.Logger,verifier *accesslease.Verifier,manager 
 		ReadTimeout:5*time.Second,WriteTimeout:5*time.Second,IdleTimeout:30*time.Second,
 	}
 	return s
+}
+
+func (s *Server) handleStatus(w http.ResponseWriter,r *http.Request) {
+	ctx,cancel:=context.WithTimeout(r.Context(),2*time.Second)
+	defer cancel()
+	err:=s.adapter.Healthy(ctx)
+	writeJSON(w,http.StatusOK,map[string]any{
+		"status":"ok",
+		"service":"vpn-worker",
+		"sessions":s.sessions.Count(),
+		"transport":s.adapter.Name(),
+		"healthy":err==nil,
+	})
 }
 
 func (s *Server) handleAuthorize(w http.ResponseWriter,r *http.Request) {

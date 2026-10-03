@@ -96,6 +96,7 @@ VPNX3_NODE_COUNTRY=$COUNTRY
 VPNX3_NODE_PROVIDER=$PROVIDER
 VPNX3_NODE_CAPACITY=$CAPACITY
 VPNX3_AGENT_IDENTITY_PATH=/var/lib/vpnx3-agent/identity.json
+VPNX3_WORKER_STATUS_URL=http://127.0.0.1:9090/internal/v1/status
 EOF
 chmod 0600 /etc/vpnx3-agent.env
 chown root:root /etc/vpnx3-agent.env
