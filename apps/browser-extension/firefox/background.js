@@ -10,7 +10,8 @@ const STATE_KEYS = {
   sequence: "request_sequence",
   credential: "proxy_credential",
   credentialExpires: "proxy_credential_expires",
-  ingress: "ingress"
+  ingress: "ingress",
+  configVersion: "config_version"
 };
 
 function b64url(bytes) {
@@ -152,7 +153,13 @@ async function verifyConfig(envelope){
   if(hex(digest).slice(0,16)!==envelope.key_id) throw new Error("Unexpected configuration signing key");
   const cfg=JSON.parse(new TextDecoder().decode(payload));
   if(cfg.schema_version!==1) throw new Error("Unsupported configuration schema");
-  if(Date.parse(cfg.expires_at)<=Date.now()) throw new Error("Configuration expired");
+  const now=Date.now();
+  if(Date.parse(cfg.created_at)>now+5*60*1000) throw new Error("Configuration is from the future");
+  if(Date.parse(cfg.expires_at)<=now) throw new Error("Configuration expired");
+  const s=await storageGet([STATE_KEYS.configVersion]);
+  const highest=Number(s[STATE_KEYS.configVersion]||0);
+  if(Number(cfg.version)<highest) throw new Error("Configuration rollback detected");
+  await storageSet({[STATE_KEYS.configVersion]:Math.max(highest,Number(cfg.version))});
   return cfg;
 }
 
@@ -245,13 +252,16 @@ if(isFirefox&&api.proxy.onRequest){
 }
 
 api.webRequest.onAuthRequired.addListener(
-  (details,callback)=>{
-    ensureCredential()
-      .then(credential=>callback({authCredentials:{username:"vpnx3",password:credential}}))
-      .catch(()=>callback({cancel:true}));
+  async details => {
+    try {
+      const credential=await ensureCredential();
+      return {authCredentials:{username:"vpnx3",password:credential}};
+    } catch {
+      return {cancel:true};
+    }
   },
   {urls:["<all_urls>"]},
-  ["asyncBlocking"]
+  ["blocking"]
 );
 
 api.runtime.onMessage.addListener((message,sender,sendResponse)=>{
