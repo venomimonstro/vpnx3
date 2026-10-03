@@ -23,7 +23,9 @@ func (s *Server) handleLatestRelease(w http.ResponseWriter,r *http.Request) {
 	if s.releaseSigner==nil { writeError(w,http.StatusServiceUnavailable,"release_channel_disabled");return }
 	target:=strings.TrimSpace(r.URL.Query().Get("target"))
 	switch target {
-	case "android_apk","android_aab","chrome_zip","firefox_zip","ios_ipa":
+	case "android_apk","android_aab","chrome_zip","firefox_zip","ios_ipa",
+		"controlplane_linux_amd64","node_agent_linux_amd64","vpn_worker_linux_amd64",
+		"probe_agent_linux_amd64","ingress_proxy_linux_amd64":
 	default:
 		writeError(w,http.StatusBadRequest,"invalid_release_target");return
 	}
