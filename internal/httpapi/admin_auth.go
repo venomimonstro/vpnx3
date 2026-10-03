@@ -32,17 +32,14 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	plain, hash, err := adminauth.NewSessionToken()
-	if err != nil {
-		s.internalError(w, r, err)
-		return
-	}
+	if err != nil { s.internalError(w, r, err); return }
 	expires := time.Now().UTC().Add(s.cfg.AdminSessionTTL)
 	ip := clientIP(r)
 	if err := s.store.CreateAdminSession(r.Context(), admin.ID, hash, ip, r.UserAgent(), expires); err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	_ = s.store.WriteAudit(r.Context(), "admin", admin.ID, "admin.login", "admin_session", "", requestIDFromContext(r.Context()), ip.String(), "success")
+	_ = s.store.WriteAudit(r.Context(), "admin", admin.ID, "admin.login", "admin_session", "", requestIDFromContext(r.Context()), ipString(ip), "success")
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token": plain,
@@ -57,10 +54,7 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAdminMe(w http.ResponseWriter, r *http.Request) {
 	admin, ok := adminFromContext(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
+	if !ok { writeError(w, http.StatusUnauthorized, "unauthorized"); return }
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": admin.ID,
 		"email": admin.Email,
@@ -70,38 +64,25 @@ func (s *Server) handleAdminMe(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
 	token := bearerToken(r)
-	if token == "" {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
+	if token == "" { writeError(w, http.StatusUnauthorized, "unauthorized"); return }
 	admin, _ := adminFromContext(r.Context())
 	hash := adminauth.HashSessionToken(token)
 	if err := s.store.RevokeAdminSession(r.Context(), hash); err != nil {
-		s.internalError(w, r, err)
-		return
+		s.internalError(w, r, err); return
 	}
 	ip := clientIP(r)
-	_ = s.store.WriteAudit(r.Context(), "admin", admin.ID, "admin.logout", "admin_session", "", requestIDFromContext(r.Context()), ip.String(), "success")
+	_ = s.store.WriteAudit(r.Context(), "admin", admin.ID, "admin.logout", "admin_session", "", requestIDFromContext(r.Context()), ipString(ip), "success")
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) requireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := bearerToken(r)
-		if token == "" {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
+		if token == "" { writeError(w, http.StatusUnauthorized, "unauthorized"); return }
 		hash := adminauth.HashSessionToken(token)
 		admin, err := s.store.AdminBySessionHash(r.Context(), hash)
-		if errors.Is(err, store.ErrNotFound) {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
-		if err != nil {
-			s.internalError(w, r, err)
-			return
-		}
+		if errors.Is(err, store.ErrNotFound) { writeError(w, http.StatusUnauthorized, "unauthorized"); return }
+		if err != nil { s.internalError(w, r, err); return }
 		s.store.TouchAdminSession(r.Context(), hash)
 		ctx := context.WithValue(r.Context(), currentAdminKey, admin)
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -111,15 +92,9 @@ func (s *Server) requireAdmin(next http.Handler) http.Handler {
 func requirePermission(permission string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		admin, ok := adminFromContext(r.Context())
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
+		if !ok { writeError(w, http.StatusUnauthorized, "unauthorized"); return }
 		for _, p := range admin.Permissions {
-			if p == permission {
-				next.ServeHTTP(w, r)
-				return
-			}
+			if p == permission { next.ServeHTTP(w, r); return }
 		}
 		writeError(w, http.StatusForbidden, "forbidden")
 	})
@@ -142,6 +117,11 @@ func clientIP(r *http.Request) net.IP {
 		if ip := net.ParseIP(host); ip != nil { return ip }
 	}
 	return net.ParseIP(r.RemoteAddr)
+}
+
+func ipString(ip net.IP) string {
+	if ip==nil { return "" }
+	return ip.String()
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {

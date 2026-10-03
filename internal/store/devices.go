@@ -101,9 +101,9 @@ func (s *Store) DeviceEntitlement(ctx context.Context,deviceID string,now time.T
 	if status!="active" { return Entitlement{},fmt.Errorf("device inactive") }
 
 	var planCode string
-	var subscriptionExpires time.Time
+	var entitlementExpires time.Time
 	err=s.DB.QueryRow(ctx,`
-		SELECT p.code,s.expires_at
+		SELECT p.code,COALESCE(s.grace_until,s.expires_at)
 		FROM subscriptions s
 		JOIN plans p ON p.id=s.plan_id
 		WHERE s.user_id=$1
@@ -111,8 +111,8 @@ func (s *Store) DeviceEntitlement(ctx context.Context,deviceID string,now time.T
 		  AND COALESCE(s.grace_until,s.expires_at) > $2
 		ORDER BY COALESCE(s.grace_until,s.expires_at) DESC
 		LIMIT 1
-	`,userID,now).Scan(&planCode,&subscriptionExpires)
-	if err==nil { return Entitlement{Name:planCode,ExpiresAt:subscriptionExpires},nil }
+	`,userID,now).Scan(&planCode,&entitlementExpires)
+	if err==nil { return Entitlement{Name:planCode,ExpiresAt:entitlementExpires},nil }
 	if !errors.Is(err,pgx.ErrNoRows) { return Entitlement{},err }
 
 	if trialExpires!=nil && trialExpires.After(now) {
