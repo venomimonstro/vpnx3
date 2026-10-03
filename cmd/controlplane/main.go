@@ -13,6 +13,8 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/bootstrap"
 	"github.com/venomimonstro/vpnx3/internal/buildwatchdog"
 	"github.com/venomimonstro/vpnx3/internal/config"
+	"github.com/venomimonstro/vpnx3/internal/configpublisher"
+	"github.com/venomimonstro/vpnx3/internal/configservice"
 	"github.com/venomimonstro/vpnx3/internal/database"
 	"github.com/venomimonstro/vpnx3/internal/httpapi"
 	"github.com/venomimonstro/vpnx3/internal/nodemonitor"
@@ -65,11 +67,23 @@ func main() {
 	}
 
 	nodeStore := store.New(db)
+	configurationService:=configservice.New(
+		nodeStore,
+		configSigner,
+		configservice.NetworkPolicy{
+			DNSServers:cfg.ClientDNS,
+			MTU:cfg.WireGuardMTU,
+			PersistentKeepalive:cfg.WireGuardKeepalive,
+		},
+	)
+	publisher:=configpublisher.New(configurationService,logger,15*time.Minute)
+
 	monitorCtx, monitorCancel := context.WithCancel(context.Background())
 	defer monitorCancel()
 	go nodemonitor.New(nodeStore,logger).Run(monitorCtx)
 	go loginthrottle.New(nodeStore,logger).Run(monitorCtx)
-	go probemonitor.New(nodeStore,logger).Run(monitorCtx)
+	go publisher.Run(monitorCtx)
+	go probemonitor.New(nodeStore,logger,publisher.Trigger).Run(monitorCtx)
 	go artifactcleaner.New(nodeStore,logger,cfg.ArtifactDir,cfg.ArtifactRetentionDays).Run(monitorCtx)
 	go accountcleaner.New(nodeStore,logger).Run(monitorCtx)
 	go buildwatchdog.New(nodeStore,logger,2*time.Minute).Run(monitorCtx)
