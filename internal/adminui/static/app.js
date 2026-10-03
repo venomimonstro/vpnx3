@@ -247,18 +247,29 @@ async function releases(){
   if(can("releases.manage")) toolbar.append($("button",{class:"btn primary",onclick:createRelease},"Новый релиз"));
   const rows=d.releases.map(r=>[
     r.version,badge(r.status),$("span",{class:"mono"},r.source_commit),dt(r.created_at),r.notes||"—",
-    $("button",{class:"btn",onclick:async()=>{try{
-      const j=await api("/api/v1/admin/releases/"+r.id+"/jobs");
-      const text=j.jobs.map(x=>x.id+" | "+x.target+" — "+x.status+(x.error_summary?" — "+x.error_summary:"")).join("\n")||"Задач нет";
-      if(!can("releases.manage")){alert(text);return}
-      const failed=j.jobs.filter(x=>x.status==="failed"||x.status==="cancelled");
-      if(!failed.length){alert(text);return}
-      const id=prompt(text+"\n\nВведите ID failed/cancelled job для повторной сборки");
-      if(id){
-        await api("/api/v1/admin/releases/"+r.id+"/jobs/"+encodeURIComponent(id)+"/retry",{method:"POST"});
+    $("div",{class:"row-actions"},
+      $("button",{class:"btn",onclick:async()=>{try{
+        const [j,a]=await Promise.all([
+          api("/api/v1/admin/releases/"+r.id+"/jobs"),
+          api("/api/v1/admin/releases/"+r.id+"/artifacts")
+        ]);
+        const jobs=j.jobs.map(x=>x.id+" | "+x.target+" — "+x.status+(x.error_summary?" — "+x.error_summary:"")).join("\n")||"Задач нет";
+        const arts=a.artifacts.map(x=>x.id+" | "+x.target+" | "+x.file_name+" | "+x.sha256).join("\n")||"Артефактов нет";
+        if(!can("releases.manage")){alert(jobs+"\n\n"+arts);return}
+        const failed=j.jobs.filter(x=>x.status==="failed"||x.status==="cancelled");
+        const cmd=prompt(jobs+"\n\n"+arts+"\n\nКоманда: retry <job-id> / download <artifact-id> / publish / withdraw","");
+        if(!cmd)return;
+        const [op,id]=cmd.trim().split(/\s+/,2);
+        if(op==="retry"&&id) await api("/api/v1/admin/releases/"+r.id+"/jobs/"+encodeURIComponent(id)+"/retry",{method:"POST"});
+        else if(op==="publish") await api("/api/v1/admin/releases/"+r.id+"/publish",{method:"POST"});
+        else if(op==="withdraw") await api("/api/v1/admin/releases/"+r.id+"/withdraw",{method:"POST"});
+        else if(op==="download"&&id){
+          window.location.href="/api/v1/admin/releases/"+r.id+"/artifacts/"+encodeURIComponent(id)+"/download";
+          return;
+        } else if(failed.length) alert("Неизвестная команда");
         renderSection();
-      }
-    }catch(e){alert(e.message)}}},"Задачи")
+      }catch(e){alert(e.message)}}},"Управление")
+    )
   ]);
   return sectionFrame("Релизы",$("div",{},toolbar,table(["Версия","Статус","Commit","Создан","Заметки","Сборки"],rows)));
 }
