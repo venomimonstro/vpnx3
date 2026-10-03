@@ -16,6 +16,11 @@ var allowedBuildTargets=map[string]bool{
 	"chrome_zip":true,
 	"firefox_zip":true,
 	"ios_ipa":true,
+	"controlplane_linux_amd64":true,
+	"node_agent_linux_amd64":true,
+	"vpn_worker_linux_amd64":true,
+	"probe_agent_linux_amd64":true,
+	"ingress_proxy_linux_amd64":true,
 }
 
 type Release struct {

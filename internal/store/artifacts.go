@@ -35,6 +35,8 @@ func ArtifactExtension(target string) (string,error) {
 	case "android_aab": return ".aab",nil
 	case "chrome_zip","firefox_zip": return ".zip",nil
 	case "ios_ipa": return ".ipa",nil
+	case "controlplane_linux_amd64","node_agent_linux_amd64","vpn_worker_linux_amd64","probe_agent_linux_amd64","ingress_proxy_linux_amd64":
+		return ".bin",nil
 	default:return "",fmt.Errorf("unsupported artifact target")
 	}
 }

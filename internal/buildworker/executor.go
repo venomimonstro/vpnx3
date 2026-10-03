@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -65,6 +67,7 @@ func (e Executor) Run(ctx context.Context,job Job) (Result,error) {
 		dir:=filepath.Join(src,"apps","browser-extension","chrome")
 		if _,err:=os.Stat(dir);err!=nil{return Result{},fmt.Errorf("chrome extension source unavailable")}
 		if err:=writeBrowserRuntimeConfig(dir);err!=nil{return Result{},err}
+		if err:=writeExtensionVersion(dir,job.Version);err!=nil{return Result{},err}
 		artifact=filepath.Join(work,"vpnx3-chrome.zip")
 		if err:=run(buildCtx,dir,nil,"zip","-qr",artifact,".");err!=nil{return Result{},err}
 	case "firefox_zip":
@@ -76,6 +79,21 @@ func (e Executor) Run(ctx context.Context,job Job) (Result,error) {
 	case "ios_ipa":
 		if runtime.GOOS!="darwin" { return Result{},fmt.Errorf("ios_ipa requires a macOS build worker") }
 		return Result{},fmt.Errorf("ios recipe is not enabled until the Xcode project is present")
+	case "controlplane_linux_amd64":
+		artifact=filepath.Join(work,"vpnx3-controlplane")
+		if err:=run(buildCtx,src,[]string{"CGO_ENABLED=0","GOOS=linux","GOARCH=amd64"},"go","build","-trimpath","-ldflags=-s -w","-o",artifact,"./cmd/controlplane");err!=nil{return Result{},err}
+	case "node_agent_linux_amd64":
+		artifact=filepath.Join(work,"vpnx3-node-agent")
+		if err:=run(buildCtx,src,[]string{"CGO_ENABLED=0","GOOS=linux","GOARCH=amd64"},"go","build","-trimpath","-ldflags=-s -w","-o",artifact,"./cmd/node-agent");err!=nil{return Result{},err}
+	case "vpn_worker_linux_amd64":
+		artifact=filepath.Join(work,"vpnx3-vpn-worker")
+		if err:=run(buildCtx,src,[]string{"CGO_ENABLED=0","GOOS=linux","GOARCH=amd64"},"go","build","-trimpath","-ldflags=-s -w","-o",artifact,"./cmd/vpn-worker");err!=nil{return Result{},err}
+	case "probe_agent_linux_amd64":
+		artifact=filepath.Join(work,"vpnx3-probe-agent")
+		if err:=run(buildCtx,src,[]string{"CGO_ENABLED=0","GOOS=linux","GOARCH=amd64"},"go","build","-trimpath","-ldflags=-s -w","-o",artifact,"./cmd/probe-agent");err!=nil{return Result{},err}
+	case "ingress_proxy_linux_amd64":
+		artifact=filepath.Join(work,"vpnx3-ingress-proxy")
+		if err:=run(buildCtx,src,[]string{"CGO_ENABLED=0","GOOS=linux","GOARCH=amd64"},"go","build","-trimpath","-ldflags=-s -w","-o",artifact,"./cmd/ingress-proxy");err!=nil{return Result{},err}
 	default:
 		return Result{},fmt.Errorf("unsupported build target")
 	}
@@ -127,4 +145,30 @@ func writeBrowserRuntimeConfig(dir string) error {
 	}
 	content:=fmt.Sprintf("const VPNX3_CONTROL_URL=%q;\nconst VPNX3_CONFIG_PUBLIC_KEY=%q;\n",control,key)
 	return os.WriteFile(filepath.Join(dir,"runtime-config.js"),[]byte(content),0644)
+}
+
+func writeExtensionVersion(dir,releaseVersion string) error {
+	version,err:=normalizeExtensionVersion(releaseVersion)
+	if err!=nil{return err}
+	path:=filepath.Join(dir,"manifest.json")
+	raw,err:=os.ReadFile(path);if err!=nil{return err}
+	var manifest map[string]any
+	if err:=json.Unmarshal(raw,&manifest);err!=nil{return fmt.Errorf("parse extension manifest: %w",err)}
+	manifest["version"]=version
+	out,err:=json.MarshalIndent(manifest,"","  ");if err!=nil{return err}
+	out=append(out,'\n')
+	return os.WriteFile(path,out,0644)
+}
+
+func normalizeExtensionVersion(raw string)(string,error){
+	v:=strings.TrimSpace(strings.TrimPrefix(raw,"v"))
+	if i:=strings.IndexByte(v,'-');i>=0{v=v[:i]}
+	parts:=strings.Split(v,".")
+	if len(parts)<1||len(parts)>4{return "",fmt.Errorf("extension release version must contain 1-4 numeric components")}
+	for _,part:=range parts{
+		if part==""{return "",fmt.Errorf("invalid extension release version")}
+		for _,r:=range part{if r<'0'||r>'9'{return "",fmt.Errorf("extension release version must be numeric")}}
+		n,err:=strconv.Atoi(part);if err!=nil||n<0||n>65535{return "",fmt.Errorf("extension version component outside 0..65535")}
+	}
+	return strings.Join(parts,"."),nil
 }

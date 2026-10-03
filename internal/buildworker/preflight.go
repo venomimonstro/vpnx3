@@ -39,6 +39,8 @@ func Preflight(targets []string) error {
 		case "ios_ipa":
 			if runtime.GOOS!="darwin"{return fmt.Errorf("ios_ipa target requires macOS")}
 			if _,err:=exec.LookPath("xcodebuild");err!=nil{return fmt.Errorf("xcodebuild is required for iOS builds")}
+		case "controlplane_linux_amd64","node_agent_linux_amd64","vpn_worker_linux_amd64","probe_agent_linux_amd64","ingress_proxy_linux_amd64":
+			if _,err:=exec.LookPath("go");err!=nil{return fmt.Errorf("go toolchain is required for server binary builds")}
 		default:
 			return fmt.Errorf("unsupported build target %q",target)
 		}
