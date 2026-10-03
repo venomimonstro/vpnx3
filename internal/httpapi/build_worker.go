@@ -47,6 +47,7 @@ func (s *Server) handleBuildClaim(w http.ResponseWriter,r *http.Request) {
 	job,err:=s.store.ClaimBuildJob(r.Context(),nodeID,req.Targets)
 	if err!=nil {
 		if err.Error()=="not found" { w.WriteHeader(http.StatusNoContent);return }
+		if strings.Contains(err.Error(),"not active") { writeError(w,http.StatusConflict,"build_worker_not_active");return }
 		s.internalError(w,r,err);return
 	}
 	writeJSON(w,http.StatusOK,job)

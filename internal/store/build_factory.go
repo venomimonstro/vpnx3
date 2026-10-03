@@ -139,6 +139,11 @@ func (s *Store) AdvanceBuildSequence(ctx context.Context,nodeID string,sequence 
 }
 
 func (s *Store) ClaimBuildJob(ctx context.Context,workerID string,targets []string) (BuildJob,error) {
+	var workerStatus string
+	if err:=s.DB.QueryRow(ctx,`
+		SELECT status::text FROM nodes WHERE id=$1 AND role='build_worker'
+	`,workerID).Scan(&workerStatus);err!=nil{return BuildJob{},ErrNotFound}
+	if workerStatus!="active"{return BuildJob{},fmt.Errorf("build worker is not active")}
 	valid:=make([]string,0,len(targets))
 	for _,target:=range targets {
 		if allowedBuildTargets[target] { valid=append(valid,target) }

@@ -36,6 +36,12 @@ func main(){
 			os.Exit(1)
 		}
 	}
+	targets:=splitCSV(env("VPNX3_BUILD_TARGETS","android_apk,android_aab"))
+	if err:=buildworker.Preflight(targets);err!=nil{
+		logger.Error("build worker preflight failed","error",err)
+		os.Exit(1)
+	}
+
 	id,err:=agent.LoadOrCreate(cfg.IdentityPath);if err!=nil{logger.Error("identity failed","error",err);os.Exit(1)}
 	node:=agent.New(cfg,id)
 	ctx,cancel:=context.WithTimeout(context.Background(),30*time.Second)
@@ -48,11 +54,23 @@ func main(){
 		WorkRoot:env("VPNX3_BUILD_WORK_ROOT","/var/lib/vpnx3-build-worker/work"),
 		Timeout:time.Duration(intEnv("VPNX3_BUILD_TIMEOUT_MINUTES",30))*time.Minute,
 	}
-	targets:=splitCSV(env("VPNX3_BUILD_TARGETS","android_apk,android_aab"))
 
 	stop:=make(chan os.Signal,1);signal.Notify(stop,syscall.SIGINT,syscall.SIGTERM)
 	ticker:=time.NewTicker(15*time.Second);defer ticker.Stop()
 	logger.Info("build worker running","targets",targets)
+
+	heartbeatCtx,heartbeatCancel:=context.WithCancel(context.Background())
+	defer heartbeatCancel()
+	go func(){
+		t:=time.NewTicker(30*time.Second);defer t.Stop()
+		for{
+			ctx,cancel:=context.WithTimeout(heartbeatCtx,10*time.Second)
+			err:=node.Heartbeat(ctx,map[string]any{"build_targets":targets,"preflight":"ok"},0)
+			cancel()
+			if err!=nil{logger.Warn("build worker heartbeat failed","error",err)}
+			select{case <-heartbeatCtx.Done():return;case <-t.C:}
+		}
+	}()
 
 	for{
 		runCtx,runCancel:=context.WithTimeout(context.Background(),45*time.Minute)
