@@ -50,7 +50,7 @@ done
 [[ -f "$TLS_CERT" ]] || { echo "TLS certificate not found: $TLS_CERT" >&2; exit 2; }
 [[ -f "$TLS_KEY" ]] || { echo "TLS private key not found: $TLS_KEY" >&2; exit 2; }
 
-for cmd in curl sha256sum systemctl install useradd; do
+for cmd in curl sha256sum systemctl install useradd runuser; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
 
@@ -77,11 +77,11 @@ id vpnx3 >/dev/null 2>&1 || useradd --system --home /var/lib/vpnx3 --shell /usr/
 install -d -m 0750 -o vpnx3 -g vpnx3 /var/lib/vpnx3/agent
 
 # TLS files may live outside /var/lib/vpnx3. The service user must be able to read them.
-if ! sudo -u vpnx3 test -r "$TLS_CERT" 2>/dev/null; then
+if ! runuser -u vpnx3 -- test -r "$TLS_CERT" 2>/dev/null; then
   echo "vpnx3 user cannot read TLS certificate: $TLS_CERT" >&2
   exit 1
 fi
-if ! sudo -u vpnx3 test -r "$TLS_KEY" 2>/dev/null; then
+if ! runuser -u vpnx3 -- test -r "$TLS_KEY" 2>/dev/null; then
   echo "vpnx3 user cannot read TLS private key: $TLS_KEY" >&2
   exit 1
 fi
