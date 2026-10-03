@@ -135,36 +135,79 @@ func (s *Store) ApplyPaymentEvent(ctx context.Context,event PaymentEvent) (bool,
 	if err!=nil { return false,err }
 	defer tx.Rollback(ctx)
 
-	var existing int
+	var duplicate int
 	err=tx.QueryRow(ctx,`
 		SELECT 1 FROM billing_events
 		WHERE provider=$1 AND provider_event_id=$2
-	`,event.Provider,event.ProviderEventID).Scan(&existing)
+	`,event.Provider,event.ProviderEventID).Scan(&duplicate)
 	if err==nil { return false,nil }
 	if !errors.Is(err,pgx.ErrNoRows) { return false,err }
 
-	var paymentID string
-	err=tx.QueryRow(ctx,`
-		INSERT INTO payments(user_id,plan_id,provider,provider_payment_id,status,
-		                     amount_minor,currency,paid_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $5='succeeded' THEN $8 ELSE NULL END)
-		ON CONFLICT(provider,provider_payment_id) DO UPDATE
-		SET status=EXCLUDED.status,
-		    paid_at=CASE WHEN EXCLUDED.status='succeeded' THEN COALESCE(payments.paid_at,EXCLUDED.paid_at) ELSE payments.paid_at END,
-		    updated_at=now()
-		RETURNING id::text
-	`,event.UserID,event.PlanID,event.Provider,event.ProviderPaymentID,event.Status,
-		event.AmountMinor,event.Currency,event.OccurredAt).Scan(&paymentID)
-	if err!=nil { return false,fmt.Errorf("upsert payment: %w",err) }
+	var planPrice int64
+	var planCurrency string
+	var periodDays,graceDays int
+	if err:=tx.QueryRow(ctx,`
+		SELECT price_minor,currency,billing_period_days,grace_days
+		FROM plans WHERE id=$1
+	`,event.PlanID).Scan(&planPrice,&planCurrency,&periodDays,&graceDays); err!=nil {
+		return false,fmt.Errorf("load event plan: %w",err)
+	}
+	if event.AmountMinor!=planPrice || event.Currency!=planCurrency {
+		return false,fmt.Errorf("payment amount or currency does not match plan version")
+	}
 
-	if event.Status=="succeeded" {
-		var periodDays,graceDays int
-		if err:=tx.QueryRow(ctx,`
-			SELECT billing_period_days,grace_days FROM plans WHERE id=$1
-		`,event.PlanID).Scan(&periodDays,&graceDays); err!=nil {
-			return false,fmt.Errorf("load paid plan: %w",err)
+	var paymentID,previousStatus,existingUserID,existingPlanID,existingCurrency string
+	var existingAmount int64
+	err=tx.QueryRow(ctx,`
+		SELECT id::text,status,user_id::text,plan_id::text,amount_minor,currency
+		FROM payments
+		WHERE provider=$1 AND provider_payment_id=$2
+		FOR UPDATE
+	`,event.Provider,event.ProviderPaymentID).
+		Scan(&paymentID,&previousStatus,&existingUserID,&existingPlanID,&existingAmount,&existingCurrency)
+
+	isNew:=errors.Is(err,pgx.ErrNoRows)
+	if err!=nil && !isNew { return false,fmt.Errorf("load payment: %w",err) }
+
+	newStatus:=event.Status
+	shouldGrant:=false
+	if isNew {
+		err=tx.QueryRow(ctx,`
+			INSERT INTO payments(user_id,plan_id,provider,provider_payment_id,status,
+			                     amount_minor,currency,paid_at)
+			VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $5='succeeded' THEN $8 ELSE NULL END)
+			RETURNING id::text
+		`,event.UserID,event.PlanID,event.Provider,event.ProviderPaymentID,event.Status,
+			event.AmountMinor,event.Currency,event.OccurredAt).Scan(&paymentID)
+		if err!=nil { return false,fmt.Errorf("insert payment: %w",err) }
+		shouldGrant=event.Status=="succeeded"
+	} else {
+		if existingUserID!=event.UserID || existingPlanID!=event.PlanID ||
+			existingAmount!=event.AmountMinor || existingCurrency!=event.Currency {
+			return false,fmt.Errorf("payment event conflicts with stored payment identity")
 		}
 
+		// Final successful/refunded states must never regress because an older provider event
+		// was delivered after a newer event.
+		if previousStatus=="refunded" {
+			newStatus="refunded"
+		} else if previousStatus=="succeeded" && event.Status!="refunded" {
+			newStatus="succeeded"
+		}
+		shouldGrant=previousStatus!="succeeded" && previousStatus!="refunded" && newStatus=="succeeded"
+
+		if _,err:=tx.Exec(ctx,`
+			UPDATE payments
+			SET status=$2,
+			    paid_at=CASE WHEN $2='succeeded' THEN COALESCE(paid_at,$3) ELSE paid_at END,
+			    updated_at=now()
+			WHERE id=$1
+		`,paymentID,newStatus,event.OccurredAt); err!=nil {
+			return false,fmt.Errorf("update payment: %w",err)
+		}
+	}
+
+	if shouldGrant {
 		var currentID string
 		var currentExpires time.Time
 		err:=tx.QueryRow(ctx,`
