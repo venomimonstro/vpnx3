@@ -115,13 +115,47 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 4. auto-renew;
 5. финансовая аналитика.
 
-## Спринт 7 — административный интерфейс: СЛЕДУЮЩИЙ КРУПНЫЙ
+## Спринт 7 — административный интерфейс: ОСНОВА РЕАЛИЗОВАНА
 
-Нужны: dashboard, сеть/ноды/endpoints, probes/circuit breakers, пользователи/устройства, тарифы/платежи, incidents, releases и audit.
+Реализованы:
 
-## Спринт 8 — Build Factory
+- встроенная в Go binary административная панель без отдельного Node/npm runtime;
+- login/logout и RBAC-адаптивная навигация;
+- persistent login throttling;
+- dashboard KPI;
+- ноды, lifecycle actions, endpoints и enrollment tokens;
+- публикация подписанной сетевой конфигурации;
+- probes/circuit breaker observations;
+- пользователи;
+- versioned plans и история платежей;
+- incidents;
+- append-only audit log;
+- releases/build jobs/artifacts.
 
-Изолированные сборки APK/AAB и расширений, отдельная подпись, история выпусков и безопасная публикация артефактов.
+Следующие задачи: детальные карточки пользователей/устройств, фильтры/поиск, финансовые графики, управление администраторами/ролями и UX без prompt-dialogs.
+
+## Спринт 8 — Build Factory: В РАБОТЕ
+
+Реализованы:
+
+- роль build_worker;
+- подписанный build protocol с отдельным replay sequence;
+- очередь build jobs через FOR UPDATE SKIP LOCKED;
+- allowlisted build targets;
+- fixed recipes без sh -c;
+- exact Git commit checkout и verification;
+- Android APK/AAB recipes;
+- release signing secrets только на build worker;
+- потоковая artifact upload с подписанным SHA-256;
+- persistent artifact volume;
+- safe retry failed jobs;
+- release lifecycle ready/published/withdrawn;
+- административное скачивание artifacts;
+- отдельный Ed25519 Release Signing Key;
+- подписанный публичный release manifest;
+- Android проверяет release metadata локально.
+
+Следующие задачи: готовый Android SDK build image/host, browser extension sources/recipes, macOS worker + Xcode для iOS, S3-compatible artifact adapter и cleanup retention policy.
 
 ## Обязательные проверки вне текущей GitHub-среды
 

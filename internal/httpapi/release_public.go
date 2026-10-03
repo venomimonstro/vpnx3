@@ -42,6 +42,7 @@ func (s *Server) handleLatestRelease(w http.ResponseWriter,r *http.Request) {
 		"size_bytes":a.SizeBytes,
 		"download_path":fmt.Sprintf("/api/v1/releases/%s/artifacts/%s/download",a.ReleaseID,a.ArtifactID),
 		"issued_at":time.Now().UTC().Truncate(time.Second),
+		"expires_at":time.Now().UTC().Add(10*time.Minute).Truncate(time.Second),
 	}
 	raw,err:=json.Marshal(payload);if err!=nil{s.internalError(w,r,err);return}
 	sig:=s.releaseSigner.Sign(raw)

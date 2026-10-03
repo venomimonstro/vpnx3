@@ -2,10 +2,13 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func (s *Store) AdminLoginBlocked(ctx context.Context,email string,ip net.IP,now time.Time) (bool,time.Time,error) {
@@ -18,7 +21,7 @@ func (s *Store) AdminLoginBlocked(ctx context.Context,email string,ip net.IP,now
 		WHERE email_normalized=$1 AND source_ip=$2
 	`,email,ip).Scan(&blocked)
 	if err!=nil {
-		if strings.Contains(err.Error(),"no rows") { return false,time.Time{},nil }
+		if errors.Is(err,pgx.ErrNoRows) { return false,time.Time{},nil }
 		return false,time.Time{},fmt.Errorf("login throttle lookup: %w",err)
 	}
 	if blocked!=nil && blocked.After(now) { return true,*blocked,nil }

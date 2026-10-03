@@ -16,6 +16,8 @@ class UpdateRepository {
             ?.bufferedReader()?.use{it.readText()}.orEmpty()
         c.disconnect()
         if(code !in 200..299) return null
-        return ReleaseVerifier(BuildConfig.RELEASE_PUBLIC_KEY).verify(raw)
+        val info=ReleaseVerifier(BuildConfig.RELEASE_PUBLIC_KEY).verify(raw)
+        if(info.version==BuildConfig.VERSION_NAME) return null
+        return info
     }
 }
