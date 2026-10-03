@@ -6,28 +6,50 @@ import (
 	"time"
 )
 
-type ConfigIngress struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	CountryCode *string  `json:"country_code,omitempty"`
-	PublicIP    *string  `json:"public_ip,omitempty"`
-	HealthScore *float64 `json:"health_score,omitempty"`
+type ConfigEndpoint struct {
+	Kind string `json:"kind"`
+	Transport string `json:"transport"`
+	Scheme string `json:"scheme"`
+	Host string `json:"host"`
+	Port int `json:"port"`
+	Path string `json:"path,omitempty"`
+	Priority int `json:"priority"`
 }
 
-func (s *Store) ActiveIngresses(ctx context.Context) ([]ConfigIngress,error) {
+type ConfigNode struct {
+	ID string `json:"id"`
+	Name string `json:"name"`
+	CountryCode *string `json:"country_code,omitempty"`
+	HealthScore *float64 `json:"health_score,omitempty"`
+	Endpoints []ConfigEndpoint `json:"endpoints"`
+}
+
+func (s *Store) ActiveConfigNodes(ctx context.Context,role string) ([]ConfigNode,error) {
 	rows,err:=s.DB.Query(ctx,`
-		SELECT id::text,name,country_code,host(public_ip),health_score::float8
-		FROM nodes
-		WHERE role='ingress' AND status='active' AND public_ip IS NOT NULL
-		ORDER BY country_code NULLS LAST,name
-	`)
-	if err!=nil { return nil,fmt.Errorf("list active ingresses: %w",err) }
+		SELECT n.id::text,n.name,n.country_code,n.health_score::float8,
+		       e.kind,e.transport,e.scheme,e.host,e.port,e.path,e.priority
+		FROM nodes n
+		JOIN node_endpoints e ON e.node_id=n.id AND e.enabled=true
+		WHERE n.role=$1::node_role AND n.status='active'
+		ORDER BY n.country_code NULLS LAST,n.name,e.priority,e.id
+	`,role)
+	if err!=nil { return nil,fmt.Errorf("list active config nodes: %w",err) }
 	defer rows.Close()
-	out:=make([]ConfigIngress,0)
+	out:=make([]ConfigNode,0)
+	index:=map[string]int{}
 	for rows.Next() {
-		var n ConfigIngress
-		if err:=rows.Scan(&n.ID,&n.Name,&n.CountryCode,&n.PublicIP,&n.HealthScore); err!=nil { return nil,err }
-		out=append(out,n)
+		var id,name string
+		var country *string
+		var health *float64
+		var ep ConfigEndpoint
+		if err:=rows.Scan(&id,&name,&country,&health,&ep.Kind,&ep.Transport,&ep.Scheme,&ep.Host,&ep.Port,&ep.Path,&ep.Priority); err!=nil { return nil,err }
+		i,ok:=index[id]
+		if !ok {
+			i=len(out)
+			index[id]=i
+			out=append(out,ConfigNode{ID:id,Name:name,CountryCode:country,HealthScore:health,Endpoints:[]ConfigEndpoint{}})
+		}
+		out[i].Endpoints=append(out[i].Endpoints,ep)
 	}
 	return out,rows.Err()
 }
@@ -39,10 +61,10 @@ func (s *Store) NextConfigVersion(ctx context.Context) (int64,error) {
 }
 
 type StoredManifest struct {
-	Version   int64
-	Payload   []byte
+	Version int64
+	Payload []byte
 	Signature []byte
-	KeyID     string
+	KeyID string
 	CreatedAt time.Time
 }
 
@@ -59,10 +81,8 @@ func (s *Store) LatestConfigManifest(ctx context.Context) (StoredManifest,error)
 	var m StoredManifest
 	err:=s.DB.QueryRow(ctx,`
 		SELECT version,payload_raw,signature,key_id,created_at
-		FROM config_manifests
-		WHERE payload_raw IS NOT NULL
+		FROM config_manifests WHERE payload_raw IS NOT NULL
 		ORDER BY version DESC LIMIT 1
 	`).Scan(&m.Version,&m.Payload,&m.Signature,&m.KeyID,&m.CreatedAt)
-	if err!=nil { return StoredManifest{},err }
-	return m,nil
+	return m,err
 }

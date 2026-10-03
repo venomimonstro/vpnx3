@@ -11,50 +11,45 @@ import (
 )
 
 type Service struct {
-	store  *store.Store
+	store *store.Store
 	signer *signing.Signer
 }
 
-func New(s *store.Store,signer *signing.Signer) *Service {
-	return &Service{store:s,signer:signer}
-}
+func New(s *store.Store,signer *signing.Signer) *Service { return &Service{store:s,signer:signer} }
 
 type Manifest struct {
-	SchemaVersion int                   `json:"schema_version"`
-	Version       int64                 `json:"version"`
-	CreatedAt     time.Time             `json:"created_at"`
-	ExpiresAt     time.Time             `json:"expires_at"`
-	Ingresses     []store.ConfigIngress `json:"ingresses"`
-	Features      map[string]bool       `json:"features"`
+	SchemaVersion int `json:"schema_version"`
+	Version int64 `json:"version"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Ingresses []store.ConfigNode `json:"ingresses"`
+	Workers []store.ConfigNode `json:"workers"`
+	Features map[string]bool `json:"features"`
 }
 
 type Envelope struct {
-	Payload   string `json:"payload"`
+	Payload string `json:"payload"`
 	Signature string `json:"signature"`
-	KeyID     string `json:"key_id"`
+	KeyID string `json:"key_id"`
 }
 
 func (s *Service) Publish(ctx context.Context,adminID string) (Envelope,error) {
 	version,err:=s.store.NextConfigVersion(ctx)
 	if err!=nil { return Envelope{},err }
-	ingresses,err:=s.store.ActiveIngresses(ctx)
+	ingresses,err:=s.store.ActiveConfigNodes(ctx,"ingress")
+	if err!=nil { return Envelope{},err }
+	workers,err:=s.store.ActiveConfigNodes(ctx,"worker")
 	if err!=nil { return Envelope{},err }
 
 	now:=time.Now().UTC().Truncate(time.Second)
 	manifest:=Manifest{
-		SchemaVersion:1,
-		Version:version,
-		CreatedAt:now,
-		ExpiresAt:now.Add(24*time.Hour),
-		Ingresses:ingresses,
-		Features:map[string]bool{"automatic_routing":true},
+		SchemaVersion:1,Version:version,CreatedAt:now,ExpiresAt:now.Add(24*time.Hour),
+		Ingresses:ingresses,Workers:workers,Features:map[string]bool{"automatic_routing":true},
 	}
 	payload,err:=json.Marshal(manifest)
 	if err!=nil { return Envelope{},fmt.Errorf("marshal manifest: %w",err) }
 	sig:=s.signer.Sign(payload)
-	if err:=s.store.SaveConfigManifest(ctx,version,payload,sig,s.signer.KeyID(),adminID); err!=nil {
-		return Envelope{},err
-	}
+	if err:=s.store.SaveConfigManifest(ctx,version,payload,sig,s.signer.KeyID(),adminID); err!=nil { return Envelope{},err }
 	return encodeEnvelope(payload,sig,s.signer.KeyID()),nil
 }
 
