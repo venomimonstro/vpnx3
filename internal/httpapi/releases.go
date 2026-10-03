@@ -1,7 +1,10 @@
 package httpapi
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -109,6 +112,13 @@ func (s *Server) handleDownloadArtifact(w http.ResponseWriter,r *http.Request) {
 	f,err:=os.Open(full);if err!=nil{writeError(w,http.StatusNotFound,"artifact_file_missing");return}
 	defer f.Close()
 	stat,err:=f.Stat();if err!=nil{s.internalError(w,r,err);return}
+	h:=sha256.New()
+	if _,err:=io.Copy(h,f);err!=nil{s.internalError(w,r,err);return}
+	if hex.EncodeToString(h.Sum(nil))!=artifact.SHA256{
+		s.logger.Error("artifact integrity mismatch","artifact_id",artifact.ID,"path",full)
+		writeError(w,http.StatusConflict,"artifact_integrity_failed");return
+	}
+	if _,err:=f.Seek(0,io.SeekStart);err!=nil{s.internalError(w,r,err);return}
 	w.Header().Set("Content-Disposition",fmt.Sprintf("attachment; filename=%q",artifact.FileName))
 	w.Header().Set("X-VPNX3-SHA256",artifact.SHA256)
 	http.ServeContent(w,r,artifact.FileName,stat.ModTime(),f)

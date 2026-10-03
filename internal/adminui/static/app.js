@@ -32,6 +32,24 @@ async function api(path,options={}){
   return r.json();
 }
 
+async function downloadAuthenticated(path){
+  const r=await fetch(path,{headers:{Authorization:"Bearer "+state.token}});
+  if(r.status===401){logout(false);throw new Error("Сессия завершена")}
+  if(!r.ok){
+    let msg="HTTP "+r.status;
+    try{const j=await r.json();msg=j.error||msg}catch{}
+    throw new Error(msg);
+  }
+  const disposition=r.headers.get("Content-Disposition")||"";
+  const match=disposition.match(/filename="?([^"]+)"?/i);
+  const fileName=match?.[1]||"artifact.bin";
+  const blob=await r.blob();
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=fileName;document.body.append(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
 function money(minor,currency="RUB"){
   try{return new Intl.NumberFormat("ru-RU",{style:"currency",currency}).format((minor||0)/100)}
   catch{return ((minor||0)/100).toFixed(2)+" "+currency}
@@ -284,7 +302,7 @@ async function releases(){
         else if(op==="publish") await api("/api/v1/admin/releases/"+r.id+"/publish",{method:"POST"});
         else if(op==="withdraw") await api("/api/v1/admin/releases/"+r.id+"/withdraw",{method:"POST"});
         else if(op==="download"&&id){
-          window.location.href="/api/v1/admin/releases/"+r.id+"/artifacts/"+encodeURIComponent(id)+"/download";
+          await downloadAuthenticated("/api/v1/admin/releases/"+r.id+"/artifacts/"+encodeURIComponent(id)+"/download");
           return;
         } else if(failed.length) alert("Неизвестная команда");
         renderSection();
