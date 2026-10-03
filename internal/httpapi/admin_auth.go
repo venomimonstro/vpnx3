@@ -126,11 +126,10 @@ func bearerToken(r *http.Request) string {
 }
 
 func clientIP(r *http.Request) net.IP {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil {
-		if ip := net.ParseIP(host); ip != nil { return ip }
+	if ip,ok:=r.Context().Value(clientIPKey).(net.IP);ok && ip!=nil {
+		return ip
 	}
-	return net.ParseIP(r.RemoteAddr)
+	return remoteIP(r.RemoteAddr)
 }
 
 func ipString(ip net.IP) string {
