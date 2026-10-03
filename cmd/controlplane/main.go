@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/venomimonstro/vpnx3/internal/config"
+	"github.com/venomimonstro/vpnx3/internal/database"
 	"github.com/venomimonstro/vpnx3/internal/httpapi"
 )
 
@@ -22,18 +23,37 @@ func main() {
 		Level: cfg.LogLevel,
 	}))
 
-	srv := httpapi.NewServer(cfg, logger)
+	startupCtx, startupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer startupCancel()
 
+	db, err := database.Open(startupCtx, cfg.DatabaseURL)
+	if err != nil {
+		logger.Error("database initialization failed", "error", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	srv := httpapi.NewServer(cfg, logger, db)
+
+	serverErr := make(chan error, 1)
 	go func() {
 		logger.Info("control plane starting", "addr", cfg.HTTPAddr, "env", cfg.Environment)
-		if err := srv.ListenAndServe(); err != nil {
-			logger.Error("http server stopped", "error", err)
-		}
+		serverErr <- srv.ListenAndServe()
 	}()
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
+
+	select {
+	case sig := <-stop:
+		logger.Info("shutdown signal received", "signal", sig.String())
+	case err := <-serverErr:
+		if err != nil {
+			logger.Error("http server stopped unexpectedly", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
