@@ -1,9 +1,12 @@
 package httpapi
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -77,8 +80,20 @@ func (s *Server) handlePublicArtifactDownload(w http.ResponseWriter,r *http.Requ
 	f,err:=os.Open(full);if err!=nil{writeError(w,http.StatusNotFound,"artifact_file_missing");return}
 	defer f.Close()
 	stat,err:=f.Stat();if err!=nil{s.internalError(w,r,err);return}
+
+	h:=sha256.New()
+	if _,err:=io.Copy(h,f);err!=nil{s.internalError(w,r,err);return}
+	actual:=hex.EncodeToString(h.Sum(nil))
+	if actual!=a.SHA256{
+		s.logger.Error("public artifact integrity mismatch","release_id",a.ReleaseID,"artifact_id",a.ArtifactID)
+		writeError(w,http.StatusConflict,"artifact_integrity_failed")
+		return
+	}
+	if _,err:=f.Seek(0,io.SeekStart);err!=nil{s.internalError(w,r,err);return}
+
 	w.Header().Set("Content-Disposition",fmt.Sprintf("attachment; filename=%q",a.FileName))
 	w.Header().Set("X-VPNX3-SHA256",a.SHA256)
+	w.Header().Set("ETag",fmt.Sprintf("%q",a.SHA256))
 	w.Header().Set("Cache-Control","public, max-age=300, immutable")
 	http.ServeContent(w,r,a.FileName,stat.ModTime(),f)
 }
