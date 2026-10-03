@@ -35,6 +35,7 @@ type Config struct {
 	ArtifactDir            string
 	ArtifactMaxBytes       int64
 	ArtifactRetentionDays  int
+	TrustedProxyCIDRs      []string
 }
 
 func Load() (Config, error) {
@@ -63,6 +64,7 @@ func Load() (Config, error) {
 		ArtifactDir:            env("VPNX3_ARTIFACT_DIR","/var/lib/vpnx3/artifacts"),
 		ArtifactMaxBytes:       int64(intEnv("VPNX3_ARTIFACT_MAX_MB",300))*1024*1024,
 		ArtifactRetentionDays:  intEnv("VPNX3_ARTIFACT_RETENTION_DAYS",30),
+		TrustedProxyCIDRs:      csvEnv("VPNX3_TRUSTED_PROXY_CIDRS"),
 	}
 
 	if strings.TrimSpace(cfg.HTTPAddr) == "" {
@@ -98,6 +100,11 @@ func Load() (Config, error) {
 	configuredYooKassa:=cfg.YooKassaShopID!="" || cfg.YooKassaSecretKey!="" || cfg.YooKassaReturnURL!=""
 	if configuredYooKassa && (cfg.YooKassaShopID=="" || cfg.YooKassaSecretKey=="" || !strings.HasPrefix(cfg.YooKassaReturnURL,"https://")) {
 		return Config{}, fmt.Errorf("YooKassa configuration requires shop id, secret key and https return URL")
+	}
+	for _, cidr := range cfg.TrustedProxyCIDRs {
+		if _,_,err:=net.ParseCIDR(cidr);err!=nil {
+			return Config{}, fmt.Errorf("VPNX3_TRUSTED_PROXY_CIDRS contains invalid CIDR %q",cidr)
+		}
 	}
 	for _, dns := range cfg.ClientDNS {
 		if net.ParseIP(dns) == nil {
