@@ -22,9 +22,10 @@ type Server struct {
 	cfg    config.Config
 	configService *configservice.Service
 	configSigner *signing.Signer
+	accessSigner *signing.Signer
 }
 
-func NewServer(cfg config.Config, logger *slog.Logger, db *pgxpool.Pool, configSigner *signing.Signer) *Server {
+func NewServer(cfg config.Config, logger *slog.Logger, db *pgxpool.Pool, configSigner, accessSigner *signing.Signer) *Server {
 	mux := http.NewServeMux()
 
 	s := &Server{
@@ -34,6 +35,7 @@ func NewServer(cfg config.Config, logger *slog.Logger, db *pgxpool.Pool, configS
 		cfg: cfg,
 		configService: configservice.New(store.New(db),configSigner),
 		configSigner: configSigner,
+		accessSigner: accessSigner,
 	}
 
 	mux.HandleFunc("GET /health/live", s.handleLive)
@@ -52,6 +54,8 @@ func NewServer(cfg config.Config, logger *slog.Logger, db *pgxpool.Pool, configS
 	mux.HandleFunc("POST /api/v1/node/heartbeat", s.handleNodeHeartbeat)
 	mux.HandleFunc("GET /api/v1/config/latest", s.handleLatestConfig)
 	mux.HandleFunc("GET /api/v1/config/signing-key", s.handleConfigSigningKey)
+	mux.HandleFunc("POST /api/v1/client/register", s.handleClientRegister)
+	mux.HandleFunc("POST /api/v1/client/lease", s.handleClientLease)
 	mux.Handle("GET /api/v1/admin/me", s.requireAdmin(http.HandlerFunc(s.handleAdminMe)))
 	mux.Handle("POST /api/v1/admin/logout", s.requireAdmin(http.HandlerFunc(s.handleAdminLogout)))
 

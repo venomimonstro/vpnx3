@@ -21,6 +21,9 @@ type Config struct {
 	BootstrapOwnerEmail    string
 	BootstrapOwnerPassword string
 	ConfigSigningKey       string
+	AccessSigningKey       string
+	AccessLeaseTTL         time.Duration
+	TrialDays              int
 }
 
 func Load() (Config, error) {
@@ -36,6 +39,9 @@ func Load() (Config, error) {
 		BootstrapOwnerEmail:    strings.TrimSpace(os.Getenv("VPNX3_BOOTSTRAP_OWNER_EMAIL")),
 		BootstrapOwnerPassword: os.Getenv("VPNX3_BOOTSTRAP_OWNER_PASSWORD"),
 		ConfigSigningKey:       strings.TrimSpace(os.Getenv("VPNX3_CONFIG_SIGNING_KEY")),
+		AccessSigningKey:       strings.TrimSpace(os.Getenv("VPNX3_ACCESS_SIGNING_KEY")),
+		AccessLeaseTTL:         duration("VPNX3_ACCESS_LEASE_TTL",6*time.Hour),
+		TrialDays:              intEnv("VPNX3_TRIAL_DAYS",7),
 	}
 
 	if strings.TrimSpace(cfg.HTTPAddr) == "" {
@@ -43,6 +49,15 @@ func Load() (Config, error) {
 	}
 	if cfg.ConfigSigningKey == "" {
 		return Config{}, fmt.Errorf("VPNX3_CONFIG_SIGNING_KEY must be set")
+	}
+	if cfg.AccessSigningKey == "" {
+		return Config{}, fmt.Errorf("VPNX3_ACCESS_SIGNING_KEY must be set")
+	}
+	if cfg.AccessLeaseTTL < 15*time.Minute || cfg.AccessLeaseTTL > 24*time.Hour {
+		return Config{}, fmt.Errorf("VPNX3_ACCESS_LEASE_TTL must be between 15m and 24h")
+	}
+	if cfg.TrialDays < 0 || cfg.TrialDays > 30 {
+		return Config{}, fmt.Errorf("VPNX3_TRIAL_DAYS must be between 0 and 30")
 	}
 	if cfg.AdminSessionTTL < 15*time.Minute || cfg.AdminSessionTTL > 7*24*time.Hour {
 		return Config{}, fmt.Errorf("VPNX3_ADMIN_SESSION_TTL must be between 15m and 168h")
@@ -83,4 +98,12 @@ func parseLogLevel(raw string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+func intEnv(key string,fallback int) int {
+	raw:=strings.TrimSpace(os.Getenv(key))
+	if raw=="" { return fallback }
+	v,err:=strconv.Atoi(raw)
+	if err!=nil { return fallback }
+	return v
 }

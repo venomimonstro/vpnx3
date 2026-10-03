@@ -44,12 +44,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	accessSigner,err:=signing.FromSeedBase64(cfg.AccessSigningKey)
+	if err!=nil {
+		logger.Error("access signing key initialization failed","error",err)
+		os.Exit(1)
+	}
+
 	nodeStore := store.New(db)
 	monitorCtx, monitorCancel := context.WithCancel(context.Background())
 	defer monitorCancel()
 	go nodemonitor.New(nodeStore,logger).Run(monitorCtx)
 
-	srv := httpapi.NewServer(cfg,logger,db,configSigner)
+	srv := httpapi.NewServer(cfg,logger,db,configSigner,accessSigner)
 	serverErr := make(chan error,1)
 	go func() {
 		logger.Info("control plane starting","addr",cfg.HTTPAddr,"env",cfg.Environment)
