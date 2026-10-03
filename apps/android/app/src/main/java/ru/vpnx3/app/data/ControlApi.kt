@@ -91,6 +91,30 @@ class ControlApi(
         }
     }
 
+    fun telemetry(
+        deviceId:String,
+        sequence:Long,
+        eventType:String,
+        configVersion:Long,
+        workerNodeId:String?,
+        networkType:String,
+        durationMS:Long
+    ) {
+        val path="/api/v1/client/telemetry"
+        val body=JSONObject()
+            .put("sequence",sequence)
+            .put("platform","android")
+            .put("client_version",ru.vpnx3.app.BuildConfig.VERSION_NAME)
+            .put("event_type",eventType)
+            .put("config_version",configVersion)
+            .put("worker_node_id",workerNodeId ?: "")
+            .put("network_type",networkType)
+            .put("duration_ms",durationMS.coerceAtLeast(0))
+            .toString()
+            .toByteArray(Charsets.UTF_8)
+        signedRequest("POST",path,body,deviceId)
+    }
+
     fun createPayment(deviceId:String,sequence:Long,planId:String): PaymentStart {
         val path="/api/v1/client/payments"
         val body=JSONObject()

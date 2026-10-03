@@ -2,6 +2,8 @@ package ru.vpnx3.app.data
 
 import android.content.Context
 import android.os.Build
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import com.wireguard.config.Config
 import org.json.JSONArray
 import ru.vpnx3.app.BuildConfig
@@ -14,10 +16,11 @@ import java.io.ByteArrayInputStream
 data class PreparedConnection(
     val config: Config,
     val workerRoute: WorkerRoute,
-    val sessionId: String
+    val sessionId: String,
+    val configVersion: Long
 )
 
-class VpnRepository(context: Context) {
+class VpnRepository(private val context: Context) {
     private val state = LocalState(context)
     private val identity = DeviceIdentity()
     private val api = ControlApi(BuildConfig.CONTROL_URL, identity)
@@ -125,7 +128,7 @@ class VpnRepository(context: Context) {
                 val config = Config.parse(
                     ByteArrayInputStream(wgQuick.toByteArray(Charsets.UTF_8))
                 )
-                return PreparedConnection(config, route, session.sessionId)
+                return PreparedConnection(config, route, session.sessionId, signedConfig.version)
             } catch (error: Throwable) {
                 lastError = error
             }
@@ -140,9 +143,16 @@ class VpnRepository(context: Context) {
     }
 
     fun connect(prepared: PreparedConnection) {
-        wireGuard.connect(prepared.config)
-        state.saveActiveSession(prepared)
-        active = prepared
+        val started=System.currentTimeMillis()
+        try {
+            wireGuard.connect(prepared.config)
+            state.saveActiveSession(prepared)
+            active = prepared
+            reportTelemetry("connect_success",prepared.configVersion,prepared.workerRoute.nodeId,System.currentTimeMillis()-started)
+        } catch (t:Throwable) {
+            reportTelemetry("connect_failed",prepared.configVersion,prepared.workerRoute.nodeId,System.currentTimeMillis()-started)
+            throw t
+        }
     }
 
     fun disconnect() {
@@ -165,6 +175,30 @@ class VpnRepository(context: Context) {
 
         state.clearActiveSession()
         active = null
+        reportTelemetry("disconnect")
+    }
+
+    fun reportTelemetry(eventType:String,configVersion:Long=0,workerNodeId:String?=null,durationMS:Long=0) {
+        runCatching {
+            val registration=ensureRegistered()
+            val sequence=state.reserveNextRequestSequence()
+            api.telemetry(
+                registration.deviceId,sequence,eventType,configVersion,workerNodeId,
+                networkType(),durationMS
+            )
+        }
+    }
+
+    private fun networkType():String {
+        val cm=context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val caps=cm.getNetworkCapabilities(cm.activeNetwork) ?: return "unknown"
+        return when {
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "vpn"
+            else -> "unknown"
+        }
     }
 
     fun isConnected(): Boolean = wireGuard.isConnected()
@@ -186,6 +220,9 @@ class VpnRepository(context: Context) {
             )
             runCatching { workerApi.closeSession(endpoint,persisted.sessionId) }
             state.clearActiveSession()
+            reportTelemetry("stale_session_cleaned")
+        } else if(connected) {
+            reportTelemetry("recovered")
         }
         return connected
     }

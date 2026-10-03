@@ -91,6 +91,7 @@ const sections=[
   ["dashboard","Обзор","analytics.read"],
   ["nodes","Сеть","nodes.read"],
   ["probes","Наблюдение","nodes.read"],
+  ["telemetry","Клиентская диагностика","analytics.read"],
   ["users","Пользователи","users.read"],
   ["billing","Тарифы и платежи","billing.read"],
   ["incidents","Инциденты","incidents.read"],
@@ -220,6 +221,18 @@ async function probes(){
   return sectionFrame("Наблюдение",table(["Время","Probe","Target","Тип","Успех","Задержка"],d.results.map(x=>[
     dt(x.observed_at),x.probe_node_id,x.target_node_id,x.endpoint_kind,badge(x.success?"active":"failed"),x.latency_ms+" мс"
   ])));
+}
+
+async function telemetry(){
+  const d=await api("/api/v1/admin/telemetry?days=14");
+  return sectionFrame("Клиентская диагностика",table(
+    ["День","Платформа","Версия","Событие","Config","Worker","Сеть","Количество","Среднее время"],
+    d.metrics.map(x=>[
+      dt(x.day),x.platform,x.client_version,x.event_type,x.config_version,
+      x.worker_node_id||"—",x.network_type,x.event_count,
+      Math.round(x.average_duration_ms)+" мс"
+    ])
+  ));
 }
 
 async function users(){
@@ -369,7 +382,7 @@ async function renderSection(){
   const target=document.getElementById("section");if(!target)return;
   target.replaceChildren($("div",{class:"card"},"Загрузка…"));
   try{
-    const fn={dashboard,nodes,probes,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
+    const fn={dashboard,nodes,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
     target.replaceChildren(await fn());
   }catch(e){target.replaceChildren(sectionError("VPNX3",e))}
 }
