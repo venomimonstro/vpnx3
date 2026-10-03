@@ -34,6 +34,7 @@ type Config struct {
 	YooKassaReturnURL      string
 	ArtifactDir            string
 	ArtifactMaxBytes       int64
+	ArtifactRetentionDays  int
 }
 
 func Load() (Config, error) {
@@ -61,6 +62,7 @@ func Load() (Config, error) {
 		YooKassaReturnURL:      strings.TrimSpace(os.Getenv("VPNX3_YOOKASSA_RETURN_URL")),
 		ArtifactDir:            env("VPNX3_ARTIFACT_DIR","/var/lib/vpnx3/artifacts"),
 		ArtifactMaxBytes:       int64(intEnv("VPNX3_ARTIFACT_MAX_MB",300))*1024*1024,
+		ArtifactRetentionDays:  intEnv("VPNX3_ARTIFACT_RETENTION_DAYS",30),
 	}
 
 	if strings.TrimSpace(cfg.HTTPAddr) == "" {
@@ -86,6 +88,9 @@ func Load() (Config, error) {
 	}
 	if cfg.WireGuardKeepalive < 0 || cfg.WireGuardKeepalive > 120 {
 		return Config{}, fmt.Errorf("VPNX3_WG_KEEPALIVE must be between 0 and 120")
+	}
+	if cfg.ArtifactRetentionDays < 1 || cfg.ArtifactRetentionDays > 3650 {
+		return Config{}, fmt.Errorf("VPNX3_ARTIFACT_RETENTION_DAYS must be between 1 and 3650")
 	}
 	if cfg.ArtifactMaxBytes < 1<<20 || cfg.ArtifactMaxBytes > 2<<30 {
 		return Config{}, fmt.Errorf("VPNX3_ARTIFACT_MAX_MB is outside safe limits")
