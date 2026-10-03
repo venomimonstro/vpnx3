@@ -47,6 +47,7 @@ services:
       VPNX3_TRIAL_DAYS: 7
       VPNX3_ARTIFACT_DIR: /var/lib/vpnx3/artifacts
       VPNX3_ARTIFACT_MAX_MB: 300
+      VPNX3_ARTIFACT_TRANSFER_TIMEOUT: 30m
       VPNX3_ARTIFACT_RETENTION_DAYS: 30
     depends_on:
       migrate:
