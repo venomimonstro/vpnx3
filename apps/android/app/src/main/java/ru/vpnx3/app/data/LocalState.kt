@@ -17,9 +17,27 @@ class LocalState(context: Context) {
         get() = prefs.getString("trial_expires_at", null)
         set(value) { prefs.edit().putString("trial_expires_at", value).apply() }
 
-    var requestSequence: Long
+    val requestSequence: Long
         get() = prefs.getLong("request_sequence", 0L)
-        set(value) { prefs.edit().putLong("request_sequence", value).apply() }
+
+    @Synchronized
+    fun reserveNextRequestSequence(): Long {
+        val next = requestSequence + 1L
+        check(next > 0L) { "Request sequence overflow" }
+        val persisted = prefs.edit()
+            .putLong("request_sequence", next)
+            .commit()
+        check(persisted) { "Unable to persist request sequence" }
+        return next
+    }
+
+    fun resetRequestSequence() {
+        check(
+            prefs.edit()
+                .putLong("request_sequence", 0L)
+                .commit()
+        ) { "Unable to reset request sequence" }
+    }
 
     var configEnvelope: String?
         get() = prefs.getString("config_envelope", null)

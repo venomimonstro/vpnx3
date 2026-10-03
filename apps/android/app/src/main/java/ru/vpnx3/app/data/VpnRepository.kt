@@ -48,16 +48,14 @@ class VpnRepository(context: Context) {
         state.userId = registration.userId
         state.deviceId = registration.deviceId
         state.trialExpiresAt = registration.trialExpiresAt
-        state.requestSequence = 0L
+        state.resetRequestSequence()
         return registration
     }
 
     fun obtainLease(tunnelPublicKey: String): AccessLease {
         val registration = ensureRegistered()
-        val next = state.requestSequence + 1
-        val lease = api.lease(registration.deviceId, next, tunnelPublicKey)
-        state.requestSequence = next
-        return lease
+        val next = state.reserveNextRequestSequence()
+        return api.lease(registration.deviceId, next, tunnelPublicKey)
     }
 
     fun latestConfig(): VerifiedConfig = configRepository.refreshOrFallback()
