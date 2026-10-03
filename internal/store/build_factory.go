@@ -204,3 +204,29 @@ func (s *Store) CompleteBuildJob(ctx context.Context,workerID,jobID,status,error
 	if _,err:=tx.Exec(ctx,"UPDATE releases SET status=$2,updated_at=now() WHERE id=$1",releaseID,releaseStatus); err!=nil { return err }
 	return tx.Commit(ctx)
 }
+
+
+func (s *Store) RetryBuildJob(ctx context.Context,jobID string) (string,error) {
+	tx,err:=s.DB.Begin(ctx)
+	if err!=nil{return "",err}
+	defer tx.Rollback(ctx)
+	var releaseID,status string
+	err=tx.QueryRow(ctx,`
+		SELECT release_id::text,status FROM build_jobs WHERE id=$1 FOR UPDATE
+	`,jobID).Scan(&releaseID,&status)
+	if errors.Is(err,pgx.ErrNoRows){return "",ErrNotFound}
+	if err!=nil{return "",err}
+	if status!="failed" && status!="cancelled" {
+		return "",fmt.Errorf("build job is not retryable")
+	}
+	if _,err:=tx.Exec(ctx,`
+		UPDATE build_jobs
+		SET status='queued',build_worker_id=NULL,started_at=NULL,finished_at=NULL,error_summary=NULL
+		WHERE id=$1
+	`,jobID);err!=nil{return "",err}
+	if _,err:=tx.Exec(ctx,`
+		UPDATE releases SET status='building',updated_at=now() WHERE id=$1
+	`,releaseID);err!=nil{return "",err}
+	if err:=tx.Commit(ctx);err!=nil{return "",err}
+	return releaseID,nil
+}

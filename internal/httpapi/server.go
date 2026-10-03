@@ -84,6 +84,7 @@ func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSign
 	mux.Handle("GET /api/v1/admin/releases",s.requireAdmin(requirePermission("releases.read",http.HandlerFunc(s.handleReleases))))
 	mux.Handle("GET /api/v1/admin/releases/{id}/jobs",s.requireAdmin(requirePermission("releases.read",http.HandlerFunc(s.handleReleaseJobs))))
 	mux.Handle("POST /api/v1/admin/releases",s.requireAdmin(requirePermission("releases.manage",http.HandlerFunc(s.handleCreateRelease))))
+	mux.Handle("POST /api/v1/admin/releases/{id}/jobs/{jobId}/retry",s.requireAdmin(requirePermission("releases.manage",http.HandlerFunc(s.handleRetryBuildJob))))
 	mux.Handle("POST /api/v1/admin/incidents",s.requireAdmin(requirePermission("incidents.manage",http.HandlerFunc(s.handleCreateIncident))))
 	mux.Handle("POST /api/v1/admin/incidents/{id}/resolve",s.requireAdmin(requirePermission("incidents.manage",http.HandlerFunc(s.handleResolveIncident))))
 	mux.Handle("POST /api/v1/admin/logout",s.requireAdmin(http.HandlerFunc(s.handleAdminLogout)))

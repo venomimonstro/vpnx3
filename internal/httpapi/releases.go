@@ -43,3 +43,19 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter,r *http.Request) {
 		requestIDFromContext(r.Context()),ipString(clientIP(r)),"success")
 	writeJSON(w,http.StatusCreated,release)
 }
+
+
+func (s *Server) handleRetryBuildJob(w http.ResponseWriter,r *http.Request) {
+	releaseID,err:=s.store.RetryBuildJob(r.Context(),r.PathValue("jobId"))
+	if err!=nil {
+		if err.Error()=="not found" { writeError(w,http.StatusNotFound,"build_job_not_found");return }
+		if strings.Contains(err.Error(),"not retryable") {
+			writeError(w,http.StatusConflict,"build_job_not_retryable");return
+		}
+		s.internalError(w,r,err);return
+	}
+	admin,_:=adminFromContext(r.Context())
+	_ = s.store.WriteAudit(r.Context(),"admin",admin.ID,"release.build.retry","release",releaseID,
+		requestIDFromContext(r.Context()),ipString(clientIP(r)),"success")
+	w.WriteHeader(http.StatusNoContent)
+}

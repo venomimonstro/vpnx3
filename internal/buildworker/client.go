@@ -22,6 +22,7 @@ import (
 type Client struct {
 	controlURL string
 	http *http.Client
+	uploadHTTP *http.Client
 	id agent.Identity
 	identityPath string
 	sequencePath string
@@ -42,6 +43,7 @@ func New(controlURL,identityPath string,id agent.Identity) *Client {
 	return &Client{
 		controlURL:strings.TrimRight(controlURL,"/"),
 		http:&http.Client{Timeout:30*time.Second},
+		uploadHTTP:&http.Client{},
 		id:id,
 		identityPath:identityPath,
 		sequencePath:sequencePath,
@@ -83,7 +85,7 @@ func (c *Client) UploadArtifact(ctx context.Context,jobID,path string) error {
 	req.Header.Set("X-VPNX3-Signature",sig)
 	req.Header.Set("X-VPNX3-Sequence",strconv.FormatInt(c.sequence,10))
 	req.Header.Set("X-VPNX3-Content-SHA256",hash)
-	resp,err:=c.http.Do(req);f.Close()
+	resp,err:=c.uploadHTTP.Do(req);f.Close()
 	if err!=nil{return err}
 	defer resp.Body.Close()
 	raw,_:=io.ReadAll(io.LimitReader(resp.Body,1<<20))

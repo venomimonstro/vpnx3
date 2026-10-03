@@ -160,7 +160,7 @@ function nodeActions(n){
   return box;
 }
 async function enrollmentDialog(){
-  const role=prompt("Роль: worker / ingress / probe / config_mirror","worker");
+  const role=prompt("Роль: worker / ingress / probe / config_mirror / build_worker","worker");
   if(!role)return;
   try{
     const d=await api("/api/v1/nodes/enrollment-tokens",{method:"POST",body:JSON.stringify({role,ttl_minutes:10})});
@@ -247,7 +247,18 @@ async function releases(){
   if(can("releases.manage")) toolbar.append($("button",{class:"btn primary",onclick:createRelease},"Новый релиз"));
   const rows=d.releases.map(r=>[
     r.version,badge(r.status),$("span",{class:"mono"},r.source_commit),dt(r.created_at),r.notes||"—",
-    $("button",{class:"btn",onclick:async()=>{try{const j=await api("/api/v1/admin/releases/"+r.id+"/jobs");alert(j.jobs.map(x=>x.target+" — "+x.status+(x.error_summary?" — "+x.error_summary:"")).join("\n")||"Задач нет")}catch(e){alert(e.message)}}},"Задачи")
+    $("button",{class:"btn",onclick:async()=>{try{
+      const j=await api("/api/v1/admin/releases/"+r.id+"/jobs");
+      const text=j.jobs.map(x=>x.id+" | "+x.target+" — "+x.status+(x.error_summary?" — "+x.error_summary:"")).join("\n")||"Задач нет";
+      if(!can("releases.manage")){alert(text);return}
+      const failed=j.jobs.filter(x=>x.status==="failed"||x.status==="cancelled");
+      if(!failed.length){alert(text);return}
+      const id=prompt(text+"\n\nВведите ID failed/cancelled job для повторной сборки");
+      if(id){
+        await api("/api/v1/admin/releases/"+r.id+"/jobs/"+encodeURIComponent(id)+"/retry",{method:"POST"});
+        renderSection();
+      }
+    }catch(e){alert(e.message)}}},"Задачи")
   ]);
   return sectionFrame("Релизы",$("div",{},toolbar,table(["Версия","Статус","Commit","Создан","Заметки","Сборки"],rows)));
 }
