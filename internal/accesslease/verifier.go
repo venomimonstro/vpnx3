@@ -35,7 +35,7 @@ func (v *Verifier) Verify(env Envelope,now time.Time) (Claims,error) {
 
 	var claims Claims
 	if err:=json.Unmarshal(payload,&claims); err!=nil { return Claims{},err }
-	if claims.SchemaVersion!=1 || claims.LeaseID=="" || claims.DeviceID=="" || claims.UserID=="" {
+	if claims.SchemaVersion!=1 || claims.LeaseID=="" || claims.DeviceID=="" || claims.UserID=="" || claims.TunnelPublicKey=="" {
 		return Claims{},fmt.Errorf("invalid access lease claims")
 	}
 	if !claims.ExpiresAt.After(now) { return Claims{},fmt.Errorf("access lease expired") }

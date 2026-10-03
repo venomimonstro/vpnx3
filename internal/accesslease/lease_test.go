@@ -22,7 +22,7 @@ func TestLeaseRoundTrip(t *testing.T) {
 	now:=time.Now().UTC().Truncate(time.Second)
 	env,err:=Issue(signer,Claims{
 		SchemaVersion:1,LeaseID:"lease-1",UserID:"user-1",DeviceID:"device-1",
-		Entitlement:"trial",IssuedAt:now,ExpiresAt:now.Add(time.Hour),
+		Entitlement:"trial",TunnelPublicKey:"wg-public-key",IssuedAt:now,ExpiresAt:now.Add(time.Hour),
 	})
 	if err!=nil { t.Fatal(err) }
 	claims,err:=verifier.Verify(env,now)
@@ -38,7 +38,7 @@ func TestExpiredLeaseRejected(t *testing.T) {
 	now:=time.Now().UTC().Truncate(time.Second)
 	env,_:=Issue(signer,Claims{
 		SchemaVersion:1,LeaseID:"x",UserID:"u",DeviceID:"d",Entitlement:"trial",
-		IssuedAt:now.Add(-2*time.Hour),ExpiresAt:now.Add(-time.Hour),
+		TunnelPublicKey:"wg-public-key",IssuedAt:now.Add(-2*time.Hour),ExpiresAt:now.Add(-time.Hour),
 	})
 	if _,err:=verifier.Verify(env,now); err==nil { t.Fatal("expected expired lease rejection") }
 }

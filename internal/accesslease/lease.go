@@ -14,7 +14,8 @@ type Claims struct {
 	LeaseID       string    `json:"lease_id"`
 	UserID        string    `json:"user_id"`
 	DeviceID      string    `json:"device_id"`
-	Entitlement   string    `json:"entitlement"`
+	Entitlement     string    `json:"entitlement"`
+	TunnelPublicKey string    `json:"tunnel_public_key"`
 	IssuedAt      time.Time `json:"issued_at"`
 	ExpiresAt     time.Time `json:"expires_at"`
 }

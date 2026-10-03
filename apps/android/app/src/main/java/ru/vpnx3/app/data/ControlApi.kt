@@ -39,10 +39,11 @@ class ControlApi(
         )
     }
 
-    fun lease(deviceId: String, sequence: Long): AccessLease {
+    fun lease(deviceId: String, sequence: Long, tunnelPublicKey: String): AccessLease {
         val path = "/api/v1/client/lease"
         val body = JSONObject()
             .put("sequence", sequence)
+            .put("tunnel_public_key", tunnelPublicKey)
             .toString()
             .toByteArray(Charsets.UTF_8)
 

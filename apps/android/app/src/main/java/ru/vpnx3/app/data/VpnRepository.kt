@@ -59,10 +59,10 @@ class VpnRepository(context: Context) {
         return registration
     }
 
-    fun obtainLease(): AccessLease {
+    fun obtainLease(tunnelPublicKey: String): AccessLease {
         val registration = ensureRegistered()
         val next = state.requestSequence + 1
-        val lease = api.lease(registration.deviceId, next)
+        val lease = api.lease(registration.deviceId, next, tunnelPublicKey)
         state.requestSequence = next
         return lease
     }
@@ -72,13 +72,14 @@ class VpnRepository(context: Context) {
     fun prepareConnection(): PreparedConnection {
         val signedConfig = latestConfig()
         val route = RoutingSelector.select(signedConfig)
-        val lease = obtainLease()
         val keyPair = tunnelKeys.getOrCreate()
+        val tunnelPublicKey = keyPair.publicKey.toBase64()
+        val lease = obtainLease(tunnelPublicKey)
 
         val session = workerApi.createSession(
             endpoint = route.sessionApi,
             leaseEnvelope = lease.rawEnvelope,
-            clientPublicKey = keyPair.publicKey.toBase64()
+            clientPublicKey = tunnelPublicKey
         )
 
         require(session.endpoint == route.wireGuard.hostPort()) {

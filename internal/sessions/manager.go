@@ -99,6 +99,9 @@ func (m *Manager) Start(ctx context.Context,env accesslease.Envelope,clientPubli
 	claims,err:=m.verifier.Verify(env,now)
 	if err!=nil { return Session{},err }
 	if clientPublicKey=="" { return Session{},fmt.Errorf("client public key is required") }
+	if claims.TunnelPublicKey != clientPublicKey {
+		return Session{},fmt.Errorf("access lease is bound to a different tunnel public key")
+	}
 
 	m.mu.RLock()
 	existingID,hasExisting:=m.byDevice[claims.DeviceID]

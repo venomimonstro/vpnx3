@@ -67,9 +67,16 @@ func (s *Server) handleClientLease(w http.ResponseWriter,r *http.Request) {
 	body,err:=io.ReadAll(http.MaxBytesReader(w,r.Body,64<<10))
 	if err!=nil { writeError(w,http.StatusBadRequest,"invalid_body"); return }
 
-	var req struct{ Sequence int64 `json:"sequence"` }
-	if err:=json.Unmarshal(body,&req); err!=nil || req.Sequence<=0 {
+	var req struct {
+		Sequence        int64  `json:"sequence"`
+		TunnelPublicKey string `json:"tunnel_public_key"`
+	}
+	if err:=json.Unmarshal(body,&req); err!=nil || req.Sequence<=0 || strings.TrimSpace(req.TunnelPublicKey)=="" {
 		writeError(w,http.StatusBadRequest,"invalid_json")
+		return
+	}
+	if len(req.TunnelPublicKey)>128 {
+		writeError(w,http.StatusBadRequest,"invalid_tunnel_public_key")
 		return
 	}
 
@@ -117,6 +124,7 @@ func (s *Server) handleClientLease(w http.ResponseWriter,r *http.Request) {
 		UserID:state.UserID,
 		DeviceID:state.DeviceID,
 		Entitlement:entitlement.Name,
+		TunnelPublicKey:strings.TrimSpace(req.TunnelPublicKey),
 		IssuedAt:now,
 		ExpiresAt:expires,
 	})
