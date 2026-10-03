@@ -26,7 +26,7 @@ data class WorkerRoute(
 )
 
 object RoutingSelector {
-    fun select(config: VerifiedConfig): WorkerRoute {
+    fun candidates(config: VerifiedConfig): List<WorkerRoute> {
         val workers = config.payload.getJSONArray("workers")
         val candidates = buildList {
             for (i in 0 until workers.length()) {
@@ -76,10 +76,12 @@ object RoutingSelector {
                 compareBy<Triple<WorkerRoute, Int, Double>> { it.second }
                     .thenByDescending { it.third }
             )
-            .firstOrNull()
-            ?.first
-            ?: error("No active WireGuard worker is available")
+            .map { it.first }
     }
+
+    fun select(config: VerifiedConfig): WorkerRoute =
+        candidates(config).firstOrNull()
+            ?: error("No active WireGuard worker is available")
 
     private fun parse(json: JSONObject): NetworkEndpoint =
         NetworkEndpoint(

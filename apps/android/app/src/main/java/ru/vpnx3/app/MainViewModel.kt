@@ -80,6 +80,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun cancelPrepared() {
+        val prepared = pending ?: return
+        pending = null
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.release(prepared)
+            mutableState.value = mutableState.value.copy(
+                connection = ConnectionState.DISCONNECTED,
+                error = null
+            )
+        }
+    }
+
     fun connectPrepared() {
         val prepared = pending ?: run {
             mutableState.value = mutableState.value.copy(

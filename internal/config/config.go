@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -24,6 +25,9 @@ type Config struct {
 	AccessSigningKey       string
 	AccessLeaseTTL         time.Duration
 	TrialDays              int
+	ClientDNS              []string
+	WireGuardMTU           int
+	WireGuardKeepalive     int
 }
 
 func Load() (Config, error) {
@@ -40,8 +44,11 @@ func Load() (Config, error) {
 		BootstrapOwnerPassword: os.Getenv("VPNX3_BOOTSTRAP_OWNER_PASSWORD"),
 		ConfigSigningKey:       strings.TrimSpace(os.Getenv("VPNX3_CONFIG_SIGNING_KEY")),
 		AccessSigningKey:       strings.TrimSpace(os.Getenv("VPNX3_ACCESS_SIGNING_KEY")),
-		AccessLeaseTTL:         duration("VPNX3_ACCESS_LEASE_TTL",6*time.Hour),
-		TrialDays:              intEnv("VPNX3_TRIAL_DAYS",7),
+		AccessLeaseTTL:         duration("VPNX3_ACCESS_LEASE_TTL", 6*time.Hour),
+		TrialDays:              intEnv("VPNX3_TRIAL_DAYS", 7),
+		ClientDNS:              csvEnv("VPNX3_CLIENT_DNS"),
+		WireGuardMTU:           intEnv("VPNX3_WG_CLIENT_MTU", 1280),
+		WireGuardKeepalive:     intEnv("VPNX3_WG_KEEPALIVE", 25),
 	}
 
 	if strings.TrimSpace(cfg.HTTPAddr) == "" {
@@ -62,7 +69,17 @@ func Load() (Config, error) {
 	if cfg.AdminSessionTTL < 15*time.Minute || cfg.AdminSessionTTL > 7*24*time.Hour {
 		return Config{}, fmt.Errorf("VPNX3_ADMIN_SESSION_TTL must be between 15m and 168h")
 	}
-
+	if cfg.WireGuardMTU < 576 || cfg.WireGuardMTU > 1500 {
+		return Config{}, fmt.Errorf("VPNX3_WG_CLIENT_MTU must be between 576 and 1500")
+	}
+	if cfg.WireGuardKeepalive < 0 || cfg.WireGuardKeepalive > 120 {
+		return Config{}, fmt.Errorf("VPNX3_WG_KEEPALIVE must be between 0 and 120")
+	}
+	for _, dns := range cfg.ClientDNS {
+		if net.ParseIP(dns) == nil {
+			return Config{}, fmt.Errorf("VPNX3_CLIENT_DNS contains invalid IP %q", dns)
+		}
+	}
 	return cfg, nil
 }
 
@@ -75,15 +92,11 @@ func env(key, fallback string) string {
 
 func duration(key string, fallback time.Duration) time.Duration {
 	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return fallback
-	}
+	if raw == "" { return fallback }
 	if seconds, err := strconv.Atoi(raw); err == nil {
 		return time.Duration(seconds) * time.Second
 	}
-	if value, err := time.ParseDuration(raw); err == nil {
-		return value
-	}
+	if value, err := time.ParseDuration(raw); err == nil { return value }
 	return fallback
 }
 
@@ -100,10 +113,21 @@ func parseLogLevel(raw string) slog.Level {
 	}
 }
 
-func intEnv(key string,fallback int) int {
-	raw:=strings.TrimSpace(os.Getenv(key))
-	if raw=="" { return fallback }
-	v,err:=strconv.Atoi(raw)
-	if err!=nil { return fallback }
+func intEnv(key string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" { return fallback }
+	v, err := strconv.Atoi(raw)
+	if err != nil { return fallback }
 	return v
+}
+
+func csvEnv(key string) []string {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" { return []string{} }
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if v := strings.TrimSpace(part); v != "" { out = append(out, v) }
+	}
+	return out
 }

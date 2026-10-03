@@ -29,7 +29,15 @@ func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSign
 	mux:=http.NewServeMux()
 	s:=&Server{
 		logger:logger,db:db,store:store.New(db),cfg:cfg,
-		configService:configservice.New(store.New(db),configSigner),
+		configService:configservice.New(
+			store.New(db),
+			configSigner,
+			configservice.NetworkPolicy{
+				DNSServers:cfg.ClientDNS,
+				MTU:cfg.WireGuardMTU,
+				PersistentKeepalive:cfg.WireGuardKeepalive,
+			},
+		),
 		configSigner:configSigner,accessSigner:accessSigner,
 	}
 	mux.HandleFunc("GET /health/live",s.handleLive)

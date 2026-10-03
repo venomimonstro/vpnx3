@@ -31,6 +31,8 @@ class MainActivity : ComponentActivity() {
     ) { result ->
         if (result.resultCode == RESULT_OK) {
             currentViewModel?.connectPrepared()
+        } else {
+            currentViewModel?.cancelPrepared()
         }
     }
 
