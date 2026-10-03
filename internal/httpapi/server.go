@@ -42,6 +42,8 @@ func NewServer(cfg config.Config, logger *slog.Logger, db *pgxpool.Pool) *Server
 	})
 
 	mux.HandleFunc("POST /api/v1/admin/login", s.handleAdminLogin)
+	mux.HandleFunc("POST /api/v1/node/enroll", s.handleNodeEnroll)
+	mux.HandleFunc("POST /api/v1/node/heartbeat", s.handleNodeHeartbeat)
 	mux.Handle("GET /api/v1/admin/me", s.requireAdmin(http.HandlerFunc(s.handleAdminMe)))
 	mux.Handle("POST /api/v1/admin/logout", s.requireAdmin(http.HandlerFunc(s.handleAdminLogout)))
 
