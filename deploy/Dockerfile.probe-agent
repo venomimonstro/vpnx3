@@ -1,0 +1,10 @@
+FROM golang:1.25-bookworm AS build
+WORKDIR /src
+COPY go.mod ./
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/probe-agent ./cmd/probe-agent
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/probe-agent /probe-agent
+USER nonroot:nonroot
+ENTRYPOINT ["/probe-agent"]
