@@ -29,21 +29,27 @@ func NewServer(cfg config.Config, logger *slog.Logger, db *pgxpool.Pool) *Server
 	mux.HandleFunc("GET /health/ready", s.handleReady)
 	mux.HandleFunc("GET /api/v1/meta", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"name": "VPNX3 Control Plane",
+			"name":        "VPNX3 Control Plane",
 			"api_version": "v1",
 			"environment": cfg.Environment,
-			"time": time.Now().UTC(),
+			"time":        time.Now().UTC(),
 		})
 	})
 
-	handler := requestLog(logger, recoverer(logger, mux))
+	handler := requestContext(
+		securityHeaders(
+			requestLog(logger,
+				recoverer(logger, mux),
+			),
+		),
+	)
 
 	s.http = &http.Server{
-		Addr: cfg.HTTPAddr,
-		Handler: handler,
-		ReadTimeout: cfg.ReadTimeout,
-		WriteTimeout: cfg.WriteTimeout,
-		IdleTimeout: cfg.IdleTimeout,
+		Addr:              cfg.HTTPAddr,
+		Handler:           handler,
+		ReadTimeout:       cfg.ReadTimeout,
+		WriteTimeout:      cfg.WriteTimeout,
+		IdleTimeout:       cfg.IdleTimeout,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -52,7 +58,7 @@ func NewServer(cfg config.Config, logger *slog.Logger, db *pgxpool.Pool) *Server
 
 func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
+		"status":  "ok",
 		"service": "control-plane",
 	})
 }
@@ -62,16 +68,19 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if err := s.db.Ping(ctx); err != nil {
-		s.logger.Warn("readiness database check failed", "error", err)
+		s.logger.Warn("readiness database check failed",
+			"request_id", requestIDFromContext(r.Context()),
+			"error", err,
+		)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-			"status": "not_ready",
+			"status":   "not_ready",
 			"database": "unavailable",
 		})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ready",
+		"status":   "ready",
 		"database": "ok",
 	})
 }
