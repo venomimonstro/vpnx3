@@ -74,6 +74,7 @@ func (e Executor) Run(ctx context.Context,job Job) (Result,error) {
 		dir:=filepath.Join(src,"apps","browser-extension","firefox")
 		if _,err:=os.Stat(dir);err!=nil{return Result{},fmt.Errorf("firefox extension source unavailable")}
 		if err:=writeBrowserRuntimeConfig(dir);err!=nil{return Result{},err}
+		if err:=writeExtensionVersion(dir,job.Version);err!=nil{return Result{},err}
 		artifact=filepath.Join(work,"vpnx3-firefox.zip")
 		if err:=run(buildCtx,dir,nil,"zip","-qr",artifact,".");err!=nil{return Result{},err}
 	case "ios_ipa":
