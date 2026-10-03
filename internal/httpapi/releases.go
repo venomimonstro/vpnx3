@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func (s *Server) handleReleases(w http.ResponseWriter,r *http.Request) {
@@ -119,6 +120,7 @@ func (s *Server) handleDownloadArtifact(w http.ResponseWriter,r *http.Request) {
 		writeError(w,http.StatusConflict,"artifact_integrity_failed");return
 	}
 	if _,err:=f.Seek(0,io.SeekStart);err!=nil{s.internalError(w,r,err);return}
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(s.cfg.ArtifactTransferTimeout))
 	w.Header().Set("Content-Disposition",fmt.Sprintf("attachment; filename=%q",artifact.FileName))
 	w.Header().Set("X-VPNX3-SHA256",artifact.SHA256)
 	http.ServeContent(w,r,artifact.FileName,stat.ModTime(),f)
