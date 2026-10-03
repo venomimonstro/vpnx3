@@ -11,10 +11,13 @@ import (
 type Monitor struct {
 	store *store.Store
 	logger *slog.Logger
+	onRoutingChange func()
 }
 
-func New(s *store.Store,logger *slog.Logger) *Monitor {
-	return &Monitor{store:s,logger:logger}
+func New(s *store.Store,logger *slog.Logger,onRoutingChange ...func()) *Monitor {
+	var callback func()
+	if len(onRoutingChange)>0 { callback=onRoutingChange[0] }
+	return &Monitor{store:s,logger:logger,onRoutingChange:callback}
 }
 
 func (m *Monitor) Run(ctx context.Context) {
@@ -49,5 +52,8 @@ func (m *Monitor) check(parent context.Context) {
 		} else {
 			m.logger.Info("probe circuit breaker recovered","node_id",change.NodeID,"health_score",change.Score)
 		}
+	}
+	if len(changes)>0 && m.onRoutingChange!=nil {
+		m.onRoutingChange()
 	}
 }
