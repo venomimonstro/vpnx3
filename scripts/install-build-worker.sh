@@ -11,6 +11,7 @@ TARGETS="android_apk,android_aab"
 CLIENT_CONTROL_URL=""
 CONFIG_PUBLIC_KEY=""
 RELEASE_PUBLIC_KEY=""
+ANDROID_SDK_ROOT_VALUE="/opt/android-sdk"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -24,6 +25,7 @@ while [[ $# -gt 0 ]]; do
     --client-control-url) CLIENT_CONTROL_URL="${2:-}"; shift 2;;
     --config-public-key) CONFIG_PUBLIC_KEY="${2:-}"; shift 2;;
     --release-public-key) RELEASE_PUBLIC_KEY="${2:-}"; shift 2;;
+    --android-sdk-root) ANDROID_SDK_ROOT_VALUE="${2:-}"; shift 2;;
     *) echo "Unknown argument: $1" >&2; exit 2;;
   esac
 done
@@ -54,6 +56,10 @@ VPNX3_CONFIG_PUBLIC_KEY=$CONFIG_PUBLIC_KEY
 VPNX3_RELEASE_PUBLIC_KEY=$RELEASE_PUBLIC_KEY
 VPNX3_AGENT_IDENTITY_PATH=/var/lib/vpnx3-build-worker/identity.json
 VPNX3_BUILD_WORK_ROOT=/var/lib/vpnx3-build-worker/work
+HOME=/var/lib/vpnx3-build-worker
+GRADLE_USER_HOME=/var/lib/vpnx3-build-worker/.gradle
+ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT_VALUE
+ANDROID_HOME=$ANDROID_SDK_ROOT_VALUE
 EOF
 chmod 0600 /etc/vpnx3-build-worker.env
 
