@@ -38,6 +38,13 @@ func New(addr string,logger *slog.Logger,verifier *proxylease.Verifier)*Server{
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter,r *http.Request){
+	if r.Method==http.MethodGet && r.URL.Path=="/__vpnx3/health" && r.Header.Get("Proxy-Authorization")=="" {
+		w.Header().Set("Content-Type","application/json")
+		w.Header().Set("Cache-Control","no-store")
+		w.WriteHeader(http.StatusOK)
+		_,_=w.Write([]byte(`{"status":"ok","service":"browser-ingress"}`))
+		return
+	}
 	claims,ok:=s.authorize(w,r)
 	if !ok{return}
 	if !s.acquire(claims.LeaseID){

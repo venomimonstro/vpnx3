@@ -69,47 +69,61 @@ func (c *Client) Report(ctx context.Context,results []store.ProbeObservation) er
 	return nil
 }
 
+type manifestNode struct {
+	ID string `json:"id"`
+	Endpoints []struct {
+		Kind string `json:"kind"`
+		Scheme string `json:"scheme"`
+		Host string `json:"host"`
+		Port int `json:"port"`
+		Path string `json:"path"`
+	} `json:"endpoints"`
+}
+
 func Observe(manifest clientconfig.Envelope) ([]store.ProbeObservation,error) {
 	var payload struct {
-		Workers []struct {
-			ID string `json:"id"`
-			Endpoints []struct {
-				Kind string `json:"kind"`
-				Scheme string `json:"scheme"`
-				Host string `json:"host"`
-				Port int `json:"port"`
-				Path string `json:"path"`
-			} `json:"endpoints"`
-		} `json:"workers"`
+		Workers []manifestNode `json:"workers"`
+		Ingresses []manifestNode `json:"ingresses"`
 	}
 	if err:=clientconfig.DecodePayload(manifest,&payload); err!=nil { return nil,err }
 
 	results:=make([]store.ProbeObservation,0)
 	httpClient:=&http.Client{Timeout:5*time.Second}
+
 	for _,worker:=range payload.Workers {
 		for _,ep:=range worker.Endpoints {
 			if ep.Kind!="session_api" || ep.Scheme!="https" { continue }
-			url:=fmt.Sprintf("https://%s:%d%s",ep.Host,ep.Port,ep.Path)
-			start:=time.Now()
-			req,err:=http.NewRequest(http.MethodGet,url,nil)
-			success:=false
-			if err==nil {
-				resp,doErr:=httpClient.Do(req)
-				if doErr==nil {
-					success=resp.StatusCode<500
-					_ = resp.Body.Close()
-				}
-			}
-			latency:=int(time.Since(start).Milliseconds())
-			results=append(results,store.ProbeObservation{
-				TargetNodeID:worker.ID,
-				EndpointKind:"session_api",
-				Success:success,
-				LatencyMS:latency,
-			})
+			results=append(results,observeHTTPS(httpClient,worker.ID,"session_api",
+				fmt.Sprintf("https://%s:%d%s",ep.Host,ep.Port,ep.Path)))
+		}
+	}
+	for _,ingress:=range payload.Ingresses {
+		for _,ep:=range ingress.Endpoints {
+			if ep.Kind!="ingress" || ep.Scheme!="https" { continue }
+			results=append(results,observeHTTPS(httpClient,ingress.ID,"ingress_https",
+				fmt.Sprintf("https://%s:%d/__vpnx3/health",ep.Host,ep.Port)))
 		}
 	}
 	return results,nil
+}
+
+func observeHTTPS(client *http.Client,nodeID,kind,url string) store.ProbeObservation {
+	start:=time.Now()
+	req,err:=http.NewRequest(http.MethodGet,url,nil)
+	success:=false
+	if err==nil {
+		resp,doErr:=client.Do(req)
+		if doErr==nil {
+			success=resp.StatusCode==http.StatusOK
+			_ = resp.Body.Close()
+		}
+	}
+	return store.ProbeObservation{
+		TargetNodeID:nodeID,
+		EndpointKind:kind,
+		Success:success,
+		LatencyMS:int(time.Since(start).Milliseconds()),
+	}
 }
 
 func loadSequence(path string) int64 {
