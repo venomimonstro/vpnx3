@@ -19,6 +19,9 @@ func Preflight(targets []string) error {
 			if sdk==""{sdk=strings.TrimSpace(os.Getenv("ANDROID_HOME"))}
 			if sdk=="" { return fmt.Errorf("ANDROID_SDK_ROOT or ANDROID_HOME is required") }
 			if stat,err:=os.Stat(filepath.Clean(sdk));err!=nil||!stat.IsDir(){return fmt.Errorf("Android SDK directory is unavailable")}
+			if _,err:=os.Stat(filepath.Join(sdk,"platforms","android-37","android.jar"));err!=nil{
+				return fmt.Errorf("Android compileSdk 37 platform is unavailable")
+			}
 			required:=[]string{
 				"VPNX3_ANDROID_KEYSTORE_PATH","VPNX3_ANDROID_KEYSTORE_PASSWORD",
 				"VPNX3_ANDROID_KEY_ALIAS","VPNX3_ANDROID_KEY_PASSWORD",
