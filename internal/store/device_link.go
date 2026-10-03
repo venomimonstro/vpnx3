@@ -139,3 +139,63 @@ func validateDeviceInput(platform,displayName,algorithm string,publicKey []byte)
 	if algorithm!="ed25519"&&algorithm!="ecdsa-p256-sha256"{return fmt.Errorf("unsupported identity algorithm")}
 	return nil
 }
+
+
+func (s *Store) RedeemDeviceLinkCode(ctx context.Context,deviceID,code string,now time.Time)(string,error){
+	code=strings.ToUpper(strings.TrimSpace(code))
+	if len(code)<10||len(code)>20{return "",fmt.Errorf("invalid link code")}
+	sum:=sha256.Sum256([]byte(code))
+
+	tx,err:=s.DB.Begin(ctx);if err!=nil{return "",err};defer tx.Rollback(ctx)
+
+	var sourceUserID,deviceStatus string
+	err=tx.QueryRow(ctx,`
+		SELECT user_id::text,status FROM devices WHERE id=$1 FOR UPDATE
+	`,deviceID).Scan(&sourceUserID,&deviceStatus)
+	if errors.Is(err,pgx.ErrNoRows){return "",ErrNotFound}
+	if err!=nil{return "",err}
+	if deviceStatus!="active"{return "",fmt.Errorf("device inactive")}
+
+	var linkID,targetUserID string
+	var expires time.Time
+	var usedAt *time.Time
+	err=tx.QueryRow(ctx,`
+		SELECT id::text,user_id::text,expires_at,used_at
+		FROM device_link_codes WHERE code_hash=$1 FOR UPDATE
+	`,sum[:]).Scan(&linkID,&targetUserID,&expires,&usedAt)
+	if errors.Is(err,pgx.ErrNoRows){return "",fmt.Errorf("invalid link code")}
+	if err!=nil{return "",err}
+	if usedAt!=nil||!expires.After(now){return "",fmt.Errorf("link code expired or used")}
+	if sourceUserID==targetUserID{return "",fmt.Errorf("device already belongs to target account")}
+
+	var targetStatus string
+	if err:=tx.QueryRow(ctx,"SELECT status FROM users WHERE id=$1 FOR UPDATE",targetUserID).Scan(&targetStatus);err!=nil{return "",err}
+	if targetStatus!="active"{return "",fmt.Errorf("target user inactive")}
+
+	limit,err:=activeDeviceLimit(ctx,tx,targetUserID,now)
+	if err!=nil{return "",err}
+	if limit<=1{return "",fmt.Errorf("plan does not allow additional devices")}
+	var targetActive int
+	if err:=tx.QueryRow(ctx,"SELECT count(*)::int FROM devices WHERE user_id=$1 AND status='active'",targetUserID).Scan(&targetActive);err!=nil{return "",err}
+	if targetActive>=limit{return "",fmt.Errorf("device limit reached")}
+
+	var sourceDevices,payments,subscriptions int
+	if err:=tx.QueryRow(ctx,"SELECT count(*)::int FROM devices WHERE user_id=$1",sourceUserID).Scan(&sourceDevices);err!=nil{return "",err}
+	if sourceDevices!=1{return "",fmt.Errorf("source account has multiple devices")}
+	if err:=tx.QueryRow(ctx,"SELECT count(*)::int FROM payments WHERE user_id=$1",sourceUserID).Scan(&payments);err!=nil{return "",err}
+	if err:=tx.QueryRow(ctx,"SELECT count(*)::int FROM subscriptions WHERE user_id=$1",sourceUserID).Scan(&subscriptions);err!=nil{return "",err}
+	if payments>0||subscriptions>0{return "",fmt.Errorf("source account has billing history")}
+
+	tag,err:=tx.Exec(ctx,`
+		UPDATE devices
+		SET user_id=$2,trial_started_at=NULL,trial_expires_at=NULL,last_seen_at=$3
+		WHERE id=$1 AND user_id=$4
+	`,deviceID,targetUserID,now,sourceUserID)
+	if err!=nil{return "",err}
+	if tag.RowsAffected()!=1{return "",fmt.Errorf("device move conflict")}
+	if _,err:=tx.Exec(ctx,"UPDATE device_link_codes SET used_at=$2 WHERE id=$1",linkID,now);err!=nil{return "",err}
+	if _,err:=tx.Exec(ctx,"DELETE FROM users WHERE id=$1",sourceUserID);err!=nil{return "",err}
+
+	if err:=tx.Commit(ctx);err!=nil{return "",err}
+	return targetUserID,nil
+}

@@ -73,6 +73,7 @@ func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSign
 	mux.HandleFunc("POST /api/v1/client/register",s.handleClientRegister)
 	mux.HandleFunc("POST /api/v1/client/link-code",s.handleCreateDeviceLinkCode)
 	mux.HandleFunc("POST /api/v1/client/register-linked",s.handleRegisterLinkedDevice)
+	mux.HandleFunc("POST /api/v1/client/redeem-link-code",s.handleRedeemDeviceLinkCode)
 	mux.HandleFunc("POST /api/v1/client/lease",s.handleClientLease)
 	mux.HandleFunc("POST /api/v1/client/proxy-lease",s.handleClientProxyLease)
 	mux.HandleFunc("GET /api/v1/access/signing-key",s.handleAccessSigningKey)

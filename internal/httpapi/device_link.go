@@ -76,3 +76,41 @@ func (s *Server) handleRegisterLinkedDevice(w http.ResponseWriter,r *http.Reques
 		"user_id":reg.UserID,"device_id":reg.DeviceID,"trial_expires_at":"",
 	})
 }
+
+
+func (s *Server) handleRedeemDeviceLinkCode(w http.ResponseWriter,r *http.Request){
+	body,err:=io.ReadAll(http.MaxBytesReader(w,r.Body,16<<10))
+	if err!=nil{writeError(w,http.StatusBadRequest,"invalid_body");return}
+	var req struct{
+		Sequence int64 `json:"sequence"`
+		LinkCode string `json:"link_code"`
+	}
+	dec:=json.NewDecoder(bytes.NewReader(body));dec.DisallowUnknownFields()
+	if err:=dec.Decode(&req);err!=nil||req.Sequence<=0||strings.TrimSpace(req.LinkCode)==""{
+		writeError(w,http.StatusBadRequest,"invalid_json");return
+	}
+
+	deviceID:=strings.TrimSpace(r.Header.Get("X-VPNX3-Device-ID"))
+	ts:=strings.TrimSpace(r.Header.Get("X-VPNX3-Timestamp"))
+	sig:=strings.TrimSpace(r.Header.Get("X-VPNX3-Signature"))
+	state,err:=s.store.DeviceAuthState(r.Context(),deviceID)
+	if err!=nil||state.Status!="active"{writeError(w,http.StatusUnauthorized,"invalid_device");return}
+	if req.Sequence<=state.Sequence{writeError(w,http.StatusConflict,"stale_request");return}
+	if err:=deviceauth.Verify(state.IdentityAlgorithm,state.PublicKey,r.Method,r.URL.Path,ts,sig,body,time.Now().UTC());err!=nil{
+		writeError(w,http.StatusUnauthorized,"invalid_device_signature");return
+	}
+	if err:=s.store.AdvanceDeviceSequence(r.Context(),deviceID,req.Sequence);err!=nil{
+		writeError(w,http.StatusConflict,"stale_request");return
+	}
+
+	userID,err:=s.store.RedeemDeviceLinkCode(r.Context(),deviceID,req.LinkCode,time.Now().UTC())
+	if err!=nil{
+		if strings.Contains(err.Error(),"code")||strings.Contains(err.Error(),"limit")||
+			strings.Contains(err.Error(),"source account")||strings.Contains(err.Error(),"already belongs")||
+			strings.Contains(err.Error(),"additional"){
+			writeJSON(w,http.StatusConflict,map[string]string{"error":"device_link_failed","detail":err.Error()});return
+		}
+		s.internalError(w,r,err);return
+	}
+	writeJSON(w,http.StatusOK,map[string]string{"user_id":userID,"device_id":deviceID})
+}
