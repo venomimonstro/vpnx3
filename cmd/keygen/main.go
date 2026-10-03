@@ -10,14 +10,12 @@ import (
 )
 
 func main() {
-	pub,_,err:=ed25519.GenerateKey(rand.Reader)
-	if err!=nil { panic(err) }
 	_,priv,err:=ed25519.GenerateKey(rand.Reader)
 	if err!=nil { panic(err) }
 	seed:=priv.Seed()
-	sum:=sha256.Sum256(priv.Public().(ed25519.PublicKey))
+	pub:=priv.Public().(ed25519.PublicKey)
+	sum:=sha256.Sum256(pub)
 	fmt.Println("VPNX3_CONFIG_SIGNING_KEY="+base64.RawURLEncoding.EncodeToString(seed))
-	fmt.Println("public_key="+base64.RawURLEncoding.EncodeToString(priv.Public().(ed25519.PublicKey)))
+	fmt.Println("public_key="+base64.RawURLEncoding.EncodeToString(pub))
 	fmt.Println("key_id="+hex.EncodeToString(sum[:8]))
-	_ = pub
 }

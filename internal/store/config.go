@@ -8,10 +8,10 @@ import (
 )
 
 type ConfigIngress struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	CountryCode *string `json:"country_code,omitempty"`
-	PublicIP    *string `json:"public_ip,omitempty"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	CountryCode *string  `json:"country_code,omitempty"`
+	PublicIP    *string  `json:"public_ip,omitempty"`
 	HealthScore *float64 `json:"health_score,omitempty"`
 }
 
@@ -19,7 +19,7 @@ func (s *Store) ActiveIngresses(ctx context.Context) ([]ConfigIngress,error) {
 	rows,err:=s.DB.Query(ctx,`
 		SELECT id::text,name,country_code,host(public_ip),health_score::float8
 		FROM nodes
-		WHERE role='ingress' AND status='active'
+		WHERE role='ingress' AND status='active' AND public_ip IS NOT NULL
 		ORDER BY country_code NULLS LAST,name
 	`)
 	if err!=nil { return nil,fmt.Errorf("list active ingresses: %w",err) }
@@ -58,9 +58,9 @@ func (s *Store) SaveConfigManifest(ctx context.Context,version int64,payload,sig
 
 func (s *Store) LatestConfigManifest(ctx context.Context) (StoredManifest,error) {
 	var m StoredManifest
-	var raw []byte
+	var raw string
 	err:=s.DB.QueryRow(ctx,`
-		SELECT version,payload::text::bytea,signature,key_id,created_at
+		SELECT version,payload::text,signature,key_id,created_at
 		FROM config_manifests ORDER BY version DESC LIMIT 1
 	`).Scan(&m.Version,&raw,&m.Signature,&m.KeyID,&m.CreatedAt)
 	if err!=nil { return StoredManifest{},err }
