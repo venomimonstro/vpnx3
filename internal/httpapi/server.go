@@ -11,6 +11,7 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/config"
 	"github.com/venomimonstro/vpnx3/internal/configservice"
 	"github.com/venomimonstro/vpnx3/internal/billing"
+	"github.com/venomimonstro/vpnx3/internal/adminui"
 	"github.com/venomimonstro/vpnx3/internal/billing/yookassa"
 	"github.com/venomimonstro/vpnx3/internal/signing"
 	"github.com/venomimonstro/vpnx3/internal/store"
@@ -51,6 +52,9 @@ func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSign
 		configSigner:configSigner,accessSigner:accessSigner,
 		billing:billing.New(store.New(db)),yooKassa:yoo,
 	}
+	adminHandler:=http.StripPrefix("/admin/",adminui.Handler())
+	mux.HandleFunc("GET /admin",func(w http.ResponseWriter,r *http.Request){ http.Redirect(w,r,"/admin/",http.StatusTemporaryRedirect) })
+	mux.Handle("GET /admin/",adminHandler)
 	mux.HandleFunc("GET /health/live",s.handleLive)
 	mux.HandleFunc("GET /health/ready",s.handleReady)
 	mux.HandleFunc("GET /api/v1/meta",func(w http.ResponseWriter,r *http.Request){
