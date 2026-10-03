@@ -101,6 +101,11 @@ private fun HomeScreen(
             Text("Пробный доступ до $it")
         }
 
+        state.availableVersion?.let {
+            Spacer(Modifier.height(8.dp))
+            Text("Доступна версия $it")
+        }
+
         state.error?.let {
             Spacer(Modifier.height(12.dp))
             Text(it, color = MaterialTheme.colorScheme.error)

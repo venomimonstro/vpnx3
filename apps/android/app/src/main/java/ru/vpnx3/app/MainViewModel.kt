@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import ru.vpnx3.app.data.PreparedConnection
 import ru.vpnx3.app.data.VpnRepository
+import ru.vpnx3.app.update.UpdateRepository
 
 enum class ConnectionState {
     PREPARING,
@@ -24,11 +25,13 @@ data class MainUiState(
     val registered: Boolean = false,
     val trialExpiresAt: String? = null,
     val connection: ConnectionState = ConnectionState.PREPARING,
-    val error: String? = null
+    val error: String? = null,
+    val availableVersion: String? = null
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = VpnRepository(application)
+    private val updates = UpdateRepository()
     private val mutableState = MutableStateFlow(MainUiState())
     val state: StateFlow<MainUiState> = mutableState.asStateFlow()
 
@@ -44,12 +47,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching {
                 val registration = repository.ensureRegistered()
                 repository.latestConfig()
-                registration
-            }.onSuccess { registration ->
+                val update = runCatching { updates.latest() }.getOrNull()
+                Pair(registration, update)
+            }.onSuccess { result ->
+                val registration=result.first
                 mutableState.value = MainUiState(
                     registered = true,
                     trialExpiresAt = registration.trialExpiresAt,
-                    connection = ConnectionState.DISCONNECTED
+                    connection = ConnectionState.DISCONNECTED,
+                    availableVersion = result.second?.version
                 )
             }.onFailure {
                 mutableState.value = MainUiState(

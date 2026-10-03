@@ -37,9 +37,13 @@ android {
         val configPublicKey = providers.gradleProperty("VPNX3_CONFIG_PUBLIC_KEY")
             .orElse("")
             .get()
+        val releasePublicKey = providers.gradleProperty("VPNX3_RELEASE_PUBLIC_KEY")
+            .orElse("")
+            .get()
 
         buildConfigField("String", "CONTROL_URL", "\"$controlUrl\"")
         buildConfigField("String", "CONFIG_PUBLIC_KEY", "\"$configPublicKey\"")
+        buildConfigField("String", "RELEASE_PUBLIC_KEY", "\"$releasePublicKey\"")
     }
 
     buildTypes {

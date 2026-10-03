@@ -26,11 +26,12 @@ type Server struct {
 	configService *configservice.Service
 	configSigner *signing.Signer
 	accessSigner *signing.Signer
+	releaseSigner *signing.Signer
 	billing *billing.Service
 	yooKassa *yookassa.Adapter
 }
 
-func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSigner,accessSigner *signing.Signer) *Server {
+func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSigner,accessSigner,releaseSigner *signing.Signer) *Server {
 	mux:=http.NewServeMux()
 	var yoo *yookassa.Adapter
 	if cfg.YooKassaShopID!="" {
@@ -49,7 +50,7 @@ func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSign
 				PersistentKeepalive:cfg.WireGuardKeepalive,
 			},
 		),
-		configSigner:configSigner,accessSigner:accessSigner,
+		configSigner:configSigner,accessSigner:accessSigner,releaseSigner:releaseSigner,
 		billing:billing.New(store.New(db)),yooKassa:yoo,
 	}
 	adminHandler:=http.StripPrefix("/admin/",adminui.Handler())
@@ -72,6 +73,9 @@ func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSign
 	mux.HandleFunc("POST /api/v1/client/register",s.handleClientRegister)
 	mux.HandleFunc("POST /api/v1/client/lease",s.handleClientLease)
 	mux.HandleFunc("GET /api/v1/plans",s.handlePublicPlans)
+	mux.HandleFunc("GET /api/v1/releases/latest",s.handleLatestRelease)
+	mux.HandleFunc("GET /api/v1/releases/signing-key",s.handleReleaseSigningKey)
+	mux.HandleFunc("GET /api/v1/releases/{id}/artifacts/{artifactId}/download",s.handlePublicArtifactDownload)
 	mux.HandleFunc("POST /api/v1/client/payments",s.handleClientCreatePayment)
 	mux.HandleFunc("POST /api/v1/webhooks/yookassa",s.handleYooKassaWebhook)
 	mux.Handle("GET /api/v1/admin/me",s.requireAdmin(http.HandlerFunc(s.handleAdminMe)))

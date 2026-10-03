@@ -52,6 +52,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	var releaseSigner *signing.Signer
+	if cfg.ReleaseSigningKey!="" {
+		releaseSigner,err=signing.FromSeedBase64(cfg.ReleaseSigningKey)
+		if err!=nil {
+			logger.Error("release signing key initialization failed","error",err)
+			os.Exit(1)
+		}
+	}
+
 	nodeStore := store.New(db)
 	monitorCtx, monitorCancel := context.WithCancel(context.Background())
 	defer monitorCancel()
@@ -59,7 +68,7 @@ func main() {
 	go loginthrottle.New(nodeStore,logger).Run(monitorCtx)
 	go probemonitor.New(nodeStore,logger).Run(monitorCtx)
 
-	srv := httpapi.NewServer(cfg,logger,db,configSigner,accessSigner)
+	srv := httpapi.NewServer(cfg,logger,db,configSigner,accessSigner,releaseSigner)
 	serverErr := make(chan error,1)
 	go func() {
 		logger.Info("control plane starting","addr",cfg.HTTPAddr,"env",cfg.Environment)

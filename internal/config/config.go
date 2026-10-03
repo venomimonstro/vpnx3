@@ -23,6 +23,7 @@ type Config struct {
 	BootstrapOwnerPassword string
 	ConfigSigningKey       string
 	AccessSigningKey       string
+	ReleaseSigningKey      string
 	AccessLeaseTTL         time.Duration
 	TrialDays              int
 	ClientDNS              []string
@@ -49,6 +50,7 @@ func Load() (Config, error) {
 		BootstrapOwnerPassword: os.Getenv("VPNX3_BOOTSTRAP_OWNER_PASSWORD"),
 		ConfigSigningKey:       strings.TrimSpace(os.Getenv("VPNX3_CONFIG_SIGNING_KEY")),
 		AccessSigningKey:       strings.TrimSpace(os.Getenv("VPNX3_ACCESS_SIGNING_KEY")),
+		ReleaseSigningKey:      strings.TrimSpace(os.Getenv("VPNX3_RELEASE_SIGNING_KEY")),
 		AccessLeaseTTL:         duration("VPNX3_ACCESS_LEASE_TTL", 6*time.Hour),
 		TrialDays:              intEnv("VPNX3_TRIAL_DAYS", 7),
 		ClientDNS:              csvEnv("VPNX3_CLIENT_DNS"),
