@@ -79,7 +79,7 @@ type StoredManifest struct {
 func (s *Store) SaveConfigManifest(ctx context.Context,version int64,payload,signature []byte,keyID,adminID string) error {
 	_,err:=s.DB.Exec(ctx,`
 		INSERT INTO config_manifests(version,payload,payload_raw,signature,key_id,created_by)
-		VALUES($1,$2::jsonb,$3,$4,$5,$6)
+		VALUES($1,$2::jsonb,$3,$4,$5,NULLIF($6,'')::uuid)
 	`,version,string(payload),payload,signature,keyID,adminID)
 	if err!=nil { return fmt.Errorf("save config manifest: %w",err) }
 	return nil
