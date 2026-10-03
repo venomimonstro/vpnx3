@@ -18,16 +18,8 @@ type DeviceRegistration struct {
 
 func (s *Store) RegisterAnonymousDevice(ctx context.Context,platform,displayName,algorithm string,publicKey []byte,trialDays int) (DeviceRegistration,error) {
 	platform=strings.TrimSpace(strings.ToLower(platform))
-	switch platform {
-	case "android","ios","chrome","firefox","windows","macos","linux":
-	default:
-		return DeviceRegistration{},fmt.Errorf("unsupported platform")
-	}
-	displayName=strings.TrimSpace(displayName)
-	if displayName=="" || len(displayName)>120 { return DeviceRegistration{},fmt.Errorf("invalid display name") }
-	if len(publicKey)==0 || len(publicKey)>2048 { return DeviceRegistration{},fmt.Errorf("invalid public key") }
-	if algorithm!="ed25519" && algorithm!="ecdsa-p256-sha256" {
-		return DeviceRegistration{},fmt.Errorf("unsupported identity algorithm")
+	if err:=validateDeviceInput(platform,displayName,algorithm,publicKey);err!=nil{
+		return DeviceRegistration{},err
 	}
 	if trialDays<0 || trialDays>30 { return DeviceRegistration{},fmt.Errorf("invalid trial duration") }
 
