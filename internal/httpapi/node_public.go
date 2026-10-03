@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -37,15 +36,16 @@ func (s *Server) handleNodeEnroll(w http.ResponseWriter, r *http.Request) {
 		Capacity:req.Capacity,PublicIP:req.PublicIP,
 	})
 	if err != nil {
-		if strings.Contains(err.Error(),"invalid or expired") {
+		switch {
+		case strings.Contains(err.Error(),"invalid or expired"):
 			writeError(w,http.StatusUnauthorized,"invalid_enrollment_token")
-			return
-		}
-		if strings.Contains(err.Error(),"duplicate key") {
+		case strings.Contains(err.Error(),"duplicate key"):
 			writeError(w,http.StatusConflict,"node_already_exists")
-			return
+		case strings.Contains(err.Error(),"country code"), strings.Contains(err.Error(),"node name"):
+			writeError(w,http.StatusBadRequest,"invalid_node_data")
+		default:
+			s.internalError(w,r,err)
 		}
-		s.internalError(w,r,err)
 		return
 	}
 	writeJSON(w,http.StatusCreated,map[string]any{
@@ -92,15 +92,23 @@ func (s *Server) handleNodeHeartbeat(w http.ResponseWriter, r *http.Request) {
 		writeError(w,http.StatusBadRequest,"invalid_json")
 		return
 	}
+	if req.Sequence <= 0 {
+		writeError(w,http.StatusBadRequest,"invalid_sequence")
+		return
+	}
 	if req.Sequence <= currentSeq {
 		writeError(w,http.StatusConflict,"stale_heartbeat")
 		return
 	}
-	if req.Sequence <= 0 || req.Sequence > strconv.MaxInt64 {
-		writeError(w,http.StatusBadRequest,"invalid_sequence")
+	if req.CurrentSessions < 0 || req.Capacity < 0 {
+		writeError(w,http.StatusBadRequest,"invalid_metrics")
 		return
 	}
 	if len(req.Metadata) == 0 { req.Metadata = json.RawMessage(`{}`) }
+	if !json.Valid(req.Metadata) {
+		writeError(w,http.StatusBadRequest,"invalid_metadata")
+		return
+	}
 	if err := s.store.RecordHeartbeat(r.Context(),store.HeartbeatInput{
 		NodeID:nodeID,Sequence:req.Sequence,CurrentSessions:req.CurrentSessions,
 		Capacity:req.Capacity,AgentVersion:req.AgentVersion,
@@ -113,7 +121,10 @@ func (s *Server) handleNodeHeartbeat(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w,r,err)
 		return
 	}
-	s.store.PromoteEnrolledNode(r.Context(),nodeID)
+	if err := s.store.PromoteEnrolledNode(r.Context(),nodeID); err != nil {
+		s.internalError(w,r,err)
+		return
+	}
 	writeJSON(w,http.StatusOK,map[string]any{
 		"status":"ok",
 		"server_time":time.Now().UTC(),
