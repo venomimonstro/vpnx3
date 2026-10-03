@@ -25,6 +25,13 @@ data class WorkerRoute(
     val wireGuard: NetworkEndpoint
 )
 
+private data class RouteCandidate(
+    val route: WorkerRoute,
+    val priority: Int,
+    val latencyMs: Double,
+    val health: Double
+)
+
 object RoutingSelector {
     fun candidates(config: VerifiedConfig): List<WorkerRoute> {
         val workers = config.payload.getJSONArray("workers")
@@ -56,15 +63,21 @@ object RoutingSelector {
                     } else {
                         0.0
                     }
+                    val latency = if (worker.has("latency_ms") && !worker.isNull("latency_ms")) {
+                        worker.getDouble("latency_ms")
+                    } else {
+                        Double.MAX_VALUE
+                    }
                     add(
-                        Triple(
-                            WorkerRoute(
+                        RouteCandidate(
+                            route = WorkerRoute(
                                 nodeId = worker.getString("id"),
                                 sessionApi = sessionApi!!,
                                 wireGuard = wireGuard!!
                             ),
-                            sessionApi!!.priority + wireGuard!!.priority,
-                            health
+                            priority = sessionApi!!.priority + wireGuard!!.priority,
+                            latencyMs = latency,
+                            health = health
                         )
                     )
                 }
@@ -73,10 +86,11 @@ object RoutingSelector {
 
         return candidates
             .sortedWith(
-                compareBy<Triple<WorkerRoute, Int, Double>> { it.second }
-                    .thenByDescending { it.third }
+                compareBy<RouteCandidate> { it.priority }
+                    .thenBy { it.latencyMs }
+                    .thenByDescending { it.health }
             )
-            .map { it.first }
+            .map { it.route }
     }
 
     fun select(config: VerifiedConfig): WorkerRoute =

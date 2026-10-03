@@ -21,12 +21,20 @@ type ConfigNode struct {
 	Name string `json:"name"`
 	CountryCode *string `json:"country_code,omitempty"`
 	HealthScore *float64 `json:"health_score,omitempty"`
+	LatencyMS *float64 `json:"latency_ms,omitempty"`
 	Endpoints []ConfigEndpoint `json:"endpoints"`
 }
 
 func (s *Store) ActiveConfigNodes(ctx context.Context,role string) ([]ConfigNode,error) {
 	rows,err:=s.DB.Query(ctx,`
 		SELECT n.id::text,n.name,n.country_code,n.health_score::float8,
+		       (
+		         SELECT avg(p.latency_ms)::float8
+		         FROM probe_results p
+		         WHERE p.target_node_id=n.id
+		           AND p.success=true
+		           AND p.observed_at>=now()-interval '3 minutes'
+		       ) AS latency_ms,
 		       e.kind,e.transport,e.scheme,e.host,e.port,e.path,e.priority
 		FROM nodes n
 		JOIN node_endpoints e ON e.node_id=n.id AND e.enabled=true
@@ -40,14 +48,14 @@ func (s *Store) ActiveConfigNodes(ctx context.Context,role string) ([]ConfigNode
 	for rows.Next() {
 		var id,name string
 		var country *string
-		var health *float64
+		var health,latency *float64
 		var ep ConfigEndpoint
-		if err:=rows.Scan(&id,&name,&country,&health,&ep.Kind,&ep.Transport,&ep.Scheme,&ep.Host,&ep.Port,&ep.Path,&ep.Priority); err!=nil { return nil,err }
+		if err:=rows.Scan(&id,&name,&country,&health,&latency,&ep.Kind,&ep.Transport,&ep.Scheme,&ep.Host,&ep.Port,&ep.Path,&ep.Priority); err!=nil { return nil,err }
 		i,ok:=index[id]
 		if !ok {
 			i=len(out)
 			index[id]=i
-			out=append(out,ConfigNode{ID:id,Name:name,CountryCode:country,HealthScore:health,Endpoints:[]ConfigEndpoint{}})
+			out=append(out,ConfigNode{ID:id,Name:name,CountryCode:country,HealthScore:health,LatencyMS:latency,Endpoints:[]ConfigEndpoint{}})
 		}
 		out[i].Endpoints=append(out[i].Endpoints,ep)
 	}

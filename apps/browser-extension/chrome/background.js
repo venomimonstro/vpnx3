@@ -170,11 +170,15 @@ async function latestIngress(){
   for(const node of (cfg.ingresses||[])){
     for(const ep of (node.endpoints||[])){
       if(ep.kind==="ingress"&&ep.scheme==="https"&&ep.transport==="http-connect"){
-        candidates.push({host:ep.host,port:ep.port,priority:ep.priority||100,health:node.health_score??0,nodeId:node.id});
+        candidates.push({
+          host:ep.host,port:ep.port,priority:ep.priority||100,
+          latency:Number.isFinite(node.latency_ms)?node.latency_ms:Number.MAX_SAFE_INTEGER,
+          health:node.health_score??0,nodeId:node.id
+        });
       }
     }
   }
-  candidates.sort((a,b)=>a.priority-b.priority||b.health-a.health);
+  candidates.sort((a,b)=>a.priority-b.priority||a.latency-b.latency||b.health-a.health);
   if(!candidates.length) throw new Error("No active browser ingress");
   return candidates[0];
 }
