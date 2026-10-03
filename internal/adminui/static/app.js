@@ -173,7 +173,14 @@ function nodeActions(n){
   const box=$("div",{class:"row-actions"});
   box.append($("button",{class:"btn",onclick:()=>endpointDialog(n)},"Endpoints"));
   if(can("nodes.manage")){
-    const actions=[["active","publish","В работу"],["draining","drain","Drain"],["maintenance","maintenance","Обслуживание"],["quarantined","quarantine","Карантин"],["retired","retire","Списать"]];
+    const actions=[
+      ["draft","approve","Принять тест"],
+      ["active","publish","В работу"],
+      ["draining","drain","Drain"],
+      ["maintenance","maintenance","Обслуживание"],
+      ["quarantined","quarantine","Карантин"],
+      ["retired","retire","Списать"]
+    ];
     actions.forEach(([,path,label])=>box.append($("button",{class:"btn",onclick:async()=>{try{await api("/api/v1/nodes/"+n.id+"/"+path,{method:"POST",body:JSON.stringify({reason:"admin ui"})});renderSection()}catch(e){alert(e.message)}}},label)));
   }
   return box;

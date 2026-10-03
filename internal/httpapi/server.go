@@ -113,6 +113,7 @@ func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSign
 	mux.Handle("POST /api/v1/nodes/{id}/endpoints",s.requireAdmin(requirePermission("nodes.manage",http.HandlerFunc(s.handleCreateNodeEndpoint))))
 	mux.Handle("DELETE /api/v1/nodes/{id}/endpoints/{endpointId}",s.requireAdmin(requirePermission("nodes.manage",http.HandlerFunc(s.handleDeleteNodeEndpoint))))
 	mux.Handle("POST /api/v1/nodes/enrollment-tokens",s.requireAdmin(requirePermission("nodes.manage",http.HandlerFunc(s.handleCreateEnrollmentToken))))
+	mux.Handle("POST /api/v1/nodes/{id}/approve",s.requireAdmin(requirePermission("nodes.manage",s.handleNodeTransition("draft"))))
 	mux.Handle("POST /api/v1/nodes/{id}/publish",s.requireAdmin(requirePermission("nodes.manage",s.handleNodeTransition("active"))))
 	mux.Handle("POST /api/v1/nodes/{id}/drain",s.requireAdmin(requirePermission("nodes.manage",s.handleNodeTransition("draining"))))
 	mux.Handle("POST /api/v1/nodes/{id}/maintenance",s.requireAdmin(requirePermission("nodes.manage",s.handleNodeTransition("maintenance"))))
