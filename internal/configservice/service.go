@@ -76,3 +76,8 @@ func (s *Service) Latest(ctx context.Context) (Envelope,error) {
 	if err!=nil { return Envelope{},err }
 	return encodeEnvelope(m.Payload,m.Signature,m.KeyID),nil
 }
+
+
+func (s *Service) CleanupHistory(ctx context.Context) (int64,error) {
+	return s.store.CleanupConfigManifests(ctx)
+}
