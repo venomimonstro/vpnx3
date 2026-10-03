@@ -82,6 +82,8 @@ func NewServer(cfg config.Config,logger *slog.Logger,db *pgxpool.Pool,configSign
 	mux.Handle("GET /api/v1/admin/dashboard",s.requireAdmin(requirePermission("analytics.read",http.HandlerFunc(s.handleDashboard))))
 	mux.Handle("GET /api/v1/admin/users",s.requireAdmin(requirePermission("users.read",http.HandlerFunc(s.handleUsers))))
 	mux.Handle("GET /api/v1/admin/users/{id}/devices",s.requireAdmin(requirePermission("users.read",http.HandlerFunc(s.handleUserDevices))))
+	mux.Handle("POST /api/v1/admin/users/{id}/devices/{deviceId}/revoke",s.requireAdmin(requirePermission("users.manage",http.HandlerFunc(s.handleRevokeUserDevice))))
+	mux.Handle("POST /api/v1/admin/users/{id}/devices/{deviceId}/reactivate",s.requireAdmin(requirePermission("users.manage",http.HandlerFunc(s.handleReactivateUserDevice))))
 	mux.Handle("GET /api/v1/admin/payments",s.requireAdmin(requirePermission("billing.read",http.HandlerFunc(s.handlePayments))))
 	mux.Handle("GET /api/v1/admin/audit",s.requireAdmin(requirePermission("audit.read",http.HandlerFunc(s.handleAudit))))
 	mux.Handle("GET /api/v1/admin/incidents",s.requireAdmin(requirePermission("incidents.read",http.HandlerFunc(s.handleIncidents))))

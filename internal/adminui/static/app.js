@@ -198,9 +198,29 @@ async function probes(){
 
 async function users(){
   const d=await api("/api/v1/admin/users?limit=200");
-  return sectionFrame("Пользователи",table(["ID","Статус","Устройства","Подписка","До","Создан","Последняя активность"],d.users.map(u=>[
-    $("span",{class:"mono"},u.id),badge(u.status),u.device_count,u.subscription||"trial/нет",dt(u.expires_at),dt(u.created_at),dt(u.last_seen_at)
+  return sectionFrame("Пользователи",table(["ID","Статус","Устройства","Подписка","До","Создан","Последняя активность","Действие"],d.users.map(u=>[
+    $("span",{class:"mono"},u.id),badge(u.status),u.device_count,u.subscription||"trial/нет",dt(u.expires_at),dt(u.created_at),dt(u.last_seen_at),
+    $("button",{class:"btn",onclick:()=>userDevices(u)},"Устройства")
   ])));
+}
+async function userDevices(u){
+  try{
+    const d=await api("/api/v1/admin/users/"+u.id+"/devices");
+    if(!d.devices.length){alert("Устройств нет");return}
+    const lines=d.devices.map(x=>x.id+" | "+x.platform+" | "+x.display_name+" | "+x.status+" | last "+dt(x.last_seen_at)).join("\n");
+    if(!can("users.manage")){alert(lines);return}
+    const cmd=prompt(lines+"\n\nКоманда: revoke <device-id> / reactivate <device-id>","");
+    if(!cmd)return;
+    const [op,id]=cmd.trim().split(/\s+/,2);
+    if(!id)return;
+    if(op==="revoke"){
+      if(!confirm("Отозвать устройство? Новые Access Lease будут запрещены. Уже активная offline-сессия живёт до своего expires_at."))return;
+      await api("/api/v1/admin/users/"+u.id+"/devices/"+encodeURIComponent(id)+"/revoke",{method:"POST"});
+    }else if(op==="reactivate"){
+      await api("/api/v1/admin/users/"+u.id+"/devices/"+encodeURIComponent(id)+"/reactivate",{method:"POST"});
+    }
+    renderSection();
+  }catch(e){alert(e.message)}
 }
 
 async function billing(){

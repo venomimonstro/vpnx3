@@ -93,3 +93,32 @@ func (s *Server) handleResolveIncident(w http.ResponseWriter,r *http.Request) {
 		requestIDFromContext(r.Context()),ipString(clientIP(r)),"success")
 	writeJSON(w,http.StatusOK,incident)
 }
+
+
+func (s *Server) handleRevokeUserDevice(w http.ResponseWriter,r *http.Request) {
+	userID:=r.PathValue("id")
+	deviceID:=r.PathValue("deviceId")
+	err:=s.store.RevokeUserDevice(r.Context(),userID,deviceID)
+	if err!=nil{
+		if err.Error()=="not found"{writeError(w,http.StatusNotFound,"device_not_found");return}
+		if strings.Contains(err.Error(),"not active"){writeError(w,http.StatusConflict,"device_not_active");return}
+		s.internalError(w,r,err);return
+	}
+	admin,_:=adminFromContext(r.Context())
+	_ = s.store.WriteAudit(r.Context(),"admin",admin.ID,"device.revoke","device",deviceID,
+		requestIDFromContext(r.Context()),ipString(clientIP(r)),"success")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleReactivateUserDevice(w http.ResponseWriter,r *http.Request) {
+	userID:=r.PathValue("id")
+	deviceID:=r.PathValue("deviceId")
+	if err:=s.store.ReactivateUserDevice(r.Context(),userID,deviceID);err!=nil{
+		if err.Error()=="not found"{writeError(w,http.StatusNotFound,"device_not_found");return}
+		s.internalError(w,r,err);return
+	}
+	admin,_:=adminFromContext(r.Context())
+	_ = s.store.WriteAudit(r.Context(),"admin",admin.ID,"device.reactivate","device",deviceID,
+		requestIDFromContext(r.Context()),ipString(clientIP(r)),"success")
+	w.WriteHeader(http.StatusNoContent)
+}
