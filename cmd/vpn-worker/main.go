@@ -25,14 +25,32 @@ func main() {
 
 	pool,err:=ipam.New(env("VPNX3_WG_POOL","10.66.0.0/24"))
 	if err!=nil { logger.Error("IP pool initialization failed","error",err); os.Exit(1) }
+
 	adapter,err:=wgadapter.New(env("VPNX3_WG_INTERFACE","wg0"),strings.TrimSpace(os.Getenv("VPNX3_WG_ENDPOINT")))
 	if err!=nil { logger.Error("wireguard adapter initialization failed","error",err); os.Exit(1) }
-	if err:=adapter.Healthy(context.Background()); err!=nil {
+	healthCtx,healthCancel:=context.WithTimeout(context.Background(),3*time.Second)
+	if err:=adapter.Healthy(healthCtx); err!=nil {
+		healthCancel()
 		logger.Error("wireguard interface is not ready","error",err)
 		os.Exit(1)
 	}
+	healthCancel()
 
-	manager:=sessions.New(verifier,pool,adapter)
+	manager:=sessions.New(
+		verifier,
+		pool,
+		adapter,
+		env("VPNX3_WORKER_STATE_PATH","/var/lib/vpnx3-worker/sessions.json"),
+	)
+	restoreCtx,restoreCancel:=context.WithTimeout(context.Background(),15*time.Second)
+	restored,err:=manager.Restore(restoreCtx,time.Now().UTC())
+	restoreCancel()
+	if err!=nil {
+		logger.Error("worker session recovery failed","error",err)
+		os.Exit(1)
+	}
+	logger.Info("worker session state restored","sessions",restored)
+
 	addr:=env("VPNX3_WORKER_AUTH_ADDR","127.0.0.1:9090")
 	srv:=workerauth.New(addr,logger,verifier,manager,adapter)
 

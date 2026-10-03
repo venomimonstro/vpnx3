@@ -8,12 +8,12 @@ import (
 )
 
 type Pool struct {
-	mu sync.Mutex
+	mu     sync.Mutex
 	prefix netip.Prefix
-	first uint32
-	last uint32
-	used map[netip.Addr]string
-	byKey map[string]netip.Addr
+	first  uint32
+	last   uint32
+	used   map[netip.Addr]string
+	byKey  map[string]netip.Addr
 }
 
 func New(cidr string) (*Pool,error) {
@@ -24,10 +24,9 @@ func New(cidr string) (*Pool,error) {
 	if bits<16 || bits>29 { return nil,fmt.Errorf("pool prefix must be between /16 and /29") }
 	base:=addrUint32(prefix.Masked().Addr())
 	size:=uint32(1) << uint32(32-bits)
-	// Network + first host are reserved for network/gateway. Broadcast is reserved.
 	first:=base+2
 	last:=base+size-2
-	return &Pool{prefix:prefix,first:first,last:last,used:map[netip.Addr]string{},byKey:map[string]netip.Addr{}},nil
+	return &Pool{prefix:prefix.Masked(),first:first,last:last,used:map[netip.Addr]string{},byKey:map[string]netip.Addr{}},nil
 }
 
 func (p *Pool) Acquire(key string) (netip.Addr,error) {
@@ -51,6 +50,28 @@ func (p *Pool) Acquire(key string) (netip.Addr,error) {
 	return netip.Addr{},fmt.Errorf("address pool exhausted")
 }
 
+func (p *Pool) Reserve(key,address string) (netip.Addr,error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	addr,err:=netip.ParseAddr(address)
+	if err!=nil || !addr.Is4() { return netip.Addr{},fmt.Errorf("invalid reserved IPv4 address") }
+	v:=addrUint32(addr)
+	if v<p.first || v>p.last || !p.prefix.Contains(addr) {
+		return netip.Addr{},fmt.Errorf("reserved address outside pool")
+	}
+	if existing,ok:=p.byKey[key]; ok {
+		if existing==addr { return addr,nil }
+		return netip.Addr{},fmt.Errorf("key already owns another address")
+	}
+	if owner,used:=p.used[addr]; used && owner!=key {
+		return netip.Addr{},fmt.Errorf("address already reserved")
+	}
+	p.used[addr]=key
+	p.byKey[key]=addr
+	return addr,nil
+}
+
 func (p *Pool) Release(key string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -64,6 +85,7 @@ func addrUint32(a netip.Addr) uint32 {
 	b:=a.As4()
 	return uint32(b[0])<<24|uint32(b[1])<<16|uint32(b[2])<<8|uint32(b[3])
 }
+
 func uint32Addr(v uint32) netip.Addr {
 	return netip.AddrFrom4([4]byte{byte(v>>24),byte(v>>16),byte(v>>8),byte(v)})
 }

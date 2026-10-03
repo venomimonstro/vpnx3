@@ -88,6 +88,7 @@ VPNX3_WG_INTERFACE=$WG_INTERFACE
 VPNX3_WG_ENDPOINT=$WG_ENDPOINT
 VPNX3_WG_POOL=$WG_POOL
 VPNX3_WORKER_AUTH_ADDR=$AUTH_ADDR
+VPNX3_WORKER_STATE_PATH=/var/lib/vpnx3-worker/sessions.json
 EOF
 chmod 0600 /etc/vpnx3-worker.env
 chown root:root /etc/vpnx3-worker.env
@@ -120,6 +121,7 @@ ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
 MemoryDenyWriteExecute=true
+ReadWritePaths=/var/lib/vpnx3-worker
 
 [Install]
 WantedBy=multi-user.target
