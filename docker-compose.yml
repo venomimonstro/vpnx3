@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: vpnx3
+      POSTGRES_USER: vpnx3
+      POSTGRES_PASSWORD: vpnx3_dev_only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vpnx3 -d vpnx3"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - vpnx3_pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  controlplane:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.controlplane
+    environment:
+      VPNX3_ENV: development
+      VPNX3_HTTP_ADDR: :8080
+      VPNX3_DATABASE_URL: postgres://vpnx3:vpnx3_dev_only@postgres:5432/vpnx3?sslmode=disable
+      VPNX3_LOG_LEVEL: debug
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  vpnx3_pgdata:
