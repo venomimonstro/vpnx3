@@ -45,6 +45,17 @@ func (s *Server) handleClientRegister(w http.ResponseWriter,r *http.Request) {
 		return
 	}
 
+	allowed,_,err:=s.store.AllowClientRegistration(r.Context(),clientIP(r),time.Now().UTC(),30)
+	if err!=nil {
+		s.internalError(w,r,err)
+		return
+	}
+	if !allowed {
+		w.Header().Set("Retry-After","3600")
+		writeError(w,http.StatusTooManyRequests,"registration_rate_limited")
+		return
+	}
+
 	reg,err:=s.store.RegisterAnonymousDevice(
 		r.Context(),req.Platform,req.DisplayName,req.IdentityAlgorithm,pub,s.cfg.TrialDays,
 	)
