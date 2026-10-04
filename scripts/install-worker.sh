@@ -159,9 +159,15 @@ chmod 0600 "$WG_CONFIG"
 systemctl daemon-reload
 systemctl enable "wg-quick@${WG_INTERFACE}.service" >/dev/null
 if systemctl is-active --quiet "wg-quick@${WG_INTERFACE}.service"; then
-  wg-quick down "$WG_INTERFACE"
+  systemctl restart "wg-quick@${WG_INTERFACE}.service"
+else
+  systemctl start "wg-quick@${WG_INTERFACE}.service"
 fi
-wg-quick up "$WG_INTERFACE"
+
+if ! ip link show "$WG_INTERFACE" >/dev/null 2>&1; then
+  echo "WireGuard interface $WG_INTERFACE did not start." >&2
+  exit 1
+fi
 
 if ! id vpnx3-worker >/dev/null 2>&1; then
   useradd --system --home /var/lib/vpnx3-worker --shell /usr/sbin/nologin vpnx3-worker
