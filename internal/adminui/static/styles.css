@@ -38,3 +38,14 @@ button,input,select,textarea{font:inherit} button{cursor:pointer}
 .endpoint-row>div{min-width:0}
 .endpoint-row .mono{word-break:break-all}
 textarea[readonly]{resize:vertical}
+
+.readiness-overall{display:grid;grid-template-columns:auto auto 1fr auto;align-items:center;gap:12px}
+.readiness-overall strong{font-size:18px}
+.readiness-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.readiness-check{border-left:4px solid var(--line)}
+.readiness-check.ok{border-left-color:var(--good)}
+.readiness-check.warning{border-left-color:var(--warn)}
+.readiness-check.failed{border-left-color:var(--bad)}
+.readiness-check p{margin:10px 0}
+@media(max-width:1050px){.readiness-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:760px){.readiness-overall{grid-template-columns:1fr}.readiness-grid{grid-template-columns:1fr}}
