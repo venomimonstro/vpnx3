@@ -38,6 +38,7 @@ func (s *Server) handleCreateNodeEndpoint(w http.ResponseWriter,r *http.Request)
 	}
 	admin,_:=adminFromContext(r.Context())
 	_ = s.store.WriteAudit(r.Context(),"admin",admin.ID,"node.endpoint.create","node_endpoint",ep.ID,requestIDFromContext(r.Context()),ipString(clientIP(r)),"success")
+	if s.onConfigChange!=nil { s.onConfigChange() }
 	writeJSON(w,http.StatusCreated,ep)
 }
 
@@ -47,5 +48,6 @@ func (s *Server) handleDeleteNodeEndpoint(w http.ResponseWriter,r *http.Request)
 	if err!=nil { s.internalError(w,r,err); return }
 	admin,_:=adminFromContext(r.Context())
 	_ = s.store.WriteAudit(r.Context(),"admin",admin.ID,"node.endpoint.delete","node_endpoint",r.PathValue("endpointId"),requestIDFromContext(r.Context()),ipString(clientIP(r)),"success")
+	if s.onConfigChange!=nil { s.onConfigChange() }
 	w.WriteHeader(http.StatusNoContent)
 }
