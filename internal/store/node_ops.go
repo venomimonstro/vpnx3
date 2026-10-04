@@ -78,3 +78,42 @@ func (s *Store) DegradeStaleNodes(ctx context.Context,staleAfter time.Duration) 
 	if err:=tx.Commit(ctx); err!=nil { return nil,err }
 	return ids,nil
 }
+
+
+func (s *Store) RecoverHeartbeatDegradedNode(ctx context.Context,nodeID string)(bool,error){
+	tx,err:=s.DB.Begin(ctx)
+	if err!=nil{return false,err}
+	defer tx.Rollback(ctx)
+
+	var current string
+	var circuitOpen bool
+	if err:=tx.QueryRow(ctx,`
+		SELECT status::text,circuit_breaker_open
+		FROM nodes WHERE id=$1 FOR UPDATE
+	`,nodeID).Scan(&current,&circuitOpen);err!=nil{return false,err}
+	if current!="degraded"||circuitOpen{return false,nil}
+
+	var previous,reason,actor string
+	err=tx.QueryRow(ctx,`
+		SELECT previous_status::text,COALESCE(reason,''),actor_type
+		FROM node_state_events
+		WHERE node_id=$1 AND next_status='degraded'
+		ORDER BY id DESC
+		LIMIT 1
+	`,nodeID).Scan(&previous,&reason,&actor)
+	if err!=nil{return false,err}
+	if actor!="system"||reason!="heartbeat timeout"||(previous!="active"&&previous!="testing"){
+		return false,nil
+	}
+
+	if _,err:=tx.Exec(ctx,"UPDATE nodes SET status=$2,updated_at=now() WHERE id=$1",nodeID,previous);err!=nil{
+		return false,err
+	}
+	if _,err:=tx.Exec(ctx,`
+		INSERT INTO node_state_events(node_id,previous_status,next_status,reason,actor_type)
+		VALUES($1,'degraded',$2,'heartbeat recovered','system')
+	`,nodeID,previous);err!=nil{return false,err}
+
+	if err:=tx.Commit(ctx);err!=nil{return false,err}
+	return true,nil
+}
