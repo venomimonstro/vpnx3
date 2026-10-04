@@ -150,7 +150,9 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 
 Дополнительно реализованы полноценная карточка пользователя (подписка, лимит устройств, trial, устройства, последние платежи), безопасная реактивация с проверкой device_limit и часть device-management UX без prompt-dialogs.
 
-Следующие задачи: фильтры/поиск, финансовые графики, замена оставшихся prompt-dialogs в Network/Releases/Admins и расширенный support tooling.
+Дополнительно реализованы server-side search/filter пользователей и платежей, а также 30-дневная финансовая динамика поступлений/возвратов/чистого результата.
+
+Следующие задачи: замена оставшихся prompt-dialogs в Network/Releases/Admins и расширенный support tooling.
 
 ## Спринт 8 — Build Factory: В РАБОТЕ
 
@@ -261,6 +263,6 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 
 Следующие задачи:
 
-1. support search/filter по user/device/payment;
-2. сквозные эксплуатационные тесты на реальном окружении;
-3. нагрузочные проверки Control Plane и ingress.
+1. сквозные эксплуатационные тесты на реальном окружении;
+2. нагрузочные проверки Control Plane и ingress;
+3. автоматизированные runbook-проверки деградации/восстановления.
