@@ -151,12 +151,18 @@ func NewServer(
 
 func (s *Server) handleLive(w http.ResponseWriter,r *http.Request){ writeJSON(w,http.StatusOK,map[string]any{"status":"ok","service":"control-plane"}) }
 func (s *Server) handleReady(w http.ResponseWriter,r *http.Request){
-	ctx,cancel:=context.WithTimeout(r.Context(),1500*time.Millisecond); defer cancel()
+	ctx,cancel:=context.WithTimeout(r.Context(),3*time.Second); defer cancel()
 	if err:=s.db.Ping(ctx); err!=nil {
 		s.logger.Warn("readiness database check failed","request_id",requestIDFromContext(r.Context()),"error",err)
-		writeJSON(w,http.StatusServiceUnavailable,map[string]any{"status":"not_ready","database":"unavailable"}); return
+		writeJSON(w,http.StatusServiceUnavailable,map[string]any{"status":"not_ready","database":"unavailable","artifacts":"unknown"}); return
 	}
-	writeJSON(w,http.StatusOK,map[string]any{"status":"ready","database":"ok"})
+	if checker,ok:=s.artifacts.(artifactstorage.ReadinessChecker);ok{
+		if err:=checker.Check(ctx);err!=nil{
+			s.logger.Warn("readiness artifact storage check failed","request_id",requestIDFromContext(r.Context()),"error",err)
+			writeJSON(w,http.StatusServiceUnavailable,map[string]any{"status":"not_ready","database":"ok","artifacts":"unavailable"});return
+		}
+	}
+	writeJSON(w,http.StatusOK,map[string]any{"status":"ready","database":"ok","artifacts":"ok"})
 }
 func (s *Server) internalError(w http.ResponseWriter,r *http.Request,err error){
 	s.logger.Error("request failed","request_id",requestIDFromContext(r.Context()),"error",err)
