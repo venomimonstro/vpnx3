@@ -29,3 +29,12 @@ button,input,select,textarea{font:inherit} button{cursor:pointer}
 .finance-bar.refunded{background:var(--bad)}
 .finance-day span{font-size:9px;color:var(--muted);transform:rotate(-45deg);transform-origin:top left;white-space:nowrap}
 @media(max-width:760px){.finance-summary{grid-template-columns:repeat(2,1fr)}.finance-chart{min-width:720px}}
+
+.modal{width:min(760px,calc(100vw - 32px));max-height:calc(100vh - 32px);padding:0;border:0;background:transparent;color:var(--text)}
+.modal::backdrop{background:rgba(0,0,0,.72)}
+.modal-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;box-shadow:0 20px 70px rgba(0,0,0,.45);max-height:calc(100vh - 40px);overflow:auto}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.endpoint-row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+.endpoint-row>div{min-width:0}
+.endpoint-row .mono{word-break:break-all}
+textarea[readonly]{resize:vertical}
