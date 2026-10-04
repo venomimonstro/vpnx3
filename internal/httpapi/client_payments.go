@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -48,7 +50,19 @@ func (s *Server) handleClientCreatePayment(w http.ResponseWriter,r *http.Request
 	}
 	if err!=nil { s.internalError(w,r,err); return }
 
-	result,err:=s.yooKassa.CreatePayment(r.Context(),state.UserID,plan)
+	allowed,_,err:=s.store.AllowPaymentCreation(r.Context(),state.UserID,time.Now().UTC(),10)
+	if err!=nil { s.internalError(w,r,err); return }
+	if !allowed {
+		w.Header().Set("Retry-After","3600")
+		writeError(w,http.StatusTooManyRequests,"payment_rate_limited")
+		return
+	}
+
+	bucket:=time.Now().UTC().Truncate(15*time.Minute).Format(time.RFC3339)
+	sum:=sha256.Sum256([]byte("vpnx3-payment-v1\x00"+deviceID+"\x00"+plan.ID+"\x00"+bucket))
+	idempotenceKey:=hex.EncodeToString(sum[:])
+
+	result,err:=s.yooKassa.CreatePayment(r.Context(),state.UserID,plan,idempotenceKey)
 	if err!=nil { s.internalError(w,r,err); return }
 	if _,err:=s.billing.ApplyVerifiedEvent(r.Context(),result.Event); err!=nil {
 		s.internalError(w,r,err); return
