@@ -64,13 +64,13 @@ func (s *Store) Dashboard(ctx context.Context) (DashboardSummary,error) {
 		return DashboardSummary{},fmt.Errorf("dashboard payment abuse counter: %w",err)
 	}
 	if err:=s.DB.QueryRow(ctx,`SELECT
-		count(*) FILTER (WHERE status=\'queued\')::bigint,
-		count(*) FILTER (WHERE status=\'running\')::bigint,
-		count(*) FILTER (WHERE status=\'failed\')::bigint
+		count(*) FILTER (WHERE status='queued')::bigint,
+		count(*) FILTER (WHERE status='running')::bigint,
+		count(*) FILTER (WHERE status='failed')::bigint
 		FROM build_jobs`).Scan(&d.BuildQueued,&d.BuildRunning,&d.BuildFailed);err!=nil{
 		return DashboardSummary{},fmt.Errorf("dashboard build jobs: %w",err)
 	}
-	if err:=s.DB.QueryRow(ctx,`SELECT count(*)::bigint FROM nodes WHERE role=\'build_worker\' AND status=\'active\'`).Scan(&d.BuildWorkersActive);err!=nil{
+	if err:=s.DB.QueryRow(ctx,`SELECT count(*)::bigint FROM nodes WHERE role='build_worker' AND status='active'`).Scan(&d.BuildWorkersActive);err!=nil{
 		return DashboardSummary{},fmt.Errorf("dashboard build workers: %w",err)
 	}
 	return d,nil
