@@ -28,7 +28,12 @@ func (s *Server) handleDashboard(w http.ResponseWriter,r *http.Request) {
 
 func (s *Server) handleUsers(w http.ResponseWriter,r *http.Request) {
 	limit,offset:=pageParams(r)
-	users,err:=s.store.ListUsers(r.Context(),limit,offset)
+	users,err:=s.store.ListUsers(
+		r.Context(),
+		strings.TrimSpace(r.URL.Query().Get("q")),
+		strings.TrimSpace(r.URL.Query().Get("status")),
+		limit,offset,
+	)
 	if err!=nil { s.internalError(w,r,err); return }
 	writeJSON(w,http.StatusOK,map[string]any{"users":users})
 }
@@ -52,7 +57,13 @@ func (s *Server) handleUserDevices(w http.ResponseWriter,r *http.Request) {
 
 func (s *Server) handlePayments(w http.ResponseWriter,r *http.Request) {
 	limit,offset:=pageParams(r)
-	payments,err:=s.store.ListPayments(r.Context(),limit,offset)
+	payments,err:=s.store.ListPayments(
+		r.Context(),
+		strings.TrimSpace(r.URL.Query().Get("q")),
+		strings.TrimSpace(r.URL.Query().Get("status")),
+		strings.TrimSpace(r.URL.Query().Get("provider")),
+		limit,offset,
+	)
 	if err!=nil { s.internalError(w,r,err); return }
 	writeJSON(w,http.StatusOK,map[string]any{"payments":payments})
 }
