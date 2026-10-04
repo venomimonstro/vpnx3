@@ -214,3 +214,25 @@ func hmacSHA256(key,data []byte)[]byte{
 }
 
 var _ Storage = (*S3)(nil)
+
+func (s *S3) Check(ctx context.Context) error {
+	u,err:=s.objectURL("__vpnx3/readiness/nonexistent")
+	if err!=nil{return err}
+	req,err:=http.NewRequestWithContext(ctx,http.MethodHead,u.String(),nil)
+	if err!=nil{return err}
+	emptyHash:=sha256.Sum256(nil)
+	if err:=s.sign(req,hex.EncodeToString(emptyHash[:]),time.Now().UTC());err!=nil{return err}
+	resp,err:=s.client.Do(req)
+	if err!=nil{return fmt.Errorf("S3 readiness request failed: %w",err)}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode==http.StatusNotFound:
+		return nil
+	case resp.StatusCode>=200&&resp.StatusCode<300:
+		return nil
+	default:
+		return fmt.Errorf("S3 readiness status %d",resp.StatusCode)
+	}
+}
+
+var _ ReadinessChecker = (*S3)(nil)
