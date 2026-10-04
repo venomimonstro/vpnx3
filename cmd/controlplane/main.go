@@ -104,7 +104,7 @@ func main() {
 
 	monitorCtx, monitorCancel := context.WithCancel(context.Background())
 	defer monitorCancel()
-	go nodemonitor.New(nodeStore,logger).Run(monitorCtx)
+	go nodemonitor.New(nodeStore,logger,publisher.Trigger).Run(monitorCtx)
 	go loginthrottle.New(nodeStore,logger).Run(monitorCtx)
 	go publisher.Run(monitorCtx)
 	go probemonitor.New(nodeStore,logger,publisher.Trigger).Run(monitorCtx)
