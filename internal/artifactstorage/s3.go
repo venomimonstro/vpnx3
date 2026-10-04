@@ -1,7 +1,6 @@
 package artifactstorage
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -11,7 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -174,7 +173,7 @@ func (s *S3) CleanupTemporary(ctx context.Context,olderThan time.Time)error{
 	for _,entry:=range entries{
 		if entry.IsDir()||!strings.HasPrefix(entry.Name(),"vpnx3-s3-upload-"){continue}
 		info,err:=entry.Info();if err!=nil{continue}
-		if info.ModTime().Before(olderThan){_ = os.Remove(path.Join(s.tempDir,entry.Name()))}
+		if info.ModTime().Before(olderThan){_ = os.Remove(filepath.Join(s.tempDir,entry.Name()))}
 	}
 	return nil
 }
@@ -215,4 +214,3 @@ func hmacSHA256(key,data []byte)[]byte{
 }
 
 var _ Storage = (*S3)(nil)
-var _ = bytes.MinRead
