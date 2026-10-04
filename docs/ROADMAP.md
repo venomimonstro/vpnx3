@@ -140,7 +140,9 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 
 Дополнительно реализованы управление администраторами/ролями, отзыв устройств, account device limits, клиентская диагностика, release management и финансовые показатели/refund ledger.
 
-Следующие задачи: фильтры/поиск, полноценные карточки пользователей, графики без prompt-dialog UX и support tooling.
+Дополнительно реализованы полноценная карточка пользователя (подписка, лимит устройств, trial, устройства, последние платежи), безопасная реактивация с проверкой device_limit и часть device-management UX без prompt-dialogs.
+
+Следующие задачи: фильтры/поиск, финансовые графики, замена оставшихся prompt-dialogs в Network/Releases/Admins и расширенный support tooling.
 
 ## Спринт 8 — Build Factory: В РАБОТЕ
 
@@ -165,7 +167,17 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 
 Дополнительно реализованы Chrome/Firefox extension sources и recipes, server binary targets, browser ingress binary, version injection, verified ingress installer, artifact retention и signed release distribution.
 
-Следующие задачи: готовый Android SDK build-host, macOS worker + Xcode для iOS и S3-compatible artifact adapter.
+Дополнительно реализованы:
+- verified Android build-host provisioning (JDK 17, Gradle, Android SDK с обязательным SHA-256);
+- compileSdk 37 preflight;
+- Android versionName/versionCode из Release;
+- unit tests version mapping;
+- stale build-worker watchdog;
+- signed server-binary release targets;
+- artifact storage abstraction с atomic local backend;
+- hardened streaming/download deadlines и integrity checks.
+
+Следующие задачи: macOS worker + Xcode для iOS и S3-compatible artifact adapter.
 
 ## Обязательные проверки вне текущей GitHub-среды
 
@@ -200,4 +212,38 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 1. физический smoke-test Chrome/Firefox;
 2. store-specific packaging/signing;
 3. проверить auth callback compatibility на актуальных Chrome/Firefox;
-4. UX reconnect/failover на сетевых переключениях.
+4. физический smoke-test reconnect/failover на сетевых переключениях.
+
+Дополнительно реализованы:
+- one-minute browser maintenance loop;
+- раннее обновление Proxy Lease;
+- автоматическое переключение ingress по свежему signed manifest;
+- ограничение proxy-auth retry loop;
+- повторная выдача credential после 407;
+- shared paid account Android/Chrome/Firefox через pairing code.
+
+
+## Спринт 10 — эксплуатационная устойчивость и abuse protection: В РАБОТЕ
+
+Реализовано:
+
+- автоматический signed Configuration Manifest при старте;
+- периодическое обновление manifest каждые 15 минут;
+- немедленный refresh после circuit breaker;
+- немедленный refresh после node lifecycle/endpoint mutations;
+- retention старых config manifests;
+- hashed/HMAC registration rate limiter;
+- агрегация источника по IPv4 /24 и IPv6 /64;
+- trusted proxy CIDR validation для X-Forwarded-For/X-Real-IP;
+- один активный pairing code на устройство;
+- очистка pairing codes;
+- очистка registration rate buckets;
+- удаление только полностью заброшенных anonymous trial accounts спустя 30 дней;
+- admin device reactivation не может превысить plan.device_limit.
+
+Следующие задачи:
+
+1. метрики rate-limit/abuse в dashboard;
+2. ограничение payment creation abuse;
+3. support search/filter по user/device/payment;
+4. сквозные эксплуатационные тесты на реальном окружении.
