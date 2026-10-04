@@ -58,11 +58,23 @@ func main() {
 	defer ticker.Stop()
 
 	for {
-		runCtx,runCancel:=context.WithTimeout(context.Background(),20*time.Second)
+		runCtx,runCancel:=context.WithTimeout(context.Background(),45*time.Second)
 		manifest,_,fetchErr:=fetcher.Fetch(runCtx,strings.TrimRight(controlURL,"/")+"/api/v1/config/latest",time.Now().UTC())
 		if fetchErr==nil {
 			results,observeErr:=probe.Observe(manifest)
 			if observeErr==nil {
+				if boolEnv("VPNX3_PROBE_DATA_PLANE_ENABLED",true) {
+					dataPlane,dpErr:=probe.ObserveWireGuard(
+						runCtx,manifest,reporter,
+						env("VPNX3_PROBE_WG_INTERFACE","wgprobe0"),
+						intEnv("VPNX3_PROBE_DATA_PLANE_MAX_WORKERS",5),
+					)
+					if dpErr!=nil {
+						logger.Warn("WireGuard synthetic observation failed","error",dpErr)
+					} else {
+						results=append(results,dataPlane...)
+					}
+				}
 				if err:=reporter.Report(runCtx,results); err!=nil {
 					logger.Warn("probe report failed","error",err)
 				}
@@ -88,4 +100,14 @@ func intEnv(key string,fallback int) int {
 	v,err:=strconv.Atoi(strings.TrimSpace(os.Getenv(key)))
 	if err!=nil || v<=0 { return fallback }
 	return v
+}
+
+func boolEnv(key string,fallback bool) bool {
+	raw:=strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if raw==""{return fallback}
+	switch raw{
+	case "1","true","yes","on": return true
+	case "0","false","no","off": return false
+	default: return fallback
+	}
 }
