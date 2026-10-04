@@ -31,6 +31,7 @@ type Config struct {
 	ClientDNS              []string
 	WireGuardMTU           int
 	WireGuardKeepalive     int
+	WireGuardGateway       string
 	YooKassaShopID         string
 	YooKassaSecretKey      string
 	YooKassaReturnURL      string
@@ -69,6 +70,7 @@ func Load() (Config, error) {
 		ClientDNS:              csvEnv("VPNX3_CLIENT_DNS"),
 		WireGuardMTU:           intEnv("VPNX3_WG_CLIENT_MTU", 1280),
 		WireGuardKeepalive:     intEnv("VPNX3_WG_KEEPALIVE", 25),
+		WireGuardGateway:       env("VPNX3_WG_GATEWAY_IPV4","10.66.0.1"),
 		YooKassaShopID:         strings.TrimSpace(os.Getenv("VPNX3_YOOKASSA_SHOP_ID")),
 		YooKassaSecretKey:      strings.TrimSpace(os.Getenv("VPNX3_YOOKASSA_SECRET_KEY")),
 		YooKassaReturnURL:      strings.TrimSpace(os.Getenv("VPNX3_YOOKASSA_RETURN_URL")),
@@ -117,6 +119,9 @@ func Load() (Config, error) {
 	}
 	if cfg.WireGuardKeepalive < 0 || cfg.WireGuardKeepalive > 120 {
 		return Config{}, fmt.Errorf("VPNX3_WG_KEEPALIVE must be between 0 and 120")
+	}
+	if ip:=net.ParseIP(cfg.WireGuardGateway);ip==nil||ip.To4()==nil {
+		return Config{}, fmt.Errorf("VPNX3_WG_GATEWAY_IPV4 must be a valid IPv4 address")
 	}
 	if cfg.ArtifactStorage!="local" && cfg.ArtifactStorage!="s3" {
 		return Config{}, fmt.Errorf("VPNX3_ARTIFACT_STORAGE must be local or s3")
