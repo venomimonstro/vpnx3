@@ -2,18 +2,36 @@ package store
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"net"
 	"time"
 )
 
-func registrationSourceHash(ip net.IP) []byte {
-	sum:=sha256.Sum256([]byte(ip.String()))
-	return sum[:]
+func registrationSourcePrefix(ip net.IP) []byte {
+	if ip==nil{return nil}
+	if v4:=ip.To4();v4!=nil {
+		return []byte{v4[0],v4[1],v4[2]}
+	}
+	v6:=ip.To16()
+	if v6==nil{return nil}
+	out:=make([]byte,8)
+	copy(out,v6[:8])
+	return out
 }
 
-func (s *Store) AllowClientRegistration(ctx context.Context,ip net.IP,now time.Time,limit int)(bool,int,error){
-	if ip==nil{return false,0,nil}
+func registrationSourceHash(ip net.IP,secret []byte) []byte {
+	prefix:=registrationSourcePrefix(ip)
+	if len(prefix)==0||len(secret)==0{return nil}
+	mac:=hmac.New(sha256.New,secret)
+	_,_=mac.Write([]byte("vpnx3-registration-source-v1\x00"))
+	_,_=mac.Write(prefix)
+	return mac.Sum(nil)
+}
+
+func (s *Store) AllowClientRegistration(ctx context.Context,ip net.IP,secret []byte,now time.Time,limit int)(bool,int,error){
+	sourceHash:=registrationSourceHash(ip,secret)
+	if len(sourceHash)==0{return false,0,nil}
 	if limit<=0{limit=30}
 	bucket:=now.UTC().Truncate(time.Hour)
 	var attempts int
@@ -24,7 +42,7 @@ func (s *Store) AllowClientRegistration(ctx context.Context,ip net.IP,now time.T
 		SET attempts=client_registration_rate.attempts+1,
 		    updated_at=now()
 		RETURNING attempts
-	`,registrationSourceHash(ip),bucket).Scan(&attempts)
+	`,sourceHash,bucket).Scan(&attempts)
 	if err!=nil{return false,0,err}
 	return attempts<=limit,attempts,nil
 }
