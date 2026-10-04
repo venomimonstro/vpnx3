@@ -52,9 +52,13 @@ type CreateResult struct {
 	ConfirmationURL string
 }
 
-func (a *Adapter) CreatePayment(ctx context.Context,userID string,plan store.Plan) (CreateResult,error) {
-	idempotence,err:=randomID()
-	if err!=nil { return CreateResult{},err }
+func (a *Adapter) CreatePayment(ctx context.Context,userID string,plan store.Plan,idempotence string) (CreateResult,error) {
+	idempotence=strings.TrimSpace(idempotence)
+	if idempotence=="" {
+		var err error
+		idempotence,err=randomID()
+		if err!=nil { return CreateResult{},err }
+	}
 
 	payload:=map[string]any{
 		"amount":map[string]string{
