@@ -25,16 +25,21 @@ type Client struct {
 	identity     agent.Identity
 	sequencePath string
 	sequence     int64
+	leaseSequencePath string
+	leaseSequence int64
 }
 
 func New(controlURL,identityPath string,id agent.Identity) *Client {
 	sequencePath:=filepath.Join(filepath.Dir(identityPath),"probe-sequence")
+	leaseSequencePath:=filepath.Join(filepath.Dir(identityPath),"probe-lease-sequence")
 	return &Client{
 		controlURL:strings.TrimRight(controlURL,"/"),
 		http:&http.Client{Timeout:10*time.Second},
 		identity:id,
 		sequencePath:sequencePath,
 		sequence:loadSequence(sequencePath),
+		leaseSequencePath:leaseSequencePath,
+		leaseSequence:loadSequence(leaseSequencePath),
 	}
 }
 
