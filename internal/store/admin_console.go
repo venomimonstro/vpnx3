@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -73,9 +74,15 @@ type AdminUserRow struct {
 	LastSeenAt   *time.Time `json:"last_seen_at,omitempty"`
 }
 
-func (s *Store) ListUsers(ctx context.Context,limit,offset int) ([]AdminUserRow,error) {
+func (s *Store) ListUsers(ctx context.Context,query,status string,limit,offset int) ([]AdminUserRow,error) {
 	if limit<=0 || limit>500 { limit=100 }
 	if offset<0 { offset=0 }
+	query=strings.TrimSpace(query)
+	status=strings.TrimSpace(strings.ToLower(status))
+	if status!="" && status!="active" && status!="disabled" && status!="blocked" {
+		return nil,fmt.Errorf("invalid user status filter")
+	}
+	pattern:="%"+query+"%"
 	rows,err:=s.DB.Query(ctx,`
 		SELECT u.id::text,u.email,u.phone,u.status,
 		       (SELECT count(*)::int FROM devices d WHERE d.user_id=u.id),
@@ -88,9 +95,19 @@ func (s *Store) ListUsers(ctx context.Context,limit,offset int) ([]AdminUserRow,
 		  ORDER BY s.expires_at DESC LIMIT 1
 		) sub ON true
 		LEFT JOIN plans p ON p.id=sub.plan_id
+		WHERE ($1='' OR
+		       u.id::text ILIKE $3 OR
+		       COALESCE(u.email,'') ILIKE $3 OR
+		       COALESCE(u.phone,'') ILIKE $3 OR
+		       EXISTS (
+		         SELECT 1 FROM devices d
+		         WHERE d.user_id=u.id
+		           AND (d.id::text ILIKE $3 OR d.display_name ILIKE $3)
+		       ))
+		  AND ($2='' OR u.status=$2)
 		ORDER BY u.created_at DESC
-		LIMIT $1 OFFSET $2
-	`,limit,offset)
+		LIMIT $4 OFFSET $5
+	`,query,status,pattern,limit,offset)
 	if err!=nil { return nil,fmt.Errorf("list users: %w",err) }
 	defer rows.Close()
 	out:=make([]AdminUserRow,0)
@@ -103,6 +120,7 @@ func (s *Store) ListUsers(ctx context.Context,limit,offset int) ([]AdminUserRow,
 	}
 	return out,rows.Err()
 }
+
 
 type AdminDeviceRow struct {
 	ID             string     `json:"id"`
@@ -149,15 +167,23 @@ type AdminPaymentRow struct {
 	CreatedAt         time.Time  `json:"created_at"`
 }
 
-func (s *Store) ListPayments(ctx context.Context,limit,offset int) ([]AdminPaymentRow,error) {
+func (s *Store) ListPayments(ctx context.Context,query,status,provider string,limit,offset int) ([]AdminPaymentRow,error) {
 	if limit<=0 || limit>500 { limit=100 }
 	if offset<0 { offset=0 }
+	query=strings.TrimSpace(query)
+	status=strings.TrimSpace(strings.ToLower(status))
+	provider=strings.TrimSpace(strings.ToLower(provider))
+	pattern:="%"+query+"%"
 	rows,err:=s.DB.Query(ctx,`
 		SELECT pay.id::text,pay.user_id::text,p.code,p.version,pay.provider,pay.provider_payment_id,
 		       pay.status,pay.amount_minor,pay.currency,pay.paid_at,pay.created_at
 		FROM payments pay JOIN plans p ON p.id=pay.plan_id
-		ORDER BY pay.created_at DESC LIMIT $1 OFFSET $2
-	`,limit,offset)
+		WHERE ($1='' OR pay.id::text ILIKE $4 OR pay.user_id::text ILIKE $4 OR
+		       pay.provider_payment_id ILIKE $4 OR p.code ILIKE $4)
+		  AND ($2='' OR pay.status=$2)
+		  AND ($3='' OR pay.provider=$3)
+		ORDER BY pay.created_at DESC LIMIT $5 OFFSET $6
+	`,query,status,provider,pattern,limit,offset)
 	if err!=nil { return nil,err }
 	defer rows.Close()
 	out:=make([]AdminPaymentRow,0)
@@ -169,6 +195,7 @@ func (s *Store) ListPayments(ctx context.Context,limit,offset int) ([]AdminPayme
 	}
 	return out,rows.Err()
 }
+
 
 type AuditRow struct {
 	ID           int64     `json:"id"`
