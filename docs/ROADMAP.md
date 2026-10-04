@@ -152,7 +152,12 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 
 Дополнительно реализованы server-side search/filter пользователей и платежей, а также 30-дневная финансовая динамика поступлений/возвратов/чистого результата.
 
-Следующие задачи: замена оставшихся prompt-dialogs в Network/Releases/Admins и расширенный support tooling.
+Дополнительно реализованы:
+- полностью prompt-free критические операции админки;
+- validated dialogs для enrollment/endpoints/тарифов/релизов/инцидентов/администраторов;
+- launch readiness preflight с отдельными failed/warning/ok проверками для manifest, worker pool, probes, WireGuard data plane, Build Factory, release signing, платежей, artifact storage и browser ingress.
+
+Следующие задачи: расширенный support tooling и физическая эксплуатационная проверка всех readiness-сигналов.
 
 ## Спринт 8 — Build Factory: В РАБОТЕ
 
@@ -266,3 +271,22 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 1. сквозные эксплуатационные тесты на реальном окружении;
 2. нагрузочные проверки Control Plane и ingress;
 3. автоматизированные runbook-проверки деградации/восстановления.
+
+
+## Спринт 11 — коммерческий preflight и операционная панель: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Реализовано:
+
+- отдельный `GET /api/v1/admin/readiness`;
+- проверка свежести signed Configuration Manifest;
+- проверка active/routable worker pool;
+- проверка active browser ingress;
+- проверка свежих независимых probe observations;
+- проверка успешного synthetic WireGuard data-plane observation;
+- проверка согласованности Build Factory queue/active workers;
+- проверка release signing/publication;
+- проверка конфигурации платёжного адаптера;
+- readiness artifact storage;
+- отдельный экран «Готовность запуска» с уровнями ok/warning/failed.
+
+Следующий этап: прогон preflight на реальной распределённой инфраструктуре и фиксация эксплуатационных порогов по фактической нагрузке.
