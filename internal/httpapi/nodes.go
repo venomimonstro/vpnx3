@@ -99,6 +99,7 @@ func (s *Server) handleNodeTransition(target string) http.HandlerFunc {
 		if ip!=nil { ipValue=ip.String() }
 		action := fmt.Sprintf("node.%s", target)
 		_ = s.store.WriteAudit(r.Context(), "admin", admin.ID, action, "node", node.ID, requestIDFromContext(r.Context()), ipValue, "success")
+		if s.onConfigChange!=nil { s.onConfigChange() }
 		writeJSON(w, http.StatusOK, node)
 	}
 }
