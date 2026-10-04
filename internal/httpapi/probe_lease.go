@@ -12,6 +12,7 @@ import (
 
 	"github.com/venomimonstro/vpnx3/internal/accesslease"
 	"github.com/venomimonstro/vpnx3/internal/nodeauth"
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 func (s *Server) handleProbeLease(w http.ResponseWriter,r *http.Request){
@@ -34,6 +35,10 @@ func (s *Server) handleProbeLease(w http.ResponseWriter,r *http.Request){
 	dec.DisallowUnknownFields()
 	if err:=dec.Decode(&req);err!=nil||req.Sequence<=0||strings.TrimSpace(req.TunnelPublicKey)==""||len(req.TunnelPublicKey)>128{
 		writeError(w,http.StatusBadRequest,"invalid_probe_lease_request")
+		return
+	}
+	if _,err:=wgtypes.ParseKey(strings.TrimSpace(req.TunnelPublicKey));err!=nil{
+		writeError(w,http.StatusBadRequest,"invalid_tunnel_public_key")
 		return
 	}
 
