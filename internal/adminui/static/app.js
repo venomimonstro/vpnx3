@@ -554,13 +554,35 @@ async function billing(){
   ));
 }
 async function createPlan(){
-  const code=prompt("Код тарифа","basic");if(!code)return;
-  const name=prompt("Название","Базовый");if(!name)return;
-  const price=Number(prompt("Цена, ₽","199"));if(!Number.isFinite(price))return;
-  try{
-    await api("/api/v1/billing/plans",{method:"POST",body:JSON.stringify({code,name,price_minor:Math.round(price*100),currency:"RUB",billing_period_days:30,device_limit:3,trial_days:7,grace_days:3})});
-    renderSection();
-  }catch(e){alert(e.message)}
+  const code=$("input",{value:"basic",placeholder:"basic"});
+  const name=$("input",{value:"Базовый",placeholder:"Название"});
+  const price=$("input",{type:"number",min:"0",step:"1",value:"199"});
+  const period=$("input",{type:"number",min:"1",max:"3650",value:"30"});
+  const devices=$("input",{type:"number",min:"1",max:"100",value:"3"});
+  const trial=$("input",{type:"number",min:"0",max:"30",value:"7"});
+  const grace=$("input",{type:"number",min:"0",max:"30",value:"3"});
+  const body=$("div",{},
+    field("Код тарифа",code),field("Название",name),field("Цена, ₽",price),
+    field("Период, дней",period),field("Лимит устройств",devices),
+    field("Пробный период, дней",trial),field("Grace-период, дней",grace)
+  );
+  modal("Новая версия тарифа",body,[
+    {label:"Отмена",onclick:d=>d.close()},
+    {label:"Создать",primary:true,onclick:async d=>{
+      const rub=Number(price.value);
+      const payload={
+        code:code.value.trim(),name:name.value.trim(),
+        price_minor:Math.round(rub*100),currency:"RUB",
+        billing_period_days:Number(period.value),device_limit:Number(devices.value),
+        trial_days:Number(trial.value),grace_days:Number(grace.value)
+      };
+      if(!payload.code||!payload.name||!Number.isFinite(rub)||rub<0){alert("Проверьте код, название и цену");return}
+      try{
+        await api("/api/v1/billing/plans",{method:"POST",body:JSON.stringify(payload)});
+        d.close();renderSection();
+      }catch(e){alert(e.message)}
+    }}
+  ]);
 }
 
 async function incidents(){
@@ -574,10 +596,24 @@ async function incidents(){
   return sectionFrame("Инциденты",$("div",{},toolbar,table(["Обнаружен","Важность","Статус","Название","Описание","Причина","Действие"],rows)));
 }
 async function createIncident(){
-  const severity=prompt("Важность: info / warning / critical","warning");if(!severity)return;
-  const title=prompt("Название");if(!title)return;
-  const summary=prompt("Описание");if(!summary)return;
-  try{await api("/api/v1/admin/incidents",{method:"POST",body:JSON.stringify({severity,title,summary})});renderSection()}catch(e){alert(e.message)}
+  const severity=$("select",{},
+    ...["info","warning","critical"].map(v=>$("option",{value:v},v))
+  );severity.value="warning";
+  const title=$("input",{maxlength:"200",placeholder:"Краткое название"});
+  const summary=$("textarea",{rows:"6",maxlength:"4000",placeholder:"Что произошло, влияние, текущий статус"});
+  const body=$("div",{},field("Важность",severity),field("Название",title),field("Описание",summary));
+  modal("Создать инцидент",body,[
+    {label:"Отмена",onclick:d=>d.close()},
+    {label:"Создать",primary:true,onclick:async d=>{
+      if(!title.value.trim()||!summary.value.trim()){alert("Заполните название и описание");return}
+      try{
+        await api("/api/v1/admin/incidents",{method:"POST",body:JSON.stringify({
+          severity:severity.value,title:title.value.trim(),summary:summary.value.trim()
+        })});
+        d.close();renderSection();
+      }catch(e){alert(e.message)}
+    }}
+  ]);
 }
 
 async function releases(){
@@ -613,12 +649,29 @@ async function releases(){
   return sectionFrame("Релизы",$("div",{},toolbar,table(["Версия","Статус","Commit","Создан","Заметки","Сборки"],rows)));
 }
 async function createRelease(){
-  const version=prompt("Версия","0.1.0");if(!version)return;
-  const source_commit=prompt("Git commit SHA (40 символов)");if(!source_commit)return;
-  const raw=prompt("Цели через запятую","android_apk,android_aab");if(!raw)return;
-  const targets=raw.split(",").map(x=>x.trim()).filter(Boolean);
-  const notes=prompt("Заметки","")||"";
-  try{await api("/api/v1/admin/releases",{method:"POST",body:JSON.stringify({version,source_commit,targets,notes})});renderSection()}catch(e){alert(e.message)}
+  const version=$("input",{value:"0.1.0",placeholder:"0.1.0"});
+  const commit=$("input",{placeholder:"40-символьный Git commit SHA",maxlength:"40"});
+  const targets=$("input",{value:"android_apk,android_aab",placeholder:"android_apk,android_aab"});
+  const notes=$("textarea",{rows:"4",placeholder:"Что входит в релиз"});
+  const body=$("div",{},
+    field("Версия",version),field("Git commit",commit),
+    field("Цели сборки через запятую",targets),field("Заметки",notes)
+  );
+  modal("Новый релиз",body,[
+    {label:"Отмена",onclick:d=>d.close()},
+    {label:"Создать",primary:true,onclick:async d=>{
+      const source_commit=commit.value.trim().toLowerCase();
+      const list=targets.value.split(",").map(x=>x.trim()).filter(Boolean);
+      if(!/^([0-9a-f]{40})$/.test(source_commit)){alert("Git commit должен содержать 40 hex-символов");return}
+      if(!version.value.trim()||!list.length){alert("Укажите версию и цели сборки");return}
+      try{
+        await api("/api/v1/admin/releases",{method:"POST",body:JSON.stringify({
+          version:version.value.trim(),source_commit,targets:list,notes:notes.value.trim()
+        })});
+        d.close();renderSection();
+      }catch(e){alert(e.message)}
+    }}
+  ]);
 }
 
 async function audit(){
@@ -651,11 +704,28 @@ async function admins(){
   return sectionFrame("Администраторы",$("div",{},toolbar,table(["Email","Статус","Роли","Создан","Действие"],rows)));
 }
 async function createAdmin(){
-  const email=prompt("Email");if(!email)return;
-  const password=prompt("Временный пароль (минимум 14 символов)");if(!password)return;
-  const raw=prompt("Роли через запятую","read_only");if(!raw)return;
-  const roles=raw.split(",").map(x=>x.trim()).filter(Boolean);
-  try{await api("/api/v1/admin/admins",{method:"POST",body:JSON.stringify({email,password,roles})});renderSection()}catch(e){alert(e.message)}
+  const email=$("input",{type:"email",autocomplete:"off",placeholder:"admin@example.com"});
+  const password=$("input",{type:"password",autocomplete:"new-password",placeholder:"Минимум 14 символов"});
+  const roles=$("input",{value:"read_only",placeholder:"read_only или несколько ролей через запятую"});
+  const body=$("div",{},
+    field("Email",email),field("Временный пароль",password),field("Роли",roles),
+    $("p",{class:"muted"},"Роли проверяются сервером. Неизвестная роль будет отклонена.")
+  );
+  modal("Новый администратор",body,[
+    {label:"Отмена",onclick:d=>d.close()},
+    {label:"Создать",primary:true,onclick:async d=>{
+      const roleList=roles.value.split(",").map(x=>x.trim()).filter(Boolean);
+      if(!email.value.trim()||password.value.length<14||!roleList.length){
+        alert("Проверьте email, пароль (минимум 14 символов) и роли");return;
+      }
+      try{
+        await api("/api/v1/admin/admins",{method:"POST",body:JSON.stringify({
+          email:email.value.trim(),password:password.value,roles:roleList
+        })});
+        password.value="";d.close();renderSection();
+      }catch(e){alert(e.message)}
+    }}
+  ]);
 }
 
 async function renderSection(){
