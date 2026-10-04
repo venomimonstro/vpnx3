@@ -89,6 +89,7 @@ function logout(callApi=true){
 
 const sections=[
   ["dashboard","Обзор","analytics.read"],
+  ["readiness","Готовность запуска","analytics.read"],
   ["nodes","Сеть","nodes.read"],
   ["probes","Наблюдение","nodes.read"],
   ["telemetry","Клиентская диагностика","analytics.read"],
@@ -151,6 +152,40 @@ function modal(title,content,buttons=[]){
 
 function field(label,input){
   return $("div",{class:"field"},$("label",{},label),input);
+}
+
+
+async function readiness(){
+  const d=await api("/api/v1/admin/readiness");
+  const header=$("div",{class:"card readiness-overall"},
+    $("span",{class:"muted"},"Общий статус"),
+    badge(d.status),
+    $("strong",{},d.status==="ok"?"Можно продолжать запуск":d.status==="warning"?"Есть предупреждения":"Есть блокирующие проблемы"),
+    $("span",{class:"muted"},"Проверено: "+dt(d.checked_at))
+  );
+  const cards=d.checks.map(x=>$("div",{class:"card readiness-check "+x.status},
+    $("div",{class:"row-actions"},badge(x.status),$("strong",{},x.title)),
+    $("p",{},x.detail),
+    $("span",{class:"mono muted"},x.code)
+  ));
+  const s=d.signals||{};
+  const signals=table(["Сигнал","Значение"],[
+    ["Active workers",s.active_workers??0],
+    ["Routable workers",s.routable_workers??0],
+    ["Active ingresses",s.active_ingresses??0],
+    ["Active probes",s.active_probes??0],
+    ["Fresh probe nodes",s.fresh_probe_nodes??0],
+    ["Fresh data-plane workers",s.fresh_data_plane_workers??0],
+    ["Queued build jobs",s.queued_build_jobs??0],
+    ["Running build jobs",s.running_build_jobs??0],
+    ["Active build workers",s.active_build_workers??0],
+    ["Published releases",s.published_releases??0]
+  ]);
+  return sectionFrame("Готовность запуска",$("div",{class:"stack"},
+    header,
+    $("div",{class:"readiness-grid"},cards),
+    $("div",{class:"card"},$("h2",{},"Сигналы"),signals)
+  ));
 }
 
 async function dashboard(){
@@ -788,7 +823,7 @@ async function renderSection(){
   const target=document.getElementById("section");if(!target)return;
   target.replaceChildren($("div",{class:"card"},"Загрузка…"));
   try{
-    const fn={dashboard,nodes,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
+    const fn={dashboard,readiness,nodes,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
     target.replaceChildren(await fn());
   }catch(e){target.replaceChildren(sectionError("VPNX3",e))}
 }
