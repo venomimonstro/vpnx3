@@ -79,6 +79,7 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/node/enroll",s.handleNodeEnroll)
 	mux.HandleFunc("POST /api/v1/node/heartbeat",s.handleNodeHeartbeat)
 	mux.HandleFunc("POST /api/v1/node/probe-results",s.handleProbeReport)
+	mux.HandleFunc("POST /api/v1/node/probe-lease",s.handleProbeLease)
 	mux.HandleFunc("POST /api/v1/build/claim",s.handleBuildClaim)
 	mux.HandleFunc("POST /api/v1/build/jobs/{id}/complete",s.handleBuildComplete)
 	mux.HandleFunc("PUT /api/v1/build/jobs/{id}/artifact",s.handleBuildArtifact)
