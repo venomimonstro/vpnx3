@@ -31,6 +31,17 @@ func (s *Server) handleUsers(w http.ResponseWriter,r *http.Request) {
 	writeJSON(w,http.StatusOK,map[string]any{"users":users})
 }
 
+func (s *Server) handleUserDetail(w http.ResponseWriter,r *http.Request) {
+	user,err:=s.store.AdminUserDetail(r.Context(),r.PathValue("id"))
+	if err==store.ErrNotFound{writeError(w,http.StatusNotFound,"user_not_found");return}
+	if err!=nil{s.internalError(w,r,err);return}
+	devices,err:=s.store.UserDevices(r.Context(),user.ID)
+	if err!=nil{s.internalError(w,r,err);return}
+	payments,err:=s.store.UserPayments(r.Context(),user.ID,20)
+	if err!=nil{s.internalError(w,r,err);return}
+	writeJSON(w,http.StatusOK,map[string]any{"user":user,"devices":devices,"payments":payments})
+}
+
 func (s *Server) handleUserDevices(w http.ResponseWriter,r *http.Request) {
 	devices,err:=s.store.UserDevices(r.Context(),r.PathValue("id"))
 	if err!=nil { s.internalError(w,r,err); return }
