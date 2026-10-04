@@ -241,3 +241,94 @@ func (s *Store) ResolveIncident(ctx context.Context,id,rootCause string) (Incide
 	if err!=nil { return Incident{},err }
 	return i,nil
 }
+
+
+type AdminSubscriptionDetail struct {
+	ID string `json:"id"`
+	PlanCode string `json:"plan_code"`
+	PlanName string `json:"plan_name"`
+	PlanVersion int `json:"plan_version"`
+	Status string `json:"status"`
+	StartsAt time.Time `json:"starts_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+	GraceUntil *time.Time `json:"grace_until,omitempty"`
+	AutoRenew bool `json:"auto_renew"`
+	DeviceLimit int `json:"device_limit"`
+}
+
+type AdminUserDetail struct {
+	ID string `json:"id"`
+	Email *string `json:"email,omitempty"`
+	Phone *string `json:"phone,omitempty"`
+	Status string `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+	DeviceCount int `json:"device_count"`
+	ActiveDeviceCount int `json:"active_device_count"`
+	TrialExpiresAt *time.Time `json:"trial_expires_at,omitempty"`
+	Subscription *AdminSubscriptionDetail `json:"subscription,omitempty"`
+}
+
+func (s *Store) AdminUserDetail(ctx context.Context,userID string)(AdminUserDetail,error){
+	var u AdminUserDetail
+	var subID,planCode,planName,subStatus *string
+	var planVersion,deviceLimit *int
+	var startsAt,expiresAt,graceUntil *time.Time
+	var autoRenew *bool
+	err:=s.DB.QueryRow(ctx,`
+		SELECT u.id::text,u.email,u.phone,u.status,u.created_at,u.updated_at,u.last_seen_at,
+		       (SELECT count(*)::int FROM devices d WHERE d.user_id=u.id),
+		       (SELECT count(*)::int FROM devices d WHERE d.user_id=u.id AND d.status='active'),
+		       (SELECT max(d.trial_expires_at) FROM devices d WHERE d.user_id=u.id),
+		       sub.id::text,p.code,p.name,p.version,sub.status,sub.starts_at,sub.expires_at,
+		       sub.grace_until,sub.auto_renew,p.device_limit
+		FROM users u
+		LEFT JOIN LATERAL (
+		  SELECT s.*
+		  FROM subscriptions s
+		  WHERE s.user_id=u.id
+		  ORDER BY COALESCE(s.grace_until,s.expires_at) DESC,s.created_at DESC
+		  LIMIT 1
+		) sub ON true
+		LEFT JOIN plans p ON p.id=sub.plan_id
+		WHERE u.id=$1
+	`,userID).Scan(
+		&u.ID,&u.Email,&u.Phone,&u.Status,&u.CreatedAt,&u.UpdatedAt,&u.LastSeenAt,
+		&u.DeviceCount,&u.ActiveDeviceCount,&u.TrialExpiresAt,
+		&subID,&planCode,&planName,&planVersion,&subStatus,&startsAt,&expiresAt,
+		&graceUntil,&autoRenew,&deviceLimit,
+	)
+	if err!=nil{return AdminUserDetail{},err}
+	if subID!=nil&&planCode!=nil&&planName!=nil&&planVersion!=nil&&subStatus!=nil&&startsAt!=nil&&expiresAt!=nil&&autoRenew!=nil&&deviceLimit!=nil{
+		u.Subscription=&AdminSubscriptionDetail{
+			ID:*subID,PlanCode:*planCode,PlanName:*planName,PlanVersion:*planVersion,
+			Status:*subStatus,StartsAt:*startsAt,ExpiresAt:*expiresAt,GraceUntil:graceUntil,
+			AutoRenew:*autoRenew,DeviceLimit:*deviceLimit,
+		}
+	}
+	return u,nil
+}
+
+func (s *Store) UserPayments(ctx context.Context,userID string,limit int)([]AdminPaymentRow,error){
+	if limit<=0||limit>100{limit=20}
+	rows,err:=s.DB.Query(ctx,`
+		SELECT pay.id::text,pay.user_id::text,p.code,p.version,pay.provider,pay.provider_payment_id,
+		       pay.status,pay.amount_minor,pay.currency,pay.paid_at,pay.created_at
+		FROM payments pay
+		JOIN plans p ON p.id=pay.plan_id
+		WHERE pay.user_id=$1
+		ORDER BY pay.created_at DESC
+		LIMIT $2
+	`,userID,limit)
+	if err!=nil{return nil,err}
+	defer rows.Close()
+	out:=make([]AdminPaymentRow,0)
+	for rows.Next(){
+		var p AdminPaymentRow
+		if err:=rows.Scan(&p.ID,&p.UserID,&p.PlanCode,&p.PlanVersion,&p.Provider,&p.ProviderPaymentID,
+			&p.Status,&p.AmountMinor,&p.Currency,&p.PaidAt,&p.CreatedAt);err!=nil{return nil,err}
+		out=append(out,p)
+	}
+	return out,rows.Err()
+}
