@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -67,9 +68,24 @@ func main() {
 		}
 	}
 
-	artifactStorage,err:=artifactstorage.NewLocal(cfg.ArtifactDir)
+	var artifactStorage artifactstorage.Storage
+	switch cfg.ArtifactStorage {
+	case "local":
+		artifactStorage,err=artifactstorage.NewLocal(cfg.ArtifactDir)
+	case "s3":
+		artifactStorage,err=artifactstorage.NewS3(artifactstorage.S3Config{
+			Endpoint:cfg.ArtifactS3Endpoint,
+			Region:cfg.ArtifactS3Region,
+			Bucket:cfg.ArtifactS3Bucket,
+			AccessKey:cfg.ArtifactS3AccessKey,
+			SecretKey:cfg.ArtifactS3SecretKey,
+			TempDir:cfg.ArtifactS3TempDir,
+		})
+	default:
+		err=fmt.Errorf("unsupported artifact storage %q",cfg.ArtifactStorage)
+	}
 	if err!=nil{
-		logger.Error("artifact storage initialization failed","error",err)
+		logger.Error("artifact storage initialization failed","backend",cfg.ArtifactStorage,"error",err)
 		os.Exit(1)
 	}
 
