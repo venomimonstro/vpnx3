@@ -370,6 +370,26 @@ async function userDevices(u){
   }catch(e){alert(e.message)}
 }
 
+
+function financeChart(rows){
+  if(!rows?.length)return $("div",{class:"empty"},"Нет финансовых данных");
+  const max=Math.max(1,...rows.map(x=>Math.max(x.captured_minor||0,x.refunded_minor||0,Math.abs(x.net_minor||0))));
+  const bars=rows.map(x=>{
+    const captured=Math.max(2,Math.round(((x.captured_minor||0)/max)*100));
+    const refunded=Math.max(0,Math.round(((x.refunded_minor||0)/max)*100));
+    const label=new Date(x.day).toLocaleDateString("ru-RU",{day:"2-digit",month:"2-digit"});
+    return $("div",{class:"finance-day",title:
+      label+" · поступления "+money(x.captured_minor)+" · возвраты "+money(x.refunded_minor)+" · чистыми "+money(x.net_minor)},
+      $("div",{class:"finance-bars"},
+        $("div",{class:"finance-bar captured",style:"height:"+captured+"%"}),
+        refunded?$("div",{class:"finance-bar refunded",style:"height:"+Math.max(2,refunded)+"%"}):null
+      ),
+      $("span",{},label)
+    );
+  });
+  return $("div",{class:"finance-chart",role:"img","aria-label":"Финансовая динамика по дням"},bars);
+}
+
 async function billing(){
   const paymentQ=$("input",{type:"search",placeholder:"User ID, payment ID, тариф"});
   const paymentStatus=$("select",{},
@@ -401,9 +421,13 @@ async function billing(){
   ]));
   await loadPayments();
   const financeCard=$("div",{class:"card"},$("h2",{},"Финансы за 30 дней"),
-    $("p",{},"Поступления: "+money(finance.captured_minor,finance.currency)),
-    $("p",{},"Возвраты: "+money(finance.refunded_minor,finance.currency)),
-    $("p",{},"Чистыми: "+money(finance.net_minor,finance.currency)));
+    $("div",{class:"finance-summary"},
+      $("div",{},$("span",{class:"muted"},"Поступления"),$("strong",{},money(finance.captured_minor,finance.currency))),
+      $("div",{},$("span",{class:"muted"},"Возвраты"),$("strong",{},money(finance.refunded_minor,finance.currency))),
+      $("div",{},$("span",{class:"muted"},"Чистыми"),$("strong",{},money(finance.net_minor,finance.currency))),
+      $("div",{},$("span",{class:"muted"},"Успешные оплаты"),$("strong",{},finance.succeeded_payments||0))
+    ),
+    financeChart(finance.daily));
   return sectionFrame("Тарифы и платежи",$("div",{class:"stack"},
     $("div",{class:"toolbar"},create),
     financeCard,
