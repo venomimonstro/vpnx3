@@ -27,6 +27,10 @@ type Storage interface {
 	CleanupTemporary(context.Context,time.Time) error
 }
 
+type ReadinessChecker interface {
+	Check(context.Context) error
+}
+
 type Local struct {
 	root string
 }
@@ -118,3 +122,16 @@ func (l *Local) CleanupTemporary(ctx context.Context,olderThan time.Time) error 
 		return nil
 	})
 }
+
+func (l *Local) Check(ctx context.Context) error {
+	if err:=ctx.Err();err!=nil{return err}
+	f,err:=os.CreateTemp(l.root,".readiness-*")
+	if err!=nil{return fmt.Errorf("artifact local storage is not writable: %w",err)}
+	name:=f.Name()
+	if _,err:=f.Write([]byte("ok"));err!=nil{f.Close();_ = os.Remove(name);return err}
+	if err:=f.Sync();err!=nil{f.Close();_ = os.Remove(name);return err}
+	if err:=f.Close();err!=nil{_ = os.Remove(name);return err}
+	return os.Remove(name)
+}
+
+var _ ReadinessChecker = (*Local)(nil)
