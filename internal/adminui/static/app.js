@@ -464,27 +464,6 @@ async function userDetail(userId){
   }
 }
 
-async function userDevices(u){
-  try{
-    const d=await api("/api/v1/admin/users/"+u.id+"/devices");
-    if(!d.devices.length){alert("Устройств нет");return}
-    const lines=d.devices.map(x=>x.id+" | "+x.platform+" | "+x.display_name+" | "+x.status+" | last "+dt(x.last_seen_at)).join("\n");
-    if(!can("users.manage")){alert(lines);return}
-    const cmd=prompt(lines+"\n\nКоманда: revoke <device-id> / reactivate <device-id>","");
-    if(!cmd)return;
-    const [op,id]=cmd.trim().split(/\s+/,2);
-    if(!id)return;
-    if(op==="revoke"){
-      if(!confirm("Отозвать устройство? Новые Access Lease будут запрещены. Уже активная offline-сессия живёт до своего expires_at."))return;
-      await api("/api/v1/admin/users/"+u.id+"/devices/"+encodeURIComponent(id)+"/revoke",{method:"POST"});
-    }else if(op==="reactivate"){
-      await api("/api/v1/admin/users/"+u.id+"/devices/"+encodeURIComponent(id)+"/reactivate",{method:"POST"});
-    }
-    renderSection();
-  }catch(e){alert(e.message)}
-}
-
-
 function financeChart(rows){
   if(!rows?.length)return $("div",{class:"empty"},"Нет финансовых данных");
   const max=Math.max(1,...rows.map(x=>Math.max(x.captured_minor||0,x.refunded_minor||0,Math.abs(x.net_minor||0))));
