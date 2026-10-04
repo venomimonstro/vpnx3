@@ -591,10 +591,119 @@ async function incidents(){
   if(can("incidents.manage")) toolbar.append($("button",{class:"btn primary",onclick:createIncident},"Создать инцидент"));
   const rows=d.incidents.map(i=>[
     dt(i.detected_at),badge(i.severity),badge(i.status),i.title,i.summary,i.root_cause||"—",
-    can("incidents.manage")&&i.status!=="resolved"?$("button",{class:"btn",onclick:async()=>{const root=prompt("Причина/итог","");try{await api("/api/v1/admin/incidents/"+i.id+"/resolve",{method:"POST",body:JSON.stringify({root_cause:root||""})});renderSection()}catch(e){alert(e.message)}}},"Закрыть"):"—"
+    can("incidents.manage")&&i.status!=="resolved"?$("button",{class:"btn",onclick:()=>resolveIncidentDialog(i)},"Закрыть"):"—"
   ]);
   return sectionFrame("Инциденты",$("div",{},toolbar,table(["Обнаружен","Важность","Статус","Название","Описание","Причина","Действие"],rows)));
 }
+
+function resolveIncidentDialog(i){
+  const root=$("textarea",{rows:"6",maxlength:"4000",placeholder:"Причина, что исправлено, итог"});
+  const body=$("div",{},
+    $("p",{},$("strong",{},i.title)),
+    field("Причина / итог",root)
+  );
+  modal("Закрыть инцидент",body,[
+    {label:"Отмена",onclick:d=>d.close()},
+    {label:"Закрыть",primary:true,onclick:async d=>{
+      try{
+        await api("/api/v1/admin/incidents/"+i.id+"/resolve",{method:"POST",body:JSON.stringify({root_cause:root.value.trim()})});
+        d.close();renderSection();
+      }catch(e){alert(e.message)}
+    }}
+  ]);
+}
+
+async function releaseDialog(r){
+  try{
+    const [jobsData,artData]=await Promise.all([
+      api("/api/v1/admin/releases/"+r.id+"/jobs"),
+      api("/api/v1/admin/releases/"+r.id+"/artifacts")
+    ]);
+    const body=$("div",{class:"stack"});
+    const jobs=$("div",{class:"card"},$("h3",{},"Задачи сборки"));
+    if(!jobsData.jobs.length)jobs.append($("div",{class:"empty"},"Задач нет"));
+    jobsData.jobs.forEach(job=>{
+      const row=$("div",{class:"endpoint-row"},
+        $("div",{},
+          $("strong",{},job.target+" · "+job.status),
+          $("div",{class:"mono muted"},job.id),
+          job.error_summary?$("div",{class:"error"},job.error_summary):null
+        )
+      );
+      if(can("releases.manage")&&(job.status==="failed"||job.status==="cancelled")){
+        row.append($("button",{class:"btn",onclick:async()=>{
+          try{
+            await api("/api/v1/admin/releases/"+r.id+"/jobs/"+encodeURIComponent(job.id)+"/retry",{method:"POST"});
+            document.querySelector("dialog.modal")?.close();renderSection();
+          }catch(e){alert(e.message)}
+        }},"Повторить"));
+      }
+      jobs.append(row);
+    });
+
+    const artifacts=$("div",{class:"card"},$("h3",{},"Артефакты"));
+    if(!artData.artifacts.length)artifacts.append($("div",{class:"empty"},"Артефактов нет"));
+    artData.artifacts.forEach(a=>{
+      artifacts.append($("div",{class:"endpoint-row"},
+        $("div",{},
+          $("strong",{},a.target+" · "+a.file_name),
+          $("div",{class:"mono muted"},a.sha256)
+        ),
+        $("button",{class:"btn",onclick:()=>downloadAuthenticated(
+          "/api/v1/admin/releases/"+r.id+"/artifacts/"+encodeURIComponent(a.id)+"/download"
+        ).catch(e=>alert(e.message))},"Скачать")
+      ));
+    });
+    body.append(jobs,artifacts);
+
+    const buttons=[{label:"Закрыть",onclick:d=>d.close()}];
+    if(can("releases.manage")&&r.status==="ready"){
+      buttons.push({label:"Опубликовать",primary:true,onclick:async d=>{
+        try{await api("/api/v1/admin/releases/"+r.id+"/publish",{method:"POST"});d.close();renderSection()}catch(e){alert(e.message)}
+      }});
+    }
+    if(can("releases.manage")&&r.status==="published"){
+      buttons.push({label:"Отозвать",danger:true,onclick:async d=>{
+        if(!confirm("Отозвать опубликованный релиз?"))return;
+        try{await api("/api/v1/admin/releases/"+r.id+"/withdraw",{method:"POST"});d.close();renderSection()}catch(e){alert(e.message)}
+      }});
+    }
+    modal("Релиз "+r.version,body,buttons);
+  }catch(e){alert(e.message)}
+}
+
+function adminEditDialog(a){
+  const roles=$("input",{value:(a.roles||[]).join(","),placeholder:"roles через запятую"});
+  const status=$("select",{},
+    $("option",{value:"active"},"active"),
+    $("option",{value:"disabled"},"disabled")
+  );
+  status.value=a.status;
+  const body=$("div",{},
+    $("p",{},$("strong",{},a.email)),
+    field("Роли",roles),
+    field("Статус",status),
+    $("p",{class:"muted"},"Сервер не позволит снять роль/отключить последнего активного owner.")
+  );
+  modal("Администратор",body,[
+    {label:"Отмена",onclick:d=>d.close()},
+    {label:"Сохранить",primary:true,onclick:async d=>{
+      try{
+        const roleList=roles.value.split(",").map(x=>x.trim()).filter(Boolean);
+        if(!roleList.length){alert("Нужна минимум одна роль");return}
+        const rolesChanged=JSON.stringify([...roleList].sort())!==JSON.stringify([...(a.roles||[])].sort());
+        if(rolesChanged){
+          await api("/api/v1/admin/admins/"+a.id+"/roles",{method:"PUT",body:JSON.stringify({roles:roleList})});
+        }
+        if(status.value!==a.status){
+          await api("/api/v1/admin/admins/"+a.id+"/status",{method:"PUT",body:JSON.stringify({status:status.value})});
+        }
+        d.close();renderSection();
+      }catch(e){alert(e.message)}
+    }}
+  ]);
+}
+
 async function createIncident(){
   const severity=$("select",{},
     ...["info","warning","critical"].map(v=>$("option",{value:v},v))
@@ -623,27 +732,7 @@ async function releases(){
   const rows=d.releases.map(r=>[
     r.version,badge(r.status),$("span",{class:"mono"},r.source_commit),dt(r.created_at),r.notes||"—",
     $("div",{class:"row-actions"},
-      $("button",{class:"btn",onclick:async()=>{try{
-        const [j,a]=await Promise.all([
-          api("/api/v1/admin/releases/"+r.id+"/jobs"),
-          api("/api/v1/admin/releases/"+r.id+"/artifacts")
-        ]);
-        const jobs=j.jobs.map(x=>x.id+" | "+x.target+" — "+x.status+(x.error_summary?" — "+x.error_summary:"")).join("\n")||"Задач нет";
-        const arts=a.artifacts.map(x=>x.id+" | "+x.target+" | "+x.file_name+" | "+x.sha256).join("\n")||"Артефактов нет";
-        if(!can("releases.manage")){alert(jobs+"\n\n"+arts);return}
-        const failed=j.jobs.filter(x=>x.status==="failed"||x.status==="cancelled");
-        const cmd=prompt(jobs+"\n\n"+arts+"\n\nКоманда: retry <job-id> / download <artifact-id> / publish / withdraw","");
-        if(!cmd)return;
-        const [op,id]=cmd.trim().split(/\s+/,2);
-        if(op==="retry"&&id) await api("/api/v1/admin/releases/"+r.id+"/jobs/"+encodeURIComponent(id)+"/retry",{method:"POST"});
-        else if(op==="publish") await api("/api/v1/admin/releases/"+r.id+"/publish",{method:"POST"});
-        else if(op==="withdraw") await api("/api/v1/admin/releases/"+r.id+"/withdraw",{method:"POST"});
-        else if(op==="download"&&id){
-          await downloadAuthenticated("/api/v1/admin/releases/"+r.id+"/artifacts/"+encodeURIComponent(id)+"/download");
-          return;
-        } else if(failed.length) alert("Неизвестная команда");
-        renderSection();
-      }catch(e){alert(e.message)}}},"Управление")
+      $("button",{class:"btn",onclick:()=>releaseDialog(r)},"Управление")
     )
   ]);
   return sectionFrame("Релизы",$("div",{},toolbar,table(["Версия","Статус","Commit","Создан","Заметки","Сборки"],rows)));
@@ -687,19 +776,7 @@ async function admins(){
   const rows=d.admins.map(a=>[
     a.email,badge(a.status),a.roles.join(", "),dt(a.created_at),
     a.id===state.admin.id?"текущая учётная запись":
-      $("button",{class:"btn",onclick:async()=>{
-        const cmd=prompt("Команда: roles role1,role2 / status active|disabled","");
-        if(!cmd)return;
-        try{
-          if(cmd.startsWith("roles ")){
-            const roles=cmd.slice(6).split(",").map(x=>x.trim()).filter(Boolean);
-            await api("/api/v1/admin/admins/"+a.id+"/roles",{method:"PUT",body:JSON.stringify({roles})});
-          }else if(cmd.startsWith("status ")){
-            await api("/api/v1/admin/admins/"+a.id+"/status",{method:"PUT",body:JSON.stringify({status:cmd.slice(7).trim()})});
-          }
-          renderSection();
-        }catch(e){alert(e.message)}
-      }},"Изменить")
+      $("button",{class:"btn",onclick:()=>adminEditDialog(a)},"Изменить")
   ]);
   return sectionFrame("Администраторы",$("div",{},toolbar,table(["Email","Статус","Роли","Создан","Действие"],rows)));
 }
