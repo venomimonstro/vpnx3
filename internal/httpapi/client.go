@@ -51,6 +51,7 @@ func (s *Server) handleClientRegister(w http.ResponseWriter,r *http.Request) {
 		return
 	}
 	if !allowed {
+		_ = s.store.IncrementSecurityCounter(r.Context(),"registration_rate_limited")
 		w.Header().Set("Retry-After","3600")
 		writeError(w,http.StatusTooManyRequests,"registration_rate_limited")
 		return
