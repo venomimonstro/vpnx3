@@ -95,7 +95,7 @@ func main() {
 	go accountcleaner.New(nodeStore,logger).Run(monitorCtx)
 	go buildwatchdog.New(nodeStore,logger,2*time.Minute).Run(monitorCtx)
 
-	srv := httpapi.NewServer(cfg,logger,db,configSigner,accessSigner,releaseSigner,artifactStorage)
+	srv := httpapi.NewServer(cfg,logger,db,configSigner,accessSigner,releaseSigner,artifactStorage,publisher.Trigger)
 	serverErr := make(chan error,1)
 	go func() {
 		logger.Info("control plane starting","addr",cfg.HTTPAddr,"env",cfg.Environment)
