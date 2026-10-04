@@ -97,6 +97,7 @@ func main() {
 			DNSServers:cfg.ClientDNS,
 			MTU:cfg.WireGuardMTU,
 			PersistentKeepalive:cfg.WireGuardKeepalive,
+			GatewayIPv4:cfg.WireGuardGateway,
 		},
 	)
 	publisher:=configpublisher.New(configurationService,logger,15*time.Minute)
