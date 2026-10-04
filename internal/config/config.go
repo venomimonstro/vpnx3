@@ -34,7 +34,14 @@ type Config struct {
 	YooKassaShopID         string
 	YooKassaSecretKey      string
 	YooKassaReturnURL      string
+	ArtifactStorage        string
 	ArtifactDir            string
+	ArtifactS3Endpoint     string
+	ArtifactS3Region       string
+	ArtifactS3Bucket       string
+	ArtifactS3AccessKey    string
+	ArtifactS3SecretKey    string
+	ArtifactS3TempDir      string
 	ArtifactMaxBytes       int64
 	ArtifactRetentionDays  int
 	ArtifactTransferTimeout time.Duration
@@ -65,7 +72,14 @@ func Load() (Config, error) {
 		YooKassaShopID:         strings.TrimSpace(os.Getenv("VPNX3_YOOKASSA_SHOP_ID")),
 		YooKassaSecretKey:      strings.TrimSpace(os.Getenv("VPNX3_YOOKASSA_SECRET_KEY")),
 		YooKassaReturnURL:      strings.TrimSpace(os.Getenv("VPNX3_YOOKASSA_RETURN_URL")),
+		ArtifactStorage:        strings.ToLower(env("VPNX3_ARTIFACT_STORAGE","local")),
 		ArtifactDir:            env("VPNX3_ARTIFACT_DIR","/var/lib/vpnx3/artifacts"),
+		ArtifactS3Endpoint:     strings.TrimSpace(os.Getenv("VPNX3_S3_ENDPOINT")),
+		ArtifactS3Region:       strings.TrimSpace(os.Getenv("VPNX3_S3_REGION")),
+		ArtifactS3Bucket:       strings.TrimSpace(os.Getenv("VPNX3_S3_BUCKET")),
+		ArtifactS3AccessKey:    strings.TrimSpace(os.Getenv("VPNX3_S3_ACCESS_KEY")),
+		ArtifactS3SecretKey:    strings.TrimSpace(os.Getenv("VPNX3_S3_SECRET_KEY")),
+		ArtifactS3TempDir:      env("VPNX3_S3_TEMP_DIR","/var/lib/vpnx3/s3tmp"),
 		ArtifactMaxBytes:       int64(intEnv("VPNX3_ARTIFACT_MAX_MB",300))*1024*1024,
 		ArtifactRetentionDays:  intEnv("VPNX3_ARTIFACT_RETENTION_DAYS",30),
 		ArtifactTransferTimeout: duration("VPNX3_ARTIFACT_TRANSFER_TIMEOUT",30*time.Minute),
@@ -103,6 +117,16 @@ func Load() (Config, error) {
 	}
 	if cfg.WireGuardKeepalive < 0 || cfg.WireGuardKeepalive > 120 {
 		return Config{}, fmt.Errorf("VPNX3_WG_KEEPALIVE must be between 0 and 120")
+	}
+	if cfg.ArtifactStorage!="local" && cfg.ArtifactStorage!="s3" {
+		return Config{}, fmt.Errorf("VPNX3_ARTIFACT_STORAGE must be local or s3")
+	}
+	if cfg.ArtifactStorage=="s3" {
+		if !strings.HasPrefix(cfg.ArtifactS3Endpoint,"https://") ||
+			cfg.ArtifactS3Region=="" || cfg.ArtifactS3Bucket=="" ||
+			cfg.ArtifactS3AccessKey=="" || cfg.ArtifactS3SecretKey=="" {
+			return Config{}, fmt.Errorf("S3 artifact storage requires https endpoint, region, bucket, access key and secret key")
+		}
 	}
 	if cfg.ArtifactTransferTimeout < time.Minute || cfg.ArtifactTransferTimeout > 2*time.Hour {
 		return Config{}, fmt.Errorf("VPNX3_ARTIFACT_TRANSFER_TIMEOUT must be between 1m and 2h")
