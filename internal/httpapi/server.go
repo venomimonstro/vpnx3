@@ -31,6 +31,7 @@ type Server struct {
 	billing *billing.Service
 	yooKassa *yookassa.Adapter
 	artifacts artifactstorage.Storage
+	onConfigChange func()
 }
 
 func NewServer(
@@ -39,6 +40,7 @@ func NewServer(
 	db *pgxpool.Pool,
 	configSigner,accessSigner,releaseSigner *signing.Signer,
 	artifacts artifactstorage.Storage,
+	onConfigChange ...func(),
 ) *Server {
 	mux:=http.NewServeMux()
 	var yoo *yookassa.Adapter
@@ -60,6 +62,9 @@ func NewServer(
 		),
 		configSigner:configSigner,accessSigner:accessSigner,releaseSigner:releaseSigner,
 		billing:billing.New(store.New(db)),yooKassa:yoo,artifacts:artifacts,
+	}
+	if len(onConfigChange)>0 {
+		s.onConfigChange=onConfigChange[0]
 	}
 	adminHandler:=http.StripPrefix("/admin/",adminui.Handler())
 	mux.HandleFunc("GET /admin",func(w http.ResponseWriter,r *http.Request){ http.Redirect(w,r,"/admin/",http.StatusTemporaryRedirect) })
