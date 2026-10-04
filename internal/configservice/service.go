@@ -14,6 +14,7 @@ type NetworkPolicy struct {
 	DNSServers          []string `json:"dns_servers"`
 	MTU                 int      `json:"mtu"`
 	PersistentKeepalive int      `json:"persistent_keepalive_seconds"`
+	GatewayIPv4         string   `json:"gateway_ipv4"`
 }
 
 type Service struct {
