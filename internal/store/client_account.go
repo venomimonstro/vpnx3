@@ -90,26 +90,41 @@ func normalizePairingCode(code string) string {
 
 func (s *Store) CreateDevicePairingCode(ctx context.Context,deviceID string,ttl time.Duration)(string,time.Time,error){
 	if ttl<time.Minute||ttl>30*time.Minute{return "",time.Time{},fmt.Errorf("invalid pairing ttl")}
+
+	account,err:=s.ClientAccountStatus(ctx,deviceID,time.Now().UTC())
+	if err!=nil{return "",time.Time{},err}
+	if account.ActiveDevices>=account.DeviceLimit{return "",time.Time{},fmt.Errorf("device limit reached")}
+
+	tx,err:=s.DB.Begin(ctx)
+	if err!=nil{return "",time.Time{},err}
+	defer tx.Rollback(ctx)
+
 	var userID,status string
-	if err:=s.DB.QueryRow(ctx,"SELECT user_id::text,status FROM devices WHERE id=$1",deviceID).Scan(&userID,&status);err!=nil{
+	if err:=tx.QueryRow(ctx,"SELECT user_id::text,status FROM devices WHERE id=$1 FOR UPDATE",deviceID).Scan(&userID,&status);err!=nil{
 		if errors.Is(err,pgx.ErrNoRows){return "",time.Time{},ErrNotFound}
 		return "",time.Time{},err
 	}
 	if status!="active"{return "",time.Time{},fmt.Errorf("device inactive")}
 
-	// A trial has a one-device ceiling, so issuing a code would be misleading.
-	account,err:=s.ClientAccountStatus(ctx,deviceID,time.Now().UTC())
-	if err!=nil{return "",time.Time{},err}
-	if account.ActiveDevices>=account.DeviceLimit{return "",time.Time{},fmt.Errorf("device limit reached")}
+	// Only one live pairing invitation per source device. Serializing on the
+	// device row prevents concurrent requests from creating multiple codes.
+	if _,err:=tx.Exec(ctx,`
+		UPDATE device_pairing_codes
+		SET used_at=now()
+		WHERE created_by_device_id=$1 AND used_at IS NULL
+	`,deviceID);err!=nil{return "",time.Time{},err}
 
 	for i:=0;i<4;i++{
 		code,hash,err:=generatePairingCode();if err!=nil{return "",time.Time{},err}
 		expires:=time.Now().UTC().Add(ttl)
-		_,err=s.DB.Exec(ctx,`
+		_,err=tx.Exec(ctx,`
 			INSERT INTO device_pairing_codes(user_id,created_by_device_id,code_hash,expires_at)
 			VALUES($1,$2,$3,$4)
 		`,userID,deviceID,hash,expires)
-		if err==nil{return code,expires,nil}
+		if err==nil{
+			if err:=tx.Commit(ctx);err!=nil{return "",time.Time{},err}
+			return code,expires,nil
+		}
 	}
 	return "",time.Time{},fmt.Errorf("unable to allocate pairing code")
 }
