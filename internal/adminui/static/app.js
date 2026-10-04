@@ -148,7 +148,11 @@ async function dashboard(){
     ["Выручка 30 дней",money(d.revenue_30d_minor)],
     ["Probe success 5 мин",d.probe_success_5m==null?"нет данных":d.probe_success_5m.toFixed(1)+"%"],
     ["Блокировки регистраций 24ч",d.registration_blocks_24h||0],
-    ["Блокировки платежей 24ч",d.payment_blocks_24h||0]
+    ["Блокировки платежей 24ч",d.payment_blocks_24h||0],
+    ["Сборки в очереди",d.build_queued||0],
+    ["Сборки выполняются",d.build_running||0],
+    ["Сборки с ошибкой",d.build_failed||0],
+    ["Активные build-worker",d.build_workers_active||0]
   ];
   return sectionFrame("Обзор",$("div",{class:"grid"},metrics.map(([k,v])=>$("div",{class:"card metric"},$("span",{class:"muted"},k),$("strong",{},v)))));
 }
