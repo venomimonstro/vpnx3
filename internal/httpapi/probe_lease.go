@@ -38,7 +38,7 @@ func (s *Server) handleProbeLease(w http.ResponseWriter,r *http.Request){
 	}
 
 	state,err:=s.store.ProbeLeaseAuthState(r.Context(),nodeID)
-	if err!=nil||state.Role!="probe"||state.Status!="active"{
+	if err!=nil||state.Role!="probe"||state.Status=="quarantined"||state.Status=="retired"||state.Status=="destroyed"{
 		writeError(w,http.StatusUnauthorized,"invalid_probe")
 		return
 	}
