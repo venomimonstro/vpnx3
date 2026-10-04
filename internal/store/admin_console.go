@@ -2,8 +2,11 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type DashboardSummary struct {
@@ -299,6 +302,7 @@ func (s *Store) AdminUserDetail(ctx context.Context,userID string)(AdminUserDeta
 		&subID,&planCode,&planName,&planVersion,&subStatus,&startsAt,&expiresAt,
 		&graceUntil,&autoRenew,&deviceLimit,
 	)
+	if errors.Is(err,pgx.ErrNoRows){return AdminUserDetail{},ErrNotFound}
 	if err!=nil{return AdminUserDetail{},err}
 	if subID!=nil&&planCode!=nil&&planName!=nil&&planVersion!=nil&&subStatus!=nil&&startsAt!=nil&&expiresAt!=nil&&autoRenew!=nil&&deviceLimit!=nil{
 		u.Subscription=&AdminSubscriptionDetail{
