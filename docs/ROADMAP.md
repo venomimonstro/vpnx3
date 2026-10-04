@@ -33,9 +33,11 @@ PostgreSQL, версионные миграции, health/readiness, RBAC, ад�
 - persistence/recovery worker;
 - live session count в heartbeat;
 - managed HTTPS/UDP node endpoints;
-- systemd installer worker.
+- systemd installer worker;
+- installer чистого Debian/Ubuntu сам создаёт WireGuard interface, gateway, forwarding и NAT;
+- единый `install-worker-node.sh` поднимает Data Plane + Node Agent одним сценарием.
 
-Не закрыто физически: реальный Linux-host с `wg0`, forwarding/NAT и сквозной тест трафика.
+Не закрыто физически: сквозной smoke-test на реальном Linux-host и проверка трафика из внешней сети.
 
 ## Спринт 3 — подписанная конфигурация: ОСНОВА ЗАВЕРШЕНА
 
@@ -88,12 +90,18 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - multi-probe circuit breaker;
 - автоматическое восстановление только circuit-breaker-degraded нод.
 
-Дополнительно реализованы latency-aware routing по свежим независимым probe observations и агрегированная client telemetry.
+Дополнительно реализованы:
+- latency-aware routing по свежим независимым probe observations;
+- агрегированная client telemetry;
+- probe-only Access Lease с отдельной replay-sequence;
+- signed `gateway_ipv4`;
+- synthetic WireGuard data-plane probe: session creation → временный peer → handshake → ping gateway → session teardown;
+- installer probe-ноды с CAP_NET_ADMIN/CAP_NET_RAW и необходимыми системными зависимостями.
 
 Следующие задачи:
 
 1. физически развернуть минимум 2–3 probes в разных сетях/регионах;
-2. synthetic WireGuard data-plane probe;
+2. проверить synthetic WireGuard probe на реальных worker-хостах;
 3. проверить circuit-breaker/failover на реальной распределённой сети.
 
 ## Спринт 6 — биллинг: В РАБОТЕ
@@ -177,7 +185,9 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - artifact storage abstraction с atomic local backend;
 - hardened streaming/download deadlines и integrity checks.
 
-Следующие задачи: macOS worker + Xcode для iOS и S3-compatible artifact adapter.
+Дополнительно реализован S3-compatible artifact backend с AWS Signature V4, обязательным HTTPS, SHA-256 verification, local spool, readiness и тем же Storage interface.
+
+Следующие задачи: macOS worker + Xcode для iOS.
 
 ## Обязательные проверки вне текущей GitHub-среды
 
@@ -243,7 +253,14 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 
 Следующие задачи:
 
-1. метрики rate-limit/abuse в dashboard;
-2. ограничение payment creation abuse;
-3. support search/filter по user/device/payment;
-4. сквозные эксплуатационные тесты на реальном окружении.
+Дополнительно реализованы:
+- privacy-preserving daily security counters;
+- dashboard блокировок регистраций/платежей;
+- payment creation rate limit;
+- детерминированная YooKassa idempotence для повторных кликов.
+
+Следующие задачи:
+
+1. support search/filter по user/device/payment;
+2. сквозные эксплуатационные тесты на реальном окружении;
+3. нагрузочные проверки Control Plane и ingress.
