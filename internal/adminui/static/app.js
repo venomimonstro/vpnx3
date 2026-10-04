@@ -238,11 +238,32 @@ async function telemetry(){
 }
 
 async function users(){
-  const d=await api("/api/v1/admin/users?limit=200");
-  return sectionFrame("Пользователи",table(["ID","Статус","Устройства","Подписка","До","Создан","Последняя активность","Действие"],d.users.map(u=>[
-    $("span",{class:"mono"},u.id),badge(u.status),u.device_count,u.subscription||"trial/нет",dt(u.expires_at),dt(u.created_at),dt(u.last_seen_at),
-    $("button",{class:"btn",onclick:()=>userDetail(u.id)},"Карточка")
-  ])));
+  const q=$("input",{type:"search",placeholder:"ID, email, телефон, устройство"});
+  const status=$("select",{},
+    $("option",{value:""},"Все статусы"),
+    $("option",{value:"active"},"active"),
+    $("option",{value:"disabled"},"disabled"),
+    $("option",{value:"blocked"},"blocked")
+  );
+  const body=$("div");
+  const load=async()=>{
+    body.replaceChildren($("div",{class:"card"},"Загрузка…"));
+    const params=new URLSearchParams({limit:"200"});
+    if(q.value.trim())params.set("q",q.value.trim());
+    if(status.value)params.set("status",status.value);
+    const d=await api("/api/v1/admin/users?"+params.toString());
+    body.replaceChildren(table(["ID","Статус","Устройства","Подписка","До","Создан","Последняя активность","Действие"],d.users.map(u=>[
+      $("span",{class:"mono"},u.id),badge(u.status),u.device_count,u.subscription||"trial/нет",dt(u.expires_at),dt(u.created_at),dt(u.last_seen_at),
+      $("button",{class:"btn",onclick:()=>userDetail(u.id)},"Карточка")
+    ])));
+  };
+  q.addEventListener("keydown",e=>{if(e.key==="Enter")load().catch(err=>alert(err.message))});
+  status.addEventListener("change",()=>load().catch(err=>alert(err.message)));
+  const search=$("button",{class:"btn primary",onclick:()=>load().catch(err=>alert(err.message))},"Найти");
+  await load();
+  return sectionFrame("Пользователи",$("div",{class:"stack"},
+    $("div",{class:"toolbar"},q,status,search),body
+  ));
 }
 
 async function userDetail(userId){
@@ -346,23 +367,49 @@ async function userDevices(u){
 }
 
 async function billing(){
-  const [plans,pays,finance]=await Promise.all([
+  const paymentQ=$("input",{type:"search",placeholder:"User ID, payment ID, тариф"});
+  const paymentStatus=$("select",{},
+    $("option",{value:""},"Все статусы"),
+    ...["pending","succeeded","failed","refunded","cancelled"].map(x=>$("option",{value:x},x))
+  );
+  const paymentProvider=$("input",{type:"search",placeholder:"Провайдер"});
+  const paymentBody=$("div");
+
+  const [plans,finance]=await Promise.all([
     api("/api/v1/billing/plans"),
-    api("/api/v1/admin/payments?limit=200"),
     api("/api/v1/admin/finance/summary?days=30")
   ]);
+  const loadPayments=async()=>{
+    const params=new URLSearchParams({limit:"200"});
+    if(paymentQ.value.trim())params.set("q",paymentQ.value.trim());
+    if(paymentStatus.value)params.set("status",paymentStatus.value);
+    if(paymentProvider.value.trim())params.set("provider",paymentProvider.value.trim());
+    const pays=await api("/api/v1/admin/payments?"+params.toString());
+    paymentBody.replaceChildren(table(["Время","Пользователь","Тариф","Провайдер","Статус","Сумма","Оплачен"],pays.payments.map(p=>[
+      dt(p.created_at),$("span",{class:"mono"},p.user_id),p.plan_code+" v"+p.plan_version,p.provider,badge(p.status),money(p.amount_minor,p.currency),dt(p.paid_at)
+    ])));
+  };
+  paymentQ.addEventListener("keydown",e=>{if(e.key==="Enter")loadPayments().catch(err=>alert(err.message))});
+  paymentStatus.addEventListener("change",()=>loadPayments().catch(err=>alert(err.message)));
   const create=can("billing.manage")?$("button",{class:"btn primary",onclick:createPlan},"Новая версия тарифа"):null;
   const planTable=table(["Код","Версия","Название","Цена","Период","Устройства","Продажа"],plans.plans.map(p=>[
     p.code,p.version,p.name,money(p.price_minor,p.currency),p.billing_period_days+" дн.",p.device_limit,p.sale_enabled?"да":"нет"
   ]));
-  const payTable=table(["Время","Пользователь","Тариф","Провайдер","Статус","Сумма","Оплачен"],pays.payments.map(p=>[
-    dt(p.created_at),$("span",{class:"mono"},p.user_id),p.plan_code+" v"+p.plan_version,p.provider,badge(p.status),money(p.amount_minor,p.currency),dt(p.paid_at)
-  ]));
+  await loadPayments();
   const financeCard=$("div",{class:"card"},$("h2",{},"Финансы за 30 дней"),
     $("p",{},"Поступления: "+money(finance.captured_minor,finance.currency)),
     $("p",{},"Возвраты: "+money(finance.refunded_minor,finance.currency)),
     $("p",{},"Чистыми: "+money(finance.net_minor,finance.currency)));
-  return sectionFrame("Тарифы и платежи",$("div",{class:"stack"},$("div",{class:"toolbar"},create),financeCard,$("div",{class:"card"},$("h2",{},"Тарифы"),planTable),$("div",{class:"card"},$("h2",{},"Платежи"),payTable)));
+  return sectionFrame("Тарифы и платежи",$("div",{class:"stack"},
+    $("div",{class:"toolbar"},create),
+    financeCard,
+    $("div",{class:"card"},$("h2",{},"Тарифы"),planTable),
+    $("div",{class:"card"},
+      $("h2",{},"Платежи"),
+      $("div",{class:"toolbar"},paymentQ,paymentStatus,paymentProvider,
+        $("button",{class:"btn",onclick:()=>loadPayments().catch(err=>alert(err.message))},"Найти")),
+      paymentBody)
+  ));
 }
 async function createPlan(){
   const code=prompt("Код тарифа","basic");if(!code)return;
