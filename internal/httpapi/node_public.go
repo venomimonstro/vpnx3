@@ -125,6 +125,12 @@ func (s *Server) handleNodeHeartbeat(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w,r,err)
 		return
 	}
+	recovered,err:=s.store.RecoverHeartbeatDegradedNode(r.Context(),nodeID)
+	if err!=nil{
+		s.internalError(w,r,err)
+		return
+	}
+	if recovered && s.onConfigChange!=nil { s.onConfigChange() }
 	writeJSON(w,http.StatusOK,map[string]any{
 		"status":"ok",
 		"server_time":time.Now().UTC(),
