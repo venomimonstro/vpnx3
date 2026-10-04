@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE nodes
+  ADD COLUMN IF NOT EXISTS probe_lease_sequence BIGINT NOT NULL DEFAULT 0;
+
+COMMIT;
