@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net"
@@ -37,6 +39,7 @@ type Config struct {
 	ArtifactRetentionDays  int
 	ArtifactTransferTimeout time.Duration
 	TrustedProxyCIDRs      []string
+	RegistrationRateKey    string
 }
 
 func Load() (Config, error) {
@@ -67,6 +70,7 @@ func Load() (Config, error) {
 		ArtifactRetentionDays:  intEnv("VPNX3_ARTIFACT_RETENTION_DAYS",30),
 		ArtifactTransferTimeout: duration("VPNX3_ARTIFACT_TRANSFER_TIMEOUT",30*time.Minute),
 		TrustedProxyCIDRs:      csvEnv("VPNX3_TRUSTED_PROXY_CIDRS"),
+		RegistrationRateKey:    strings.TrimSpace(os.Getenv("VPNX3_REGISTRATION_RATE_KEY")),
 	}
 
 	if strings.TrimSpace(cfg.HTTPAddr) == "" {
@@ -77,6 +81,13 @@ func Load() (Config, error) {
 	}
 	if cfg.AccessSigningKey == "" {
 		return Config{}, fmt.Errorf("VPNX3_ACCESS_SIGNING_KEY must be set")
+	}
+	if cfg.RegistrationRateKey=="" {
+		sum:=sha256.Sum256([]byte("vpnx3-registration-rate-v1\x00"+cfg.AccessSigningKey))
+		cfg.RegistrationRateKey=hex.EncodeToString(sum[:])
+	}
+	if len(cfg.RegistrationRateKey)<32 {
+		return Config{}, fmt.Errorf("VPNX3_REGISTRATION_RATE_KEY must be at least 32 characters when explicitly set")
 	}
 	if cfg.AccessLeaseTTL < 15*time.Minute || cfg.AccessLeaseTTL > 24*time.Hour {
 		return Config{}, fmt.Errorf("VPNX3_ACCESS_LEASE_TTL must be between 15m and 24h")
