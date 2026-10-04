@@ -22,6 +22,10 @@ type DashboardSummary struct {
 	ProbeSuccess5m      *float64 `json:"probe_success_5m,omitempty"`
 	RegistrationBlocks24h int64 `json:"registration_blocks_24h"`
 	PaymentBlocks24h int64 `json:"payment_blocks_24h"`
+	BuildQueued int64 `json:"build_queued"`
+	BuildRunning int64 `json:"build_running"`
+	BuildFailed int64 `json:"build_failed"`
+	BuildWorkersActive int64 `json:"build_workers_active"`
 }
 
 func (s *Store) Dashboard(ctx context.Context) (DashboardSummary,error) {
@@ -58,6 +62,16 @@ func (s *Store) Dashboard(ctx context.Context) (DashboardSummary,error) {
 	}
 	if d.PaymentBlocks24h,err=s.SecurityCounter24h(ctx,"payment_rate_limited");err!=nil{
 		return DashboardSummary{},fmt.Errorf("dashboard payment abuse counter: %w",err)
+	}
+	if err:=s.DB.QueryRow(ctx,`SELECT
+		count(*) FILTER (WHERE status=\'queued\')::bigint,
+		count(*) FILTER (WHERE status=\'running\')::bigint,
+		count(*) FILTER (WHERE status=\'failed\')::bigint
+		FROM build_jobs`).Scan(&d.BuildQueued,&d.BuildRunning,&d.BuildFailed);err!=nil{
+		return DashboardSummary{},fmt.Errorf("dashboard build jobs: %w",err)
+	}
+	if err:=s.DB.QueryRow(ctx,`SELECT count(*)::bigint FROM nodes WHERE role=\'build_worker\' AND status=\'active\'`).Scan(&d.BuildWorkersActive);err!=nil{
+		return DashboardSummary{},fmt.Errorf("dashboard build workers: %w",err)
 	}
 	return d,nil
 }
