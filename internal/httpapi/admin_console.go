@@ -114,7 +114,11 @@ func (s *Server) handleReactivateUserDevice(w http.ResponseWriter,r *http.Reques
 	userID:=r.PathValue("id")
 	deviceID:=r.PathValue("deviceId")
 	if err:=s.store.ReactivateUserDevice(r.Context(),userID,deviceID);err!=nil{
-		if err.Error()=="not found"{writeError(w,http.StatusNotFound,"device_not_found");return}
+		if err==store.ErrNotFound{writeError(w,http.StatusNotFound,"device_not_found");return}
+		if strings.Contains(err.Error(),"device limit reached"){writeError(w,http.StatusConflict,"device_limit_reached");return}
+		if strings.Contains(err.Error(),"not revoked")||strings.Contains(err.Error(),"user is not active"){
+			writeError(w,http.StatusConflict,"device_reactivation_rejected");return
+		}
 		s.internalError(w,r,err);return
 	}
 	admin,_:=adminFromContext(r.Context())
