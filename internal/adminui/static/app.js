@@ -239,9 +239,90 @@ async function users(){
   const d=await api("/api/v1/admin/users?limit=200");
   return sectionFrame("Пользователи",table(["ID","Статус","Устройства","Подписка","До","Создан","Последняя активность","Действие"],d.users.map(u=>[
     $("span",{class:"mono"},u.id),badge(u.status),u.device_count,u.subscription||"trial/нет",dt(u.expires_at),dt(u.created_at),dt(u.last_seen_at),
-    $("button",{class:"btn",onclick:()=>userDevices(u)},"Устройства")
+    $("button",{class:"btn",onclick:()=>userDetail(u.id)},"Карточка")
   ])));
 }
+
+async function userDetail(userId){
+  const target=document.getElementById("section");if(!target)return;
+  target.replaceChildren($("div",{class:"card"},"Загрузка карточки…"));
+  try{
+    const d=await api("/api/v1/admin/users/"+userId);
+    const u=d.user;
+    const back=$("button",{class:"btn",onclick:()=>renderSection()},"← К пользователям");
+
+    const sub=u.subscription
+      ? $("div",{class:"card"},
+          $("h2",{},"Подписка"),
+          $("p",{},"Тариф: "+u.subscription.plan_name+" ("+u.subscription.plan_code+" v"+u.subscription.plan_version+")"),
+          $("p",{}, "Статус: ", badge(u.subscription.status)),
+          $("p",{},"Действует до: "+dt(u.subscription.expires_at)),
+          $("p",{},"Grace до: "+dt(u.subscription.grace_until)),
+          $("p",{},"Устройства: "+u.active_device_count+" / "+u.subscription.device_limit),
+          $("p",{},"Автопродление: "+(u.subscription.auto_renew?"да":"нет")))
+      : $("div",{class:"card"},
+          $("h2",{},"Доступ"),
+          $("p",{},"Активной подписки нет"),
+          $("p",{},"Trial до: "+dt(u.trial_expires_at)),
+          $("p",{},"Активные устройства: "+u.active_device_count));
+
+    const deviceRows=d.devices.map(dev=>[
+      dev.platform,
+      dev.display_name,
+      badge(dev.status),
+      dev.client_version||"—",
+      dt(dev.first_seen_at),
+      dt(dev.last_seen_at),
+      can("users.manage")
+        ? $("div",{class:"row-actions"},
+            dev.status==="active"
+              ? $("button",{class:"btn",onclick:async()=>{
+                  if(!confirm("Отозвать это устройство?"))return;
+                  try{
+                    await api("/api/v1/admin/users/"+u.id+"/devices/"+encodeURIComponent(dev.id)+"/revoke",{method:"POST"});
+                    await userDetail(u.id);
+                  }catch(e){alert(e.message)}
+                }},"Отозвать")
+              : $("button",{class:"btn",onclick:async()=>{
+                  try{
+                    await api("/api/v1/admin/users/"+u.id+"/devices/"+encodeURIComponent(dev.id)+"/reactivate",{method:"POST"});
+                    await userDetail(u.id);
+                  }catch(e){
+                    if(e.message==="device_limit_reached") alert("Нельзя активировать: достигнут лимит устройств тарифа");
+                    else alert(e.message);
+                  }
+                }},"Активировать"))
+        : "—"
+    ]);
+
+    const paymentRows=d.payments.map(p=>[
+      dt(p.created_at),p.plan_code+" v"+p.plan_version,p.provider,
+      badge(p.status),money(p.amount_minor,p.currency),dt(p.paid_at)
+    ]);
+
+    target.replaceChildren(sectionFrame("Пользователь",
+      $("div",{class:"stack"},
+        $("div",{class:"toolbar"},back),
+        $("div",{class:"card"},
+          $("h2",{},"Профиль"),
+          $("p",{},$("span",{class:"mono"},u.id)),
+          $("p",{},"Статус: ",badge(u.status)),
+          $("p",{},"Email: "+(u.email||"—")),
+          $("p",{},"Телефон: "+(u.phone||"—")),
+          $("p",{},"Создан: "+dt(u.created_at)),
+          $("p",{},"Последняя активность: "+dt(u.last_seen_at))),
+        sub,
+        $("div",{class:"card"},$("h2",{},"Устройства"),
+          table(["Платформа","Название","Статус","Версия","Добавлено","Последняя активность","Действие"],deviceRows)),
+        $("div",{class:"card"},$("h2",{},"Последние платежи"),
+          paymentRows.length?table(["Время","Тариф","Провайдер","Статус","Сумма","Оплачен"],paymentRows):$("p",{class:"muted"},"Платежей нет"))
+      )
+    ));
+  }catch(e){
+    target.replaceChildren(sectionError("Пользователь",e));
+  }
+}
+
 async function userDevices(u){
   try{
     const d=await api("/api/v1/admin/users/"+u.id+"/devices");
