@@ -45,4 +45,9 @@ func (c *Cleaner) cleanup(parent context.Context){
 	}else if deleted>0{
 		c.logger.Info("registration rate buckets cleaned","count",deleted)
 	}
+	if deleted,err:=c.store.CleanupExpiredAnonymousTrials(ctx);err!=nil{
+		c.logger.Warn("expired anonymous trial cleanup failed","error",err)
+	}else if deleted>0{
+		c.logger.Info("expired anonymous trial accounts cleaned","count",deleted)
+	}
 }
