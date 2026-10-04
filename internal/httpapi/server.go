@@ -58,6 +58,7 @@ func NewServer(
 				DNSServers:cfg.ClientDNS,
 				MTU:cfg.WireGuardMTU,
 				PersistentKeepalive:cfg.WireGuardKeepalive,
+				GatewayIPv4:cfg.WireGuardGateway,
 			},
 		),
 		configSigner:configSigner,accessSigner:accessSigner,releaseSigner:releaseSigner,
