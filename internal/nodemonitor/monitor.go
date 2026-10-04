@@ -13,14 +13,18 @@ type Monitor struct {
 	logger *slog.Logger
 	interval time.Duration
 	staleAfter time.Duration
+	onRoutingChange func()
 }
 
-func New(s *store.Store,logger *slog.Logger) *Monitor {
+func New(s *store.Store,logger *slog.Logger,onRoutingChange ...func()) *Monitor {
+	var callback func()
+	if len(onRoutingChange)>0 { callback=onRoutingChange[0] }
 	return &Monitor{
 		store:s,
 		logger:logger,
 		interval:20*time.Second,
 		staleAfter:90*time.Second,
+		onRoutingChange:callback,
 	}
 }
 
@@ -49,5 +53,8 @@ func (m *Monitor) check(parent context.Context) {
 	}
 	for _,id:=range ids {
 		m.logger.Warn("node marked degraded after heartbeat timeout","node_id",id)
+	}
+	if len(ids)>0 && m.onRoutingChange!=nil {
+		m.onRoutingChange()
 	}
 }
