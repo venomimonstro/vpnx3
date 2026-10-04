@@ -19,6 +19,8 @@ type DashboardSummary struct {
 	Revenue30dMinor     int64   `json:"revenue_30d_minor"`
 	Payments30d         int64   `json:"payments_30d"`
 	ProbeSuccess5m      *float64 `json:"probe_success_5m,omitempty"`
+	RegistrationBlocks24h int64 `json:"registration_blocks_24h"`
+	PaymentBlocks24h int64 `json:"payment_blocks_24h"`
 }
 
 func (s *Store) Dashboard(ctx context.Context) (DashboardSummary,error) {
@@ -50,6 +52,12 @@ func (s *Store) Dashboard(ctx context.Context) (DashboardSummary,error) {
 		FROM probe_results WHERE observed_at>=now()-interval '5 minutes'
 	`).Scan(&probe); err!=nil { return DashboardSummary{},fmt.Errorf("dashboard probe score: %w",err) }
 	d.ProbeSuccess5m=probe
+	if d.RegistrationBlocks24h,err=s.SecurityCounter24h(ctx,"registration_rate_limited");err!=nil{
+		return DashboardSummary{},fmt.Errorf("dashboard registration abuse counter: %w",err)
+	}
+	if d.PaymentBlocks24h,err=s.SecurityCounter24h(ctx,"payment_rate_limited");err!=nil{
+		return DashboardSummary{},fmt.Errorf("dashboard payment abuse counter: %w",err)
+	}
 	return d,nil
 }
 
