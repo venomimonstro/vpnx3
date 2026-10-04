@@ -136,6 +136,23 @@ function table(headers,rows){
 }
 function sectionError(title,e){return sectionFrame(title,$("div",{class:"card error"},"Ошибка: "+e.message))}
 
+
+function modal(title,content,buttons=[]){
+  const dialog=$("dialog",{class:"modal"});
+  const actions=$("div",{class:"modal-actions"});
+  buttons.forEach(b=>actions.append($("button",{class:"btn "+(b.primary?"primary":b.danger?"danger":""),type:"button",onclick:()=>b.onclick(dialog)},b.label)));
+  dialog.append($("div",{class:"modal-card"},$("h2",{},title),content,actions));
+  document.body.append(dialog);
+  dialog.addEventListener("close",()=>dialog.remove(),{once:true});
+  dialog.addEventListener("click",e=>{if(e.target===dialog)dialog.close()});
+  dialog.showModal();
+  return dialog;
+}
+
+function field(label,input){
+  return $("div",{class:"field"},$("label",{},label),input);
+}
+
 async function dashboard(){
   const d=await api("/api/v1/admin/dashboard");
   const metrics=[
@@ -193,34 +210,131 @@ function nodeActions(n){
   return box;
 }
 async function enrollmentDialog(){
-  const role=prompt("Роль: worker / ingress / probe / config_mirror / build_worker","worker");
-  if(!role)return;
-  try{
-    const d=await api("/api/v1/nodes/enrollment-tokens",{method:"POST",body:JSON.stringify({role,ttl_minutes:10})});
-    prompt("Одноразовый токен. Скопируйте сейчас:",d.token);
-  }catch(e){alert(e.message)}
+  const role=$("select",{},
+    ...["worker","ingress","probe","config_mirror","build_worker"].map(v=>$("option",{value:v},v))
+  );
+  const ttl=$("input",{type:"number",min:"1",max:"60",value:"10"});
+  const result=$("textarea",{readonly:"",rows:"4",placeholder:"После создания здесь появится одноразовый токен"});
+  const body=$("div",{},
+    field("Роль ноды",role),
+    field("Срок действия, минут",ttl),
+    field("Одноразовый токен",result),
+    $("p",{class:"muted"},"Токен показывается для копирования и используется только один раз.")
+  );
+  modal("Новый код подключения",body,[
+    {label:"Закрыть",onclick:d=>d.close()},
+    {label:"Создать",primary:true,onclick:async d=>{
+      try{
+        const minutes=Number(ttl.value);
+        if(!Number.isInteger(minutes)||minutes<1||minutes>60){alert("Срок должен быть 1–60 минут");return}
+        const data=await api("/api/v1/nodes/enrollment-tokens",{method:"POST",body:JSON.stringify({role:role.value,ttl_minutes:minutes})});
+        result.value=data.token;
+        result.focus();result.select();
+      }catch(e){alert(e.message)}
+    }}
+  ]);
 }
+
 async function endpointDialog(n){
   try{
-    const d=await api("/api/v1/nodes/"+n.id+"/endpoints");
-    const text=d.endpoints.map(e=>e.id+" | "+e.kind+" | "+e.scheme+"://"+e.host+":"+e.port+e.path).join("\n")||"Endpoints нет";
-    if(!can("nodes.manage")){alert(text);return}
-    const action=prompt(text+"\n\nВведите add или ID endpoint для удаления","add");
-    if(!action)return;
-    if(action==="add"){
-      const kind=prompt("kind: session_api / wireguard / ingress","session_api"); if(!kind)return;
-      const transport=prompt("transport","wireguard"); if(!transport)return;
-      const scheme=prompt("scheme: https / udp",kind==="wireguard"?"udp":"https"); if(!scheme)return;
-      const host=prompt("host"); if(!host)return;
-      const port=Number(prompt("port",kind==="wireguard"?"51820":"443")); if(!port)return;
-      const path=kind==="session_api"?(prompt("path","/internal/v1/sessions")||""):"";
-      await api("/api/v1/nodes/"+n.id+"/endpoints",{method:"POST",body:JSON.stringify({kind,transport,scheme,host,port,path,priority:100})});
-    }else{
-      await api("/api/v1/nodes/"+n.id+"/endpoints/"+encodeURIComponent(action),{method:"DELETE"});
+    const data=await api("/api/v1/nodes/"+n.id+"/endpoints");
+    const list=$("div",{class:"stack"});
+    const renderList=()=>{
+      list.replaceChildren();
+      if(!data.endpoints.length){
+        list.append($("div",{class:"empty"},"Endpoints нет"));
+        return;
+      }
+      data.endpoints.forEach(ep=>{
+        const row=$("div",{class:"endpoint-row"},
+          $("div",{},
+            $("strong",{},ep.kind+" · "+ep.scheme+" · "+ep.transport),
+            $("div",{class:"mono muted"},ep.host+":"+ep.port+(ep.path||"")+" · priority "+ep.priority)
+          )
+        );
+        if(can("nodes.manage")){
+          row.append($("button",{class:"btn danger",onclick:async()=>{
+            if(!confirm("Удалить endpoint "+ep.host+":"+ep.port+"?"))return;
+            try{
+              await api("/api/v1/nodes/"+n.id+"/endpoints/"+encodeURIComponent(ep.id),{method:"DELETE"});
+              data.endpoints=data.endpoints.filter(x=>x.id!==ep.id);
+              renderList();
+            }catch(e){alert(e.message)}
+          }},"Удалить"));
+        }
+        list.append(row);
+      });
+    };
+    renderList();
+
+    if(!can("nodes.manage")){
+      modal("Endpoints · "+n.name,list,[{label:"Закрыть",onclick:d=>d.close()}]);
+      return;
     }
-    renderSection();
+
+    const kind=$("select",{},
+      ...["session_api","wireguard","ingress"].map(v=>$("option",{value:v},v))
+    );
+    const transport=$("input",{value:"wireguard",placeholder:"transport"});
+    const scheme=$("select",{},
+      $("option",{value:"https"},"https"),
+      $("option",{value:"udp"},"udp")
+    );
+    const host=$("input",{placeholder:"vpn.example.net или IP"});
+    const port=$("input",{type:"number",min:"1",max:"65535",value:"443"});
+    const path=$("input",{value:"/internal/v1/sessions",placeholder:"/internal/v1/sessions"});
+    const priority=$("input",{type:"number",min:"1",max:"10000",value:"100"});
+
+    const syncDefaults=()=>{
+      if(kind.value==="wireguard"){
+        scheme.value="udp";transport.value="wireguard";port.value="51820";path.value="";
+      }else if(kind.value==="ingress"){
+        scheme.value="https";transport.value="https_connect";port.value="443";path.value="";
+      }else{
+        scheme.value="https";transport.value="wireguard";port.value="443";path.value="/internal/v1/sessions";
+      }
+    };
+    kind.addEventListener("change",syncDefaults);
+
+    const form=$("div",{class:"stack"},
+      list,
+      $("div",{class:"card"},
+        $("h3",{},"Добавить endpoint"),
+        field("Тип",kind),
+        field("Транспорт",transport),
+        field("Схема",scheme),
+        field("Хост",host),
+        field("Порт",port),
+        field("Путь",path),
+        field("Приоритет",priority)
+      )
+    );
+    modal("Endpoints · "+n.name,form,[
+      {label:"Закрыть",onclick:d=>d.close()},
+      {label:"Добавить",primary:true,onclick:async()=>{
+        try{
+          const payload={
+            kind:kind.value,
+            transport:transport.value.trim(),
+            scheme:scheme.value,
+            host:host.value.trim(),
+            port:Number(port.value),
+            path:path.value.trim(),
+            priority:Number(priority.value)
+          };
+          if(!payload.host||!Number.isInteger(payload.port)||payload.port<1||payload.port>65535){
+            alert("Проверьте host и port");return;
+          }
+          const ep=await api("/api/v1/nodes/"+n.id+"/endpoints",{method:"POST",body:JSON.stringify(payload)});
+          data.endpoints.push(ep);
+          renderList();
+          host.value="";
+        }catch(e){alert(e.message)}
+      }}
+    ]);
   }catch(e){alert(e.message)}
 }
+
 
 async function probes(){
   const d=await api("/api/v1/probes/recent?limit=200");
