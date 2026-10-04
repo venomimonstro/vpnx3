@@ -146,7 +146,9 @@ async function dashboard(){
     ["Деградированные",d.nodes_degraded],
     ["VPN-сессии",d.current_sessions],
     ["Выручка 30 дней",money(d.revenue_30d_minor)],
-    ["Probe success 5 мин",d.probe_success_5m==null?"нет данных":d.probe_success_5m.toFixed(1)+"%"]
+    ["Probe success 5 мин",d.probe_success_5m==null?"нет данных":d.probe_success_5m.toFixed(1)+"%"],
+    ["Блокировки регистраций 24ч",d.registration_blocks_24h||0],
+    ["Блокировки платежей 24ч",d.payment_blocks_24h||0]
   ];
   return sectionFrame("Обзор",$("div",{class:"grid"},metrics.map(([k,v])=>$("div",{class:"card metric"},$("span",{class:"muted"},k),$("strong",{},v)))));
 }
