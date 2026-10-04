@@ -53,6 +53,7 @@ func (s *Server) handleClientCreatePayment(w http.ResponseWriter,r *http.Request
 	allowed,_,err:=s.store.AllowPaymentCreation(r.Context(),state.UserID,time.Now().UTC(),10)
 	if err!=nil { s.internalError(w,r,err); return }
 	if !allowed {
+		_ = s.store.IncrementSecurityCounter(r.Context(),"payment_rate_limited")
 		w.Header().Set("Retry-After","3600")
 		writeError(w,http.StatusTooManyRequests,"payment_rate_limited")
 		return
