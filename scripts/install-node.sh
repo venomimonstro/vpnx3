@@ -6,6 +6,7 @@ ENROLLMENT_TOKEN=""
 NODE_NAME=""
 COUNTRY=""
 PROVIDER=""
+PUBLIC_IP=""
 BINARY_URL=""
 BINARY_SHA256=""
 CAPACITY="1000"
@@ -19,6 +20,7 @@ usage() {
     --name de-01 \
     --country DE \
     --provider provider-a \
+    [--public-ip 203.0.113.10] \
     --binary-url https://.../node-agent \
     --sha256 EXPECTED_SHA256 \
     [--capacity 1000]
@@ -34,6 +36,7 @@ while [[ $# -gt 0 ]]; do
     --name) NODE_NAME="${2:-}"; shift 2 ;;
     --country) COUNTRY="${2:-}"; shift 2 ;;
     --provider) PROVIDER="${2:-}"; shift 2 ;;
+    --public-ip) PUBLIC_IP="${2:-}"; shift 2 ;;
     --binary-url) BINARY_URL="${2:-}"; shift 2 ;;
     --sha256) BINARY_SHA256="${2:-}"; shift 2 ;;
     --capacity) CAPACITY="${2:-}"; shift 2 ;;
@@ -94,6 +97,7 @@ VPNX3_ENROLLMENT_TOKEN=$ENROLLMENT_TOKEN
 VPNX3_NODE_NAME=$NODE_NAME
 VPNX3_NODE_COUNTRY=$COUNTRY
 VPNX3_NODE_PROVIDER=$PROVIDER
+VPNX3_NODE_PUBLIC_IP=$PUBLIC_IP
 VPNX3_NODE_CAPACITY=$CAPACITY
 VPNX3_AGENT_IDENTITY_PATH=/var/lib/vpnx3-agent/identity.json
 VPNX3_WORKER_STATUS_URL=http://127.0.0.1:9090/internal/v1/status
