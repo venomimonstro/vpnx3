@@ -13,6 +13,7 @@ import ru.vpnx3.app.data.ClientPlan
 import ru.vpnx3.app.data.PreparedConnection
 import ru.vpnx3.app.data.VpnRepository
 import ru.vpnx3.app.update.UpdateRepository
+import ru.vpnx3.app.security.PersonalKeyInfo
 
 enum class ConnectionState {
     PREPARING,
@@ -34,7 +35,9 @@ data class MainUiState(
     val account: ClientAccountStatus? = null,
     val pairingCode: String? = null,
     val pairingCodeExpiresAt: String? = null,
-    val pairingBusy: Boolean = false
+    val pairingBusy: Boolean = false,
+    val personalKeyEnabled: Boolean = false,
+    val personalKeyInfo: PersonalKeyInfo? = null
 )
 
 private data class InitResult(
@@ -42,7 +45,9 @@ private data class InitResult(
     val update: ru.vpnx3.app.update.ReleaseInfo?,
     val plans: List<ClientPlan>,
     val connected: Boolean,
-    val account: ClientAccountStatus?
+    val account: ClientAccountStatus?,
+    val personalKeyEnabled: Boolean,
+    val personalKeyInfo: PersonalKeyInfo?
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -71,7 +76,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val plans = runCatching { repository.plans() }.getOrDefault(emptyList())
                 val connected = repository.recoverConnectionState()
                 val account=runCatching { repository.accountStatus() }.getOrNull()
-                InitResult(registration,update,plans,connected,account)
+                val personalEnabled=repository.personalKeyEnabled()
+                val personalInfo=repository.personalKeyInfo()
+                InitResult(registration,update,plans,connected,account,personalEnabled,personalInfo)
             }.onSuccess { result ->
                 val registration=result.registration
                 mutableState.value = MainUiState(
@@ -80,7 +87,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     connection = if(result.connected) ConnectionState.CONNECTED else ConnectionState.DISCONNECTED,
                     availableVersion = result.update?.version,
                     plans = result.plans,
-                    account = result.account
+                    account = result.account,
+                    personalKeyEnabled = result.personalKeyEnabled,
+                    personalKeyInfo = result.personalKeyInfo
                 )
             }.onFailure {
                 mutableState.value = MainUiState(
@@ -136,6 +145,58 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     mutableState.value=mutableState.value.copy(
                         pairingBusy=false,error="Не удалось привязать устройство"
                     )
+                }
+        }
+    }
+
+    fun setPersonalKeyEnabled(enabled:Boolean) {
+        if (mutableState.value.connection == ConnectionState.CONNECTED) {
+            mutableState.value=mutableState.value.copy(error="Сначала отключите VPN")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.setPersonalKeyEnabled(enabled) }
+                .onSuccess { info ->
+                    mutableState.value=mutableState.value.copy(
+                        personalKeyEnabled=enabled,
+                        personalKeyInfo=info,
+                        error=null
+                    )
+                }
+                .onFailure {
+                    mutableState.value=mutableState.value.copy(error="Не удалось изменить личный ключ")
+                }
+        }
+    }
+
+    fun rotatePersonalKey() {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.rotatePersonalKey() }
+                .onSuccess { info ->
+                    mutableState.value=mutableState.value.copy(
+                        personalKeyEnabled=true,
+                        personalKeyInfo=info,
+                        error=null
+                    )
+                }
+                .onFailure {
+                    mutableState.value=mutableState.value.copy(error="Не удалось заменить личный ключ")
+                }
+        }
+    }
+
+    fun deletePersonalKey() {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.deletePersonalKey() }
+                .onSuccess {
+                    mutableState.value=mutableState.value.copy(
+                        personalKeyEnabled=false,
+                        personalKeyInfo=null,
+                        error=null
+                    )
+                }
+                .onFailure {
+                    mutableState.value=mutableState.value.copy(error="Не удалось удалить личный ключ")
                 }
         }
     }

@@ -9,6 +9,8 @@ import org.json.JSONArray
 import ru.vpnx3.app.BuildConfig
 import ru.vpnx3.app.security.DeviceIdentity
 import ru.vpnx3.app.security.TunnelKeyStore
+import ru.vpnx3.app.security.PersonalKeyInfo
+import ru.vpnx3.app.security.PersonalTunnelKeyStore
 import ru.vpnx3.app.security.VerifiedConfig
 import ru.vpnx3.app.vpn.WireGuardController
 import java.io.ByteArrayInputStream
@@ -26,6 +28,7 @@ class VpnRepository(private val context: Context) {
     private val api = ControlApi(BuildConfig.CONTROL_URL, identity)
     private val workerApi = WorkerApi()
     private val tunnelKeys = TunnelKeyStore(context)
+    private val personalTunnelKeys = PersonalTunnelKeyStore(context)
     private val wireGuard = WireGuardController(context)
     private val configRepository: ConfigRepository
 
@@ -92,13 +95,43 @@ class VpnRepository(private val context: Context) {
         return api.createPayment(registration.deviceId,sequence,planId)
     }
 
+    fun personalKeyEnabled(): Boolean = state.personalKeyEnabled
+
+    fun personalKeyInfo(): PersonalKeyInfo? =
+        if (state.personalKeyEnabled) runCatching { personalTunnelKeys.ensure() }.getOrNull() else null
+
+    fun setPersonalKeyEnabled(enabled: Boolean): PersonalKeyInfo? {
+        if (enabled) {
+            val info = personalTunnelKeys.ensure()
+            state.personalKeyEnabled = true
+            return info
+        }
+        state.personalKeyEnabled = false
+        return null
+    }
+
+    fun rotatePersonalKey(): PersonalKeyInfo {
+        check(!wireGuard.isConnected()) { "Disconnect VPN before rotating personal key" }
+        val info = personalTunnelKeys.rotate()
+        state.personalKeyEnabled = true
+        return info
+    }
+
+    fun deletePersonalKey() {
+        check(!wireGuard.isConnected()) { "Disconnect VPN before deleting personal key" }
+        state.personalKeyEnabled = false
+        personalTunnelKeys.delete()
+    }
+
     fun prepareConnection(): PreparedConnection {
         val signedConfig = latestConfig()
         val routes = RoutingSelector.candidates(signedConfig)
         require(routes.isNotEmpty()) { "No active WireGuard worker is available" }
 
-        val keyPair = tunnelKeys.getOrCreate()
-        val tunnelPublicKey = keyPair.publicKey.toBase64()
+        val personalMode = state.personalKeyEnabled
+        val normalKeyPair = if (personalMode) null else tunnelKeys.getOrCreate()
+        val personalInfo = if (personalMode) personalTunnelKeys.ensure() else null
+        val tunnelPublicKey = personalInfo?.publicKey ?: normalKeyPair!!.publicKey.toBase64()
         val lease = obtainLease(tunnelPublicKey)
         val network = signedConfig.payload.optJSONObject("network")
         val mtu = network?.optInt("mtu", 1280)?.coerceIn(576, 1500) ?: 1280
@@ -133,22 +166,27 @@ class VpnRepository(private val context: Context) {
                     ""
                 }
 
-                val wgQuick = """
-                    [Interface]
-                    PrivateKey = ${keyPair.privateKey.toBase64()}
-                    Address = $address
-                    MTU = $mtu
-                    $dnsLine
-                    [Peer]
-                    PublicKey = ${session.serverPublicKey}
-                    AllowedIPs = 0.0.0.0/0, ::/0
-                    Endpoint = ${session.endpoint}
-                    PersistentKeepalive = $keepalive
-                """.trimIndent()
+                val buildConfig: (String) -> Config = { privateKeyBase64 ->
+                    val wgQuick = """
+                        [Interface]
+                        PrivateKey = $privateKeyBase64
+                        Address = $address
+                        MTU = $mtu
+                        $dnsLine
+                        [Peer]
+                        PublicKey = ${session.serverPublicKey}
+                        AllowedIPs = 0.0.0.0/0, ::/0
+                        Endpoint = ${session.endpoint}
+                        PersistentKeepalive = $keepalive
+                    """.trimIndent()
+                    Config.parse(ByteArrayInputStream(wgQuick.toByteArray(Charsets.UTF_8)))
+                }
 
-                val config = Config.parse(
-                    ByteArrayInputStream(wgQuick.toByteArray(Charsets.UTF_8))
-                )
+                val config = if (personalMode) {
+                    personalTunnelKeys.withPrivateKey { buildConfig(it.toBase64()) }
+                } else {
+                    buildConfig(normalKeyPair!!.privateKey.toBase64())
+                }
                 return PreparedConnection(config, route, session.sessionId, signedConfig.version)
             } catch (error: Throwable) {
                 lastError = error

@@ -26,6 +26,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -75,6 +76,9 @@ class MainActivity : ComponentActivity() {
                     onCreatePairingCode = vm::createPairingCode,
                     onClaimPairingCode = vm::claimPairingCode,
                     onVpnSettings = { startActivity(Intent(Settings.ACTION_VPN_SETTINGS)) },
+                    onPersonalKeyEnabled = vm::setPersonalKeyEnabled,
+                    onRotatePersonalKey = vm::rotatePersonalKey,
+                    onDeletePersonalKey = vm::deletePersonalKey,
                     onBuy = { planId ->
                         vm.startPayment(planId) { url ->
                             runOnUiThread {
@@ -102,6 +106,9 @@ private fun HomeScreen(
     onCreatePairingCode: () -> Unit,
     onClaimPairingCode: (String) -> Unit,
     onVpnSettings: () -> Unit,
+    onPersonalKeyEnabled: (Boolean) -> Unit,
+    onRotatePersonalKey: () -> Unit,
+    onDeletePersonalKey: () -> Unit,
     onBuy: (String) -> Unit
 ) {
     val busy = state.connection == ConnectionState.PREPARING ||
@@ -238,6 +245,74 @@ private fun HomeScreen(
                     Spacer(Modifier.height(10.dp))
                     OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = onVpnSettings) {
                         Text("Открыть системные настройки VPN")
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Личный ключ", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "Приватный ключ хранится только на этом устройстве и не передаётся на основной сервер.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        Switch(
+                            checked = state.personalKeyEnabled,
+                            enabled = state.connection != ConnectionState.CONNECTED &&
+                                state.connection != ConnectionState.CONNECTING,
+                            onCheckedChange = onPersonalKeyEnabled
+                        )
+                    }
+
+                    if (state.personalKeyEnabled) {
+                        Spacer(Modifier.height(8.dp))
+                        val protection = when (state.personalKeyInfo?.protection?.name) {
+                            "STRONGBOX" -> "StrongBox — максимальная аппаратная защита"
+                            "HARDWARE_BACKED" -> "Аппаратное защищённое хранилище"
+                            "SOFTWARE_BACKED" -> "Защищено Android Keystore"
+                            else -> "Проверяем уровень защиты"
+                        }
+                        Text(protection, style = MaterialTheme.typography.bodySmall)
+                        state.personalKeyInfo?.publicKey?.let { publicKey ->
+                            Text(
+                                "Отпечаток: " + publicKey.take(10) + "…" + publicKey.takeLast(8),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                modifier = Modifier.weight(1f),
+                                enabled = state.connection == ConnectionState.DISCONNECTED ||
+                                    state.connection == ConnectionState.ERROR,
+                                onClick = onRotatePersonalKey
+                            ) {
+                                Text("Заменить")
+                            }
+                            TextButton(
+                                modifier = Modifier.weight(1f),
+                                enabled = state.connection == ConnectionState.DISCONNECTED ||
+                                    state.connection == ConnectionState.ERROR,
+                                onClick = onDeletePersonalKey
+                            ) {
+                                Text("Удалить")
+                            }
+                        }
+                        Text(
+                            "После удаления восстановить этот приватный ключ невозможно.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

@@ -57,6 +57,14 @@ class LocalState(context: Context) {
         get() = prefs.getLong("highest_config_version", 0L)
         set(value) { prefs.edit().putLong("highest_config_version", value).apply() }
 
+    var personalKeyEnabled: Boolean
+        get() = prefs.getBoolean("personal_key_enabled", false)
+        set(value) {
+            check(prefs.edit().putBoolean("personal_key_enabled", value).commit()) {
+                "Unable to persist personal key mode"
+            }
+        }
+
     fun saveActiveSession(prepared: PreparedConnection) {
         val ep=prepared.workerRoute.sessionApi
         val raw=JSONObject()
