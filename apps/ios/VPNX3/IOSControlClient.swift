@@ -6,6 +6,31 @@ struct IOSRegistration {
     let deviceID: String
 }
 
+struct IOSPlan: Identifiable {
+    let id:String
+    let name:String
+    let priceMinor:Int64
+    let currency:String
+    let billingPeriodDays:Int
+    let deviceLimit:Int
+}
+
+struct IOSAccountStatus {
+    let userID:String
+    let entitlement:String
+    let planName:String?
+    let expiresAt:String
+    let graceUntil:String?
+    let deviceLimit:Int
+    let activeDevices:Int
+    let autoRenew:Bool
+}
+
+struct IOSPaymentStart {
+    let paymentID:String
+    let confirmationURL:URL
+}
+
 enum IOSControlError: Error {
     case runtimeNotConfigured
     case invalidResponse
@@ -44,6 +69,65 @@ final class IOSControlClient {
             guard let cached=configStore.envelope else{throw error}
             return try verifier.verify(envelopeData:cached,minimumVersion:configStore.highestVersion)
         }
+    }
+
+    func plans() async throws->[IOSPlan]{
+        guard let url=URL(string:"/api/v1/plans",relativeTo:runtime.controlURL)?.absoluteURL else{throw IOSControlError.runtimeNotConfigured}
+        let (data,response)=try await URLSession.shared.data(from:url)
+        guard (response as? HTTPURLResponse)?.statusCode==200,
+              let root=try JSONSerialization.jsonObject(with:data) as? [String:Any],
+              let rows=root["plans"] as? [[String:Any]] else{throw IOSControlError.invalidResponse}
+        return rows.compactMap{p in
+            guard let id=p["id"] as? String,
+                  let name=p["name"] as? String,
+                  let price=(p["price_minor"] as? NSNumber)?.int64Value,
+                  let currency=p["currency"] as? String,
+                  let period=(p["billing_period_days"] as? NSNumber)?.intValue,
+                  let limit=(p["device_limit"] as? NSNumber)?.intValue else{return nil}
+            return IOSPlan(id:id,name:name,priceMinor:price,currency:currency,billingPeriodDays:period,deviceLimit:limit)
+        }
+    }
+
+    func accountStatus(deviceID:String) async throws->IOSAccountStatus{
+        let raw=try await IOSDeviceIdentity.shared.signedJSON(
+            controlURL:runtime.controlURL,path:"/api/v1/client/account/status",deviceID:deviceID,object:[:]
+        )
+        return try parseAccount(Data(raw.utf8))
+    }
+
+    func setAutoRenew(deviceID:String,enabled:Bool) async throws->IOSAccountStatus{
+        let raw=try await IOSDeviceIdentity.shared.signedJSON(
+            controlURL:runtime.controlURL,path:"/api/v1/client/account/auto-renew",deviceID:deviceID,
+            object:["enabled":enabled]
+        )
+        return try parseAccount(Data(raw.utf8))
+    }
+
+    func createPayment(deviceID:String,planID:String,autoRenew:Bool) async throws->IOSPaymentStart{
+        let raw=try await IOSDeviceIdentity.shared.signedJSON(
+            controlURL:runtime.controlURL,path:"/api/v1/client/payments",deviceID:deviceID,
+            object:["plan_id":planID,"auto_renew":autoRenew]
+        )
+        guard let data=raw.data(using:.utf8),
+              let json=try JSONSerialization.jsonObject(with:data) as? [String:Any],
+              let id=json["payment_id"] as? String,
+              let urlText=json["confirmation_url"] as? String,
+              let url=URL(string:urlText),url.scheme=="https" else{throw IOSControlError.invalidResponse}
+        return IOSPaymentStart(paymentID:id,confirmationURL:url)
+    }
+
+    private func parseAccount(_ data:Data)throws->IOSAccountStatus{
+        guard let j=try JSONSerialization.jsonObject(with:data) as? [String:Any],
+              let user=j["user_id"] as? String,
+              let entitlement=j["entitlement"] as? String,
+              let expires=j["expires_at"] as? String,
+              let limit=(j["device_limit"] as? NSNumber)?.intValue,
+              let active=(j["active_devices"] as? NSNumber)?.intValue else{throw IOSControlError.invalidResponse}
+        return IOSAccountStatus(
+            userID:user,entitlement:entitlement,planName:j["plan_name"] as? String,
+            expiresAt:expires,graceUntil:j["grace_until"] as? String,
+            deviceLimit:limit,activeDevices:active,autoRenew:(j["auto_renew"] as? Bool) ?? false
+        )
     }
 
     func accessLease(deviceID: String, tunnelPublicKey: String) async throws -> String {

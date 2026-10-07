@@ -70,8 +70,8 @@ enum VPNX3WireGuardParser {
             if line == "[Interface]" { section = "interface"; continue }
             if line == "[Peer]" { section = "peer"; continue }
             guard let split = line.firstIndex(of: "=") else { continue }
-            let key = line[..<split].trimmingCharacters(in: .whitespaces)
-            let value = line[line.index(after: split)...].trimmingCharacters(in: .whitespaces)
+            let key = String(line[..<split]).trimmingCharacters(in: .whitespaces)
+            let value = String(line[line.index(after: split)...]).trimmingCharacters(in: .whitespaces)
             if section == "interface" { interfaceValues[key] = value }
             if section == "peer" { peerValues[key] = value }
         }

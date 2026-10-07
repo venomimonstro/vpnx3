@@ -9,9 +9,13 @@ final class TunnelManager: ObservableObject {
     @Published var errorMessage: String?
     @Published private(set) var personalKeyEnabled = false
     @Published private(set) var personalKeyFingerprint: String?
+    @Published private(set) var account: IOSAccountStatus?
+    @Published private(set) var plans: [IOSPlan] = []
+    @Published private(set) var paymentBusy = false
 
     private var manager: NETunnelProviderManager?
     private let personalKeys = PersonalKeyStore()
+    private lazy var repository = IOSVPNRepository(personalKeys:personalKeys)
 
     var isConnected: Bool { status == .connected || status == .reasserting }
 
@@ -50,6 +54,7 @@ final class TunnelManager: ObservableObject {
                 ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier=="ru.vpnx3.app.PacketTunnel"
             }
             status=manager?.connection.status ?? .disconnected
+            await refreshAccount()
         } catch {
             errorMessage="Не удалось прочитать настройки VPN"
         }
@@ -59,8 +64,7 @@ final class TunnelManager: ObservableObject {
         guard !isBusy else{return}
         isBusy=true;defer{isBusy=false};errorMessage=nil
         do{
-            let prepared=try await IOSVPNRepository(personalKeys:personalKeys)
-                .prepareConnection(personalKeyEnabled:personalKeyEnabled)
+            let prepared=try await repository.prepareConnection(personalKeyEnabled:personalKeyEnabled)
             let current=manager ?? NETunnelProviderManager()
             let proto=NETunnelProviderProtocol()
             proto.providerBundleIdentifier="ru.vpnx3.app.PacketTunnel"
@@ -86,6 +90,40 @@ final class TunnelManager: ObservableObject {
     func disconnect() async {
         manager?.connection.stopVPNTunnel()
         status=.disconnecting
+    }
+
+    func refreshAccount() async {
+        do{
+            let (_,current,available)=try await repository.account()
+            account=current
+            plans=available
+        }catch{
+            // Account may legitimately be absent after trial expiry; keep plans usable.
+            plans=(try? await IOSControlClient().plans()) ?? []
+        }
+    }
+
+    func startPayment(planID:String,autoRenew:Bool) async->URL?{
+        guard !paymentBusy else{return nil}
+        paymentBusy=true
+        defer{paymentBusy=false}
+        do{
+            let payment=try await repository.createPayment(planID:planID,autoRenew:autoRenew)
+            return payment.confirmationURL
+        }catch{
+            errorMessage="Не удалось создать платёж"
+            return nil
+        }
+    }
+
+    func setAutoRenew(_ enabled:Bool) async {
+        do{
+            account=try await repository.setAutoRenew(enabled)
+        }catch{
+            errorMessage=enabled
+                ? "Сначала оплатите тариф с включённым автопродлением"
+                : "Не удалось отключить автопродление"
+        }
     }
 
     func setPersonalKeyEnabled(_ enabled:Bool) async {
