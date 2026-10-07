@@ -43,7 +43,7 @@ PostgreSQL, версионные миграции, health/readiness, RBAC, ад�
 
 Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback protection, Last Known Good, worker/ingress endpoints, подписанная DNS/MTU/keepalive policy.
 
-## Спринт 4 — Android MVP: В РАБОТЕ
+## Спринт 4 — Android MVP: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
 
 Реализовано:
 
@@ -83,7 +83,7 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 3. проверка Always-on/lockdown поведения на реальных версиях Android;
 4. финальная UX-полировка по результатам реального device-test.
 
-## Спринт 5 — распределённое наблюдение: В РАБОТЕ
+## Спринт 5 — распределённое наблюдение: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
 
 Реализовано:
 
@@ -111,7 +111,7 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 2. проверить synthetic WireGuard probe на реальных worker-хостах;
 3. проверить circuit-breaker/failover на реальной распределённой сети.
 
-## Спринт 6 — биллинг: В РАБОТЕ
+## Спринт 6 — биллинг: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
 
 Реализовано:
 
@@ -132,9 +132,12 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 
 Следующие задачи:
 
+Код дополнительно включает explicit opt-in/opt-out auto-renew, сохранение только provider payment-method ID, идемпотентный scheduler, provider reconciliation зависших попыток, максимум три отказа на цикл и автоматическое отключение автопродления после серии ошибок.
+
+Физическая приёмка:
 1. sandbox e2e ЮKassa;
-2. завершить server-side auto-renew execution и пользовательский opt-in/opt-out;
-3. проверить recurring payment flow в тестовом магазине ЮKassa.
+2. recurring payment flow в тестовом магазине ЮKassa;
+3. webhook/reconciliation сценарии с реальными provider statuses.
 
 ## Спринт 7 — административный интерфейс: ОСНОВА РЕАЛИЗОВАНА
 
@@ -166,7 +169,7 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 
 Следующие задачи: расширенный support tooling и физическая эксплуатационная проверка всех readiness-сигналов.
 
-## Спринт 8 — Build Factory: В РАБОТЕ
+## Спринт 8 — Build Factory: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
 
 Реализованы:
 
@@ -201,9 +204,9 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 
 Дополнительно реализован S3-compatible artifact backend с AWS Signature V4, обязательным HTTPS, SHA-256 verification, local spool, readiness и тем же Storage interface.
 
-Дополнительно реализованы signed target `build_worker_darwin_arm64`, подготовка macOS/Apple Silicon Build Worker через launchd и локальное хранение Apple signing assets в macOS Keychain.
+Дополнительно реализованы signed target `build_worker_darwin_arm64`, macOS/Apple Silicon Build Worker через launchd, SwiftUI iOS-клиент, Packet Tunnel Extension, pinned WireGuardKit revision, фиксированный Xcode archive/export recipe для `ios_ipa`, shared device-only Keychain для app/extension и обязательная проверка подписанного IPA перед публикацией.
 
-Следующие задачи: создать `apps/ios` и включить фиксированный Xcode archive/export recipe для `ios_ipa`.
+Физическая приёмка: реальная сборка/подпись на macOS с Apple Developer Team, установка IPA/TestFlight и проверка provisioning entitlement.
 
 ## Обязательные проверки вне текущей GitHub-среды
 
@@ -216,7 +219,7 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 Кодовые контуры для этих тестов реализованы; следующий эксплуатационный этап должен прогнать именно эти проверки.
 
 
-## Спринт 9 — Browser Transport: В РАБОТЕ
+## Спринт 9 — Browser Transport: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
 
 Реализовано:
 
@@ -249,7 +252,7 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - shared paid account Android/Chrome/Firefox через pairing code.
 
 
-## Спринт 10 — эксплуатационная устойчивость и abuse protection: В РАБОТЕ
+## Спринт 10 — эксплуатационная устойчивость и abuse protection: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
 
 Реализовано:
 
@@ -312,7 +315,7 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 Следующий этап: прогон preflight/smoke/failover/load на реальной распределённой инфраструктуре и фиксация эксплуатационных порогов по фактической нагрузке.
 
 
-## Спринт 12 — личный ключ устройства: КОДОВАЯ ОСНОВА В РАБОТЕ
+## Спринт 12 — личный ключ устройства: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
 
 Цель: отдельный персональный WireGuard-ключ для личного использования, приватная часть которого недоступна Control Plane и не хранится в серверной БД.
 
@@ -342,4 +345,6 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 1. физически проверить StrongBox/hardware-backed ветки минимум на двух Android-устройствах;
 2. добавить подтверждение биометрией как опциональный режим для операций ротации/использования личного ключа;
 3. проверить поведение после переустановки приложения и переноса данных между устройствами;
-4. реализовать эквивалентный device-only key container для iOS Keychain/Secure Enclave, где применимо.
+4. физически проверить iOS shared ThisDeviceOnly Keychain между приложением и Packet Tunnel Extension.
+
+Дополнительно реализован iOS device-only WireGuard key: приватная часть хранится в shared ThisDeviceOnly Keychain access group, доступном только подписанным app/PacketTunnel targets; в NETunnelProvider preferences приватный ключ не сериализуется.

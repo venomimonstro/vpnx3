@@ -48,6 +48,17 @@ codesign -d --entitlements "$EXT_ENT" "$EXT" 2>/dev/null
 grep -q "packet-tunnel-provider" "$EXT_ENT" || {
   echo "Packet Tunnel network extension entitlement missing" >&2; exit 1;
 }
+grep -q "ru.vpnx3.shared" "$APP_ENT" || {
+  echo "App shared Keychain access group missing" >&2; exit 1;
+}
+grep -q "ru.vpnx3.shared" "$EXT_ENT" || {
+  echo "Extension shared Keychain access group missing" >&2; exit 1;
+}
+APP_GROUP="$(plutil -extract VPNX3KeychainAccessGroup raw "$APP/Info.plist" 2>/dev/null || true)"
+EXT_GROUP="$(plutil -extract VPNX3KeychainAccessGroup raw "$EXT/Info.plist" 2>/dev/null || true)"
+[[ -n "$APP_GROUP" && "$APP_GROUP" == "$EXT_GROUP" && "$APP_GROUP" == *".ru.vpnx3.shared" ]] || {
+  echo "App/extension Keychain access group mismatch" >&2; exit 1;
+}
 
 if plutil -extract get-task-allow raw "$APP_ENT" >/dev/null 2>&1; then
   debug="$(plutil -extract get-task-allow raw "$APP_ENT" 2>/dev/null || true)"

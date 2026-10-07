@@ -35,6 +35,7 @@ CURRENT_PROJECT_VERSION="${version#* }"
 rm -rf "$DERIVED" "$IOS/.archive" "$EXPORT_DIR" "$IOS/VPNX3.xcodeproj"
 mkdir -p "$DERIVED" "$IOS/.archive" "$EXPORT_DIR"
 
+python3 "$ROOT/scripts/validate-ios-source.py"
 cd "$IOS"
 xcodegen generate --spec project.yml
 
