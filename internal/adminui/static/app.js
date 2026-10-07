@@ -204,7 +204,12 @@ async function dashboard(){
     ["Сборки в очереди",d.build_queued||0],
     ["Сборки выполняются",d.build_running||0],
     ["Сборки с ошибкой",d.build_failed||0],
-    ["Активные build-worker",d.build_workers_active||0]
+    ["Активные build-worker",d.build_workers_active||0],
+    ["Автопродление включено",d.auto_renew_active||0],
+    ["Автоплатежи ожидают",d.renewal_pending||0],
+    ["Автопродления успешны 24ч",d.renewal_succeeded_24h||0],
+    ["Автопродления с ошибкой 24ч",d.renewal_failed_24h||0],
+    ["Автопродление отключено после ошибок",d.renewal_disabled_failures||0]
   ];
   return sectionFrame("Обзор",$("div",{class:"grid"},metrics.map(([k,v])=>$("div",{class:"card metric"},$("span",{class:"muted"},k),$("strong",{},v)))));
 }

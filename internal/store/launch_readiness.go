@@ -18,6 +18,10 @@ type LaunchReadinessData struct {
 	RunningBuildJobs int64
 	ActiveBuildWorkers int64
 	PublishedReleases int64
+	AutoRenewActive int64
+	RenewalPending int64
+	RenewalFailed24h int64
+	RenewalDisabledFailures int64
 }
 
 func (s *Store) LaunchReadiness(ctx context.Context)(LaunchReadinessData,error){
@@ -64,11 +68,16 @@ func (s *Store) LaunchReadiness(ctx context.Context)(LaunchReadinessData,error){
 		  (SELECT count(*)::bigint FROM build_jobs WHERE status='queued'),
 		  (SELECT count(*)::bigint FROM build_jobs WHERE status='running'),
 		  (SELECT count(*)::bigint FROM nodes WHERE role='build_worker' AND status='active'),
-		  (SELECT count(*)::bigint FROM releases WHERE status='published')
+		  (SELECT count(*)::bigint FROM releases WHERE status='published'),
+		  (SELECT count(*)::bigint FROM subscriptions WHERE auto_renew=true AND status IN ('active','grace')),
+		  (SELECT count(*)::bigint FROM subscription_renewal_attempts WHERE status IN ('claimed','pending')),
+		  (SELECT count(*)::bigint FROM subscription_renewal_attempts WHERE status='failed' AND updated_at>=now()-interval '24 hours'),
+		  (SELECT count(*)::bigint FROM subscriptions WHERE auto_renew=false AND renewal_failures>=3)
 	`).Scan(
 		&d.LatestManifestAt,&d.ActiveWorkers,&d.RoutableWorkers,&d.ActiveIngresses,
 		&d.ActiveProbes,&d.FreshProbeNodes,&d.FreshDataPlaneWorkers,
 		&d.QueuedBuildJobs,&d.RunningBuildJobs,&d.ActiveBuildWorkers,&d.PublishedReleases,
+		&d.AutoRenewActive,&d.RenewalPending,&d.RenewalFailed24h,&d.RenewalDisabledFailures,
 	)
 	if err!=nil{return LaunchReadinessData{},fmt.Errorf("launch readiness: %w",err)}
 	return d,nil

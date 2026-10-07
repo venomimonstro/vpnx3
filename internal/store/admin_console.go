@@ -26,6 +26,11 @@ type DashboardSummary struct {
 	BuildRunning int64 `json:"build_running"`
 	BuildFailed int64 `json:"build_failed"`
 	BuildWorkersActive int64 `json:"build_workers_active"`
+	AutoRenewActive int64 `json:"auto_renew_active"`
+	RenewalPending int64 `json:"renewal_pending"`
+	RenewalSucceeded24h int64 `json:"renewal_succeeded_24h"`
+	RenewalFailed24h int64 `json:"renewal_failed_24h"`
+	RenewalDisabledFailures int64 `json:"renewal_disabled_failures"`
 }
 
 func (s *Store) Dashboard(ctx context.Context) (DashboardSummary,error) {
@@ -72,6 +77,16 @@ func (s *Store) Dashboard(ctx context.Context) (DashboardSummary,error) {
 	}
 	if err:=s.DB.QueryRow(ctx,`SELECT count(*)::bigint FROM nodes WHERE role='build_worker' AND status='active'`).Scan(&d.BuildWorkersActive);err!=nil{
 		return DashboardSummary{},fmt.Errorf("dashboard build workers: %w",err)
+	}
+	if err:=s.DB.QueryRow(ctx,`
+		SELECT
+		  (SELECT count(*)::bigint FROM subscriptions WHERE auto_renew=true AND status IN ('active','grace')),
+		  (SELECT count(*)::bigint FROM subscription_renewal_attempts WHERE status IN ('claimed','pending')),
+		  (SELECT count(*)::bigint FROM subscription_renewal_attempts WHERE status='succeeded' AND updated_at>=now()-interval '24 hours'),
+		  (SELECT count(*)::bigint FROM subscription_renewal_attempts WHERE status='failed' AND updated_at>=now()-interval '24 hours'),
+		  (SELECT count(*)::bigint FROM subscriptions WHERE auto_renew=false AND renewal_failures>=3)
+	`).Scan(&d.AutoRenewActive,&d.RenewalPending,&d.RenewalSucceeded24h,&d.RenewalFailed24h,&d.RenewalDisabledFailures);err!=nil{
+		return DashboardSummary{},fmt.Errorf("dashboard renewal metrics: %w",err)
 	}
 	return d,nil
 }
