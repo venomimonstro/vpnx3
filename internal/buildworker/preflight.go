@@ -33,6 +33,7 @@ func Preflight(targets []string) error {
 			if _,err:=os.Stat(os.Getenv("VPNX3_ANDROID_KEYSTORE_PATH"));err!=nil{return fmt.Errorf("Android keystore is unavailable")}
 		case "chrome_zip","firefox_zip":
 			if _,err:=exec.LookPath("zip");err!=nil{return fmt.Errorf("zip is required for browser extension builds")}
+			if _,err:=exec.LookPath("python3");err!=nil{return fmt.Errorf("python3 is required for browser extension validation")}
 			if !strings.HasPrefix(strings.TrimSpace(os.Getenv("VPNX3_CLIENT_CONTROL_URL")),"https://") {
 				return fmt.Errorf("VPNX3_CLIENT_CONTROL_URL=https://... is required for browser extension builds")
 			}

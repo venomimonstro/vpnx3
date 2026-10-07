@@ -72,6 +72,7 @@ func (e Executor) Run(ctx context.Context,job Job) (Result,error) {
 		if _,err:=os.Stat(dir);err!=nil{return Result{},fmt.Errorf("chrome extension source unavailable")}
 		if err:=writeBrowserRuntimeConfig(dir);err!=nil{return Result{},err}
 		if err:=writeExtensionVersion(dir,job.Version);err!=nil{return Result{},err}
+		if err:=run(buildCtx,src,nil,"python3","scripts/validate-browser-extension.py","--browser","chrome","--dir",dir);err!=nil{return Result{},fmt.Errorf("chrome extension validation: %w",err)}
 		artifact=filepath.Join(work,"vpnx3-chrome.zip")
 		if err:=run(buildCtx,dir,nil,"zip","-qr",artifact,".");err!=nil{return Result{},err}
 	case "firefox_zip":
@@ -79,6 +80,7 @@ func (e Executor) Run(ctx context.Context,job Job) (Result,error) {
 		if _,err:=os.Stat(dir);err!=nil{return Result{},fmt.Errorf("firefox extension source unavailable")}
 		if err:=writeBrowserRuntimeConfig(dir);err!=nil{return Result{},err}
 		if err:=writeExtensionVersion(dir,job.Version);err!=nil{return Result{},err}
+		if err:=run(buildCtx,src,nil,"python3","scripts/validate-browser-extension.py","--browser","firefox","--dir",dir);err!=nil{return Result{},fmt.Errorf("firefox extension validation: %w",err)}
 		artifact=filepath.Join(work,"vpnx3-firefox.zip")
 		if err:=run(buildCtx,dir,nil,"zip","-qr",artifact,".");err!=nil{return Result{},err}
 	case "ios_ipa":
