@@ -21,6 +21,7 @@ var allowedBuildTargets=map[string]bool{
 	"vpn_worker_linux_amd64":true,
 	"probe_agent_linux_amd64":true,
 	"ingress_proxy_linux_amd64":true,
+	"build_worker_darwin_arm64":true,
 }
 
 type Release struct {

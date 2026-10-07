@@ -201,7 +201,9 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 
 Дополнительно реализован S3-compatible artifact backend с AWS Signature V4, обязательным HTTPS, SHA-256 verification, local spool, readiness и тем же Storage interface.
 
-Следующие задачи: macOS worker + Xcode для iOS.
+Дополнительно реализованы signed target `build_worker_darwin_arm64`, подготовка macOS/Apple Silicon Build Worker через launchd и локальное хранение Apple signing assets в macOS Keychain.
+
+Следующие задачи: создать `apps/ios` и включить фиксированный Xcode archive/export recipe для `ios_ipa`.
 
 ## Обязательные проверки вне текущей GitHub-среды
 

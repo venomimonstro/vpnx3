@@ -99,6 +99,9 @@ func (e Executor) Run(ctx context.Context,job Job) (Result,error) {
 	case "ingress_proxy_linux_amd64":
 		artifact=filepath.Join(work,"vpnx3-ingress-proxy")
 		if err:=run(buildCtx,src,[]string{"CGO_ENABLED=0","GOOS=linux","GOARCH=amd64"},"go","build","-trimpath","-ldflags=-s -w","-o",artifact,"./cmd/ingress-proxy");err!=nil{return Result{},err}
+	case "build_worker_darwin_arm64":
+		artifact=filepath.Join(work,"vpnx3-build-worker-darwin-arm64")
+		if err:=run(buildCtx,src,[]string{"CGO_ENABLED=0","GOOS=darwin","GOARCH=arm64"},"go","build","-trimpath","-ldflags=-s -w","-o",artifact,"./cmd/build-worker");err!=nil{return Result{},err}
 	default:
 		return Result{},fmt.Errorf("unsupported build target")
 	}
