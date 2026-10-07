@@ -78,6 +78,13 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 		add("payments","warning","Платежи","ЮKassa не настроена; коммерческие покупки недоступны.")
 	}else{
 		add("payments","ok","Платежи","Платёжный адаптер настроен.")
+		if data.RenewalFailed24h>0 || data.RenewalDisabledFailures>0 {
+			add("auto_renew","warning","Автопродление","Есть ошибки автопродления за 24 часа или подписки, отключённые после серии ошибок.")
+		}else if data.AutoRenewActive>0 {
+			add("auto_renew","ok","Автопродление","Активные автопродления работают без зафиксированных ошибок за 24 часа.")
+		}else{
+			add("auto_renew","ok","Автопродление","Механизм готов; активных подписок с автопродлением пока нет.")
+		}
 	}
 
 	storageStatus:="ok"
@@ -120,6 +127,10 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			"running_build_jobs":data.RunningBuildJobs,
 			"active_build_workers":data.ActiveBuildWorkers,
 			"published_releases":data.PublishedReleases,
+			"auto_renew_active":data.AutoRenewActive,
+			"renewal_pending":data.RenewalPending,
+			"renewal_failed_24h":data.RenewalFailed24h,
+			"renewal_disabled_failures":data.RenewalDisabledFailures,
 		},
 	})
 }
