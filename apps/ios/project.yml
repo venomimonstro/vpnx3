@@ -1,0 +1,66 @@
+name: VPNX3
+options:
+  bundleIdPrefix: ru.vpnx3
+  deploymentTarget:
+    iOS: "15.0"
+packages:
+  WireGuardKit:
+    url: https://github.com/WireGuard/wireguard-apple.git
+    revision: 2fec12a6e1f6e3460b6ee483aa00ad29cddadab1
+targets:
+  VPNX3:
+    type: application
+    platform: iOS
+    sources:
+      - path: VPNX3
+    info:
+      path: VPNX3/Info.plist
+      properties:
+        CFBundleDisplayName: VPNX3
+        UILaunchScreen: {}
+    entitlements:
+      path: VPNX3/VPNX3.entitlements
+    dependencies:
+      - target: PacketTunnel
+        embed: true
+      - package: WireGuardKit
+        product: WireGuardKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ru.vpnx3.app
+        SWIFT_VERSION: "5.9"
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+        CODE_SIGN_STYLE: Automatic
+  PacketTunnel:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: PacketTunnel
+    info:
+      path: PacketTunnel/Info.plist
+      properties:
+        CFBundleDisplayName: VPNX3 Tunnel
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
+    entitlements:
+      path: PacketTunnel/PacketTunnel.entitlements
+    dependencies:
+      - package: WireGuardKit
+        product: WireGuardKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ru.vpnx3.app.PacketTunnel
+        SWIFT_VERSION: "5.9"
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+        CODE_SIGN_STYLE: Automatic
+schemes:
+  VPNX3:
+    build:
+      targets:
+        VPNX3: all
+        PacketTunnel: all
+    run:
+      config: Debug
+    archive:
+      config: Release
