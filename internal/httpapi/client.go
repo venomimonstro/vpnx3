@@ -45,6 +45,24 @@ func (s *Server) handleClientRegister(w http.ResponseWriter,r *http.Request) {
 		return
 	}
 
+	existing,existingStatus,lookupErr:=s.store.DeviceRegistrationByIdentity(r.Context(),req.IdentityAlgorithm,pub)
+	if lookupErr==nil {
+		if existingStatus!="active" {
+			writeError(w,http.StatusConflict,"device_identity_inactive")
+			return
+		}
+		writeJSON(w,http.StatusOK,map[string]any{
+			"user_id":existing.UserID,
+			"device_id":existing.DeviceID,
+			"trial_expires_at":existing.TrialExpires,
+		})
+		return
+	}
+	if lookupErr!=store.ErrNotFound {
+		s.internalError(w,r,lookupErr)
+		return
+	}
+
 	allowed,_,err:=s.store.AllowClientRegistration(r.Context(),clientIP(r),[]byte(s.cfg.RegistrationRateKey),time.Now().UTC(),30)
 	if err!=nil {
 		s.internalError(w,r,err)

@@ -16,6 +16,22 @@ type DeviceRegistration struct {
 	TrialExpires time.Time
 }
 
+func (s *Store) DeviceRegistrationByIdentity(ctx context.Context,algorithm string,publicKey []byte)(DeviceRegistration,string,error){
+	var reg DeviceRegistration
+	var status string
+	var trial *time.Time
+	err:=s.DB.QueryRow(ctx,`
+		SELECT user_id::text,id::text,status,trial_expires_at
+		FROM devices
+		WHERE identity_public_key=$1 AND identity_algorithm=$2
+		LIMIT 1
+	`,publicKey,algorithm).Scan(&reg.UserID,&reg.DeviceID,&status,&trial)
+	if errors.Is(err,pgx.ErrNoRows){return DeviceRegistration{},"",ErrNotFound}
+	if err!=nil{return DeviceRegistration{},"",fmt.Errorf("lookup device identity: %w",err)}
+	if trial!=nil{reg.TrialExpires=*trial}
+	return reg,status,nil
+}
+
 func (s *Store) RegisterAnonymousDevice(ctx context.Context,platform,displayName,algorithm string,publicKey []byte,trialDays int) (DeviceRegistration,error) {
 	platform=strings.TrimSpace(strings.ToLower(platform))
 	if err:=validateDeviceInput(platform,displayName,algorithm,publicKey);err!=nil{
