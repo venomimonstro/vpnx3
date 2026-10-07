@@ -22,6 +22,9 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/nodemonitor"
 	"github.com/venomimonstro/vpnx3/internal/loginthrottle"
 	"github.com/venomimonstro/vpnx3/internal/probemonitor"
+	"github.com/venomimonstro/vpnx3/internal/renewal"
+	"github.com/venomimonstro/vpnx3/internal/billing"
+	"github.com/venomimonstro/vpnx3/internal/billing/yookassa"
 	"github.com/venomimonstro/vpnx3/internal/signing"
 	"github.com/venomimonstro/vpnx3/internal/store"
 )
@@ -111,6 +114,14 @@ func main() {
 	go artifactcleaner.New(nodeStore,logger,artifactStorage,cfg.ArtifactRetentionDays).Run(monitorCtx)
 	go accountcleaner.New(nodeStore,logger).Run(monitorCtx)
 	go buildwatchdog.New(nodeStore,logger,2*time.Minute).Run(monitorCtx)
+	if cfg.YooKassaShopID!="" {
+		yoo,renewErr:=yookassa.New(cfg.YooKassaShopID,cfg.YooKassaSecretKey,cfg.YooKassaReturnURL)
+		if renewErr!=nil{
+			logger.Error("renewal provider initialization failed","error",renewErr)
+			os.Exit(1)
+		}
+		go renewal.New(nodeStore,billing.New(nodeStore),yoo,logger,5*time.Minute).Run(monitorCtx)
+	}
 
 	srv := httpapi.NewServer(cfg,logger,db,configSigner,accessSigner,releaseSigner,artifactStorage,publisher.Trigger)
 	serverErr := make(chan error,1)

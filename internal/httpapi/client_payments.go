@@ -24,6 +24,7 @@ func (s *Server) handleClientCreatePayment(w http.ResponseWriter,r *http.Request
 	var req struct {
 		Sequence int64 `json:"sequence"`
 		PlanID string `json:"plan_id"`
+		AutoRenew bool `json:"auto_renew"`
 	}
 	decoder:=json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
@@ -63,7 +64,7 @@ func (s *Server) handleClientCreatePayment(w http.ResponseWriter,r *http.Request
 	sum:=sha256.Sum256([]byte("vpnx3-payment-v1\x00"+deviceID+"\x00"+plan.ID+"\x00"+bucket))
 	idempotenceKey:=hex.EncodeToString(sum[:])
 
-	result,err:=s.yooKassa.CreatePayment(r.Context(),state.UserID,plan,idempotenceKey)
+	result,err:=s.yooKassa.CreatePayment(r.Context(),state.UserID,plan,idempotenceKey,req.AutoRenew)
 	if err!=nil { s.internalError(w,r,err); return }
 	if _,err:=s.billing.ApplyVerifiedEvent(r.Context(),result.Event); err!=nil {
 		s.internalError(w,r,err); return

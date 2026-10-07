@@ -127,6 +127,16 @@ class ControlApi(
         return parseAccountStatus(JSONObject(signedRequest("POST",path,body,deviceId)))
     }
 
+    fun setAutoRenew(deviceId:String,sequence:Long,enabled:Boolean): ClientAccountStatus {
+        val path="/api/v1/client/account/auto-renew"
+        val body=JSONObject()
+            .put("sequence",sequence)
+            .put("enabled",enabled)
+            .toString()
+            .toByteArray(Charsets.UTF_8)
+        return parseAccountStatus(JSONObject(signedRequest("POST",path,body,deviceId)))
+    }
+
     private fun parseAccountStatus(json:JSONObject): ClientAccountStatus = ClientAccountStatus(
         userId=json.getString("user_id"),
         entitlement=json.getString("entitlement"),
@@ -163,11 +173,12 @@ class ControlApi(
         signedRequest("POST",path,body,deviceId)
     }
 
-    fun createPayment(deviceId:String,sequence:Long,planId:String): PaymentStart {
+    fun createPayment(deviceId:String,sequence:Long,planId:String,autoRenew:Boolean): PaymentStart {
         val path="/api/v1/client/payments"
         val body=JSONObject()
             .put("sequence",sequence)
             .put("plan_id",planId)
+            .put("auto_renew",autoRenew)
             .toString()
             .toByteArray(Charsets.UTF_8)
         val raw=signedRequest("POST",path,body,deviceId)

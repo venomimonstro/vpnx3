@@ -89,6 +89,7 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/client/lease",s.handleClientLease)
 	mux.HandleFunc("POST /api/v1/client/proxy-lease",s.handleClientProxyLease)
 	mux.HandleFunc("POST /api/v1/client/account/status",s.handleClientAccountStatus)
+	mux.HandleFunc("POST /api/v1/client/account/auto-renew",s.handleSetAutoRenew)
 	mux.HandleFunc("POST /api/v1/client/pairing-code",s.handleCreatePairingCode)
 	mux.HandleFunc("POST /api/v1/client/pairing-claim",s.handleClaimPairingCode)
 	mux.HandleFunc("GET /api/v1/access/signing-key",s.handleAccessSigningKey)

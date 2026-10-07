@@ -79,8 +79,9 @@ class MainActivity : ComponentActivity() {
                     onPersonalKeyEnabled = vm::setPersonalKeyEnabled,
                     onRotatePersonalKey = vm::rotatePersonalKey,
                     onDeletePersonalKey = vm::deletePersonalKey,
-                    onBuy = { planId ->
-                        vm.startPayment(planId) { url ->
+                    onSetAutoRenew = vm::setAutoRenew,
+                    onBuy = { planId, autoRenew ->
+                        vm.startPayment(planId,autoRenew) { url ->
                             runOnUiThread {
                                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                             }
@@ -109,7 +110,8 @@ private fun HomeScreen(
     onPersonalKeyEnabled: (Boolean) -> Unit,
     onRotatePersonalKey: () -> Unit,
     onDeletePersonalKey: () -> Unit,
-    onBuy: (String) -> Unit
+    onSetAutoRenew: (Boolean) -> Unit,
+    onBuy: (String, Boolean) -> Unit
 ) {
     val busy = state.connection == ConnectionState.PREPARING ||
         state.connection == ConnectionState.CONNECTING ||
@@ -225,6 +227,7 @@ private fun HomeScreen(
                 state = state,
                 onCreatePairingCode = onCreatePairingCode,
                 onOpenPairDialog = { showPairDialog = true },
+                onSetAutoRenew = onSetAutoRenew,
                 onBuy = onBuy
             )
         }
@@ -357,7 +360,8 @@ private fun AccountSection(
     state: MainUiState,
     onCreatePairingCode: () -> Unit,
     onOpenPairDialog: () -> Unit,
-    onBuy: (String) -> Unit
+    onSetAutoRenew: (Boolean) -> Unit,
+    onBuy: (String, Boolean) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -366,11 +370,22 @@ private fun AccountSection(
                 Spacer(Modifier.height(4.dp))
                 Text("Доступ до ${displayDate(account.expiresAt)}")
                 Text("Устройств: ${account.activeDevices} из ${account.deviceLimit}")
-                if (account.autoRenew) {
-                    Text(
-                        "Автопродление включено",
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.bodySmall
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Автопродление")
+                        Text(
+                            if(account.autoRenew) "Включено" else "Выключено",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = account.autoRenew,
+                        onCheckedChange = onSetAutoRenew
                     )
                 }
                 Spacer(Modifier.height(12.dp))
@@ -407,17 +422,31 @@ private fun AccountSection(
             } ?: Text("Активный доступ не найден")
 
             if (state.plans.isNotEmpty()) {
+                var autoRenewOnPurchase by remember { mutableStateOf(false) }
                 Spacer(Modifier.height(16.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(12.dp))
                 Text("Выбрать тариф", style = MaterialTheme.typography.titleMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Автопродление после оплаты", style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked=autoRenewOnPurchase,onCheckedChange={ autoRenewOnPurchase=it })
+                }
+                Text(
+                    "По умолчанию выключено. При включении платёжный сервис сохранит способ оплаты для следующих периодов.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 state.plans.forEach { plan ->
                     Spacer(Modifier.height(8.dp))
                     val rubles = plan.priceMinor / 100.0
                     Button(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.paymentLoading,
-                        onClick = { onBuy(plan.id) }
+                        onClick = { onBuy(plan.id,autoRenewOnPurchase) }
                     ) {
                         Text("${plan.name} — ${"%.0f".format(rubles)} ₽ на ${plan.billingPeriodDays} дней")
                     }

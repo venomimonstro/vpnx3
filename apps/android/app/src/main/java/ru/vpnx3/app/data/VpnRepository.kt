@@ -89,10 +89,16 @@ class VpnRepository(private val context: Context) {
         return status
     }
 
-    fun createPayment(planId:String): PaymentStart {
+    fun createPayment(planId:String,autoRenew:Boolean): PaymentStart {
         val registration=ensureRegistered()
         val sequence=state.reserveNextRequestSequence()
-        return api.createPayment(registration.deviceId,sequence,planId)
+        return api.createPayment(registration.deviceId,sequence,planId,autoRenew)
+    }
+
+    fun setAutoRenew(enabled:Boolean): ClientAccountStatus {
+        val registration=ensureRegistered()
+        val sequence=state.reserveNextRequestSequence()
+        return api.setAutoRenew(registration.deviceId,sequence,enabled)
     }
 
     fun personalKeyEnabled(): Boolean = state.personalKeyEnabled

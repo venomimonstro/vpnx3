@@ -81,3 +81,27 @@ func (s *Server) handleClaimPairingCode(w http.ResponseWriter,r *http.Request){
 	}
 	writeJSON(w,http.StatusOK,status)
 }
+
+
+func (s *Server) handleSetAutoRenew(w http.ResponseWriter,r *http.Request){
+	body,err:=io.ReadAll(http.MaxBytesReader(w,r.Body,16<<10));if err!=nil{writeError(w,http.StatusBadRequest,"invalid_body");return}
+	var req struct{
+		Sequence int64 `json:"sequence"`
+		Enabled bool `json:"enabled"`
+	}
+	dec:=json.NewDecoder(bytes.NewReader(body));dec.DisallowUnknownFields()
+	if err:=dec.Decode(&req);err!=nil||req.Sequence<=0{writeError(w,http.StatusBadRequest,"invalid_request");return}
+	deviceID,ok:=s.verifyDeviceJSONRequest(w,r,body,req.Sequence);if !ok{return}
+	status,err:=s.store.SetDeviceAutoRenew(r.Context(),deviceID,req.Enabled)
+	if err!=nil{
+		switch{
+		case strings.Contains(err.Error(),"saved payment method required"):
+			writeError(w,http.StatusConflict,"saved_payment_method_required")
+		case strings.Contains(err.Error(),"no active subscription"):
+			writeError(w,http.StatusPaymentRequired,"no_active_subscription")
+		default:s.internalError(w,r,err)
+		}
+		return
+	}
+	writeJSON(w,http.StatusOK,status)
+}

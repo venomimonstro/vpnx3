@@ -201,10 +201,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun startPayment(planId:String,onReady:(String)->Unit) {
+    fun setAutoRenew(enabled:Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.setAutoRenew(enabled) }
+                .onSuccess { mutableState.value=mutableState.value.copy(account=it,error=null) }
+                .onFailure {
+                    mutableState.value=mutableState.value.copy(
+                        error=if(enabled)
+                            "Чтобы включить автопродление, сначала оплатите тариф с этой опцией"
+                        else "Не удалось отключить автопродление"
+                    )
+                }
+        }
+    }
+
+    fun startPayment(planId:String,autoRenew:Boolean,onReady:(String)->Unit) {
         mutableState.value=mutableState.value.copy(paymentLoading=true,error=null)
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repository.createPayment(planId) }
+            runCatching { repository.createPayment(planId,autoRenew) }
                 .onSuccess {
                     mutableState.value=mutableState.value.copy(paymentLoading=false)
                     onReady(it.confirmationUrl)
