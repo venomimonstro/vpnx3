@@ -164,29 +164,31 @@ final class IOSControlClient {
     }
 
     func createWorkerSession(
-        config: IOSVerifiedConfig,
-        leaseEnvelope: String,
-        tunnelPrivateKey: PrivateKey
-    ) async throws -> PreparedIOSConnection {
-        guard let leaseObject=try JSONSerialization.jsonObject(with:Data(leaseEnvelope.utf8)) as? [String:Any] else {
-            throw IOSControlError.invalidResponse
-        }
+        config:IOSVerifiedConfig,
+        leaseEnvelope:String,
+        tunnelPublicKey:String,
+        keyMode:String
+    ) async throws->PreparedIOSConnection {
+        guard keyMode=="standard"||keyMode=="personal",
+              let leaseObject=try JSONSerialization.jsonObject(with:Data(leaseEnvelope.utf8)) as? [String:Any]
+        else{throw IOSControlError.invalidResponse}
+
         let routes=IOSRouting.candidates(config)
         guard !routes.isEmpty else{throw IOSControlError.noWorker}
-
         var lastError:Error=IOSControlError.noWorker
-        for route in routes {
-            do {
+
+        for route in routes{
+            do{
                 guard let sessionURL=route.sessionAPI.httpsURL else{continue}
                 var request=URLRequest(url:sessionURL)
                 request.httpMethod="POST"
+                request.timeoutInterval=10
                 request.setValue("application/json",forHTTPHeaderField:"Content-Type")
                 request.setValue("application/json",forHTTPHeaderField:"Accept")
                 request.httpBody=try JSONSerialization.data(withJSONObject:[
                     "lease":leaseObject,
-                    "client_public_key":tunnelPrivateKey.publicKey.base64Key
+                    "client_public_key":tunnelPublicKey
                 ])
-
                 let (data,response)=try await URLSession.shared.data(for:request)
                 guard let http=response as? HTTPURLResponse,(200..<300).contains(http.statusCode),
                       let object=try JSONSerialization.jsonObject(with:data) as? [String:Any],
@@ -199,34 +201,21 @@ final class IOSControlClient {
                 else{throw IOSControlError.invalidResponse}
 
                 let network=config.json["network"] as? [String:Any]
-                let mtu=(network?["mtu"] as? NSNumber)?.intValue ?? 1280
-                let keepalive=(network?["persistent_keepalive_seconds"] as? NSNumber)?.intValue ?? 25
-                let dns=(network?["dns_servers"] as? [String]) ?? []
-                let dnsLine=dns.isEmpty ? "" : "DNS = "+dns.joined(separator:", ")+"\n"
-                let address=assigned.contains("/") ? assigned : assigned+"/32"
-
-                let wg="""
-                [Interface]
-                PrivateKey = \(tunnelPrivateKey.base64Key)
-                Address = \(address)
-                MTU = \(min(max(mtu,576),1500))
-                \(dnsLine)[Peer]
-                PublicKey = \(serverKey)
-                AllowedIPs = 0.0.0.0/0, ::/0
-                Endpoint = \(endpoint)
-                PersistentKeepalive = \(min(max(keepalive,0),120))
-                """
-
                 return PreparedIOSConnection(
-                    wgQuickConfig:wg,
                     serverAddress:route.wireGuard.host,
                     sessionID:id,
-                    sessionAPI:sessionURL.absoluteString
+                    sessionAPI:sessionURL.absoluteString,
+                    keyMode:keyMode,
+                    assignedIP:assigned.contains("/") ? assigned : assigned+"/32",
+                    serverPublicKey:serverKey,
+                    endpoint:endpoint,
+                    mtu:min(max((network?["mtu"] as? NSNumber)?.intValue ?? 1280,576),1500),
+                    dns:(network?["dns_servers"] as? [String]) ?? [],
+                    keepalive:min(max((network?["persistent_keepalive_seconds"] as? NSNumber)?.intValue ?? 25,0),120)
                 )
-            } catch {
-                lastError=error
-            }
+            }catch{lastError=error}
         }
         throw lastError
     }
+
 }

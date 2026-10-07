@@ -64,6 +64,9 @@ final class TunnelManager: ObservableObject {
                 ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier=="ru.vpnx3.app.PacketTunnel"
             }
             status=manager?.connection.status ?? .disconnected
+            if status == .disconnected || status == .invalid {
+                await cleanupPersistedSession()
+            }
             await refreshAccount()
         } catch {
             errorMessage="Не удалось прочитать настройки VPN"
@@ -73,17 +76,15 @@ final class TunnelManager: ObservableObject {
     func connect() async {
         guard !isBusy else{return}
         isBusy=true;defer{isBusy=false};errorMessage=nil
+        var prepared:PreparedIOSConnection?
         do{
-            let prepared=try await repository.prepareConnection(personalKeyEnabled:personalKeyEnabled)
+            let next=try await repository.prepareConnection(personalKeyEnabled:personalKeyEnabled)
+            prepared=next
             let current=manager ?? NETunnelProviderManager()
             let proto=NETunnelProviderProtocol()
             proto.providerBundleIdentifier="ru.vpnx3.app.PacketTunnel"
-            proto.serverAddress=prepared.serverAddress
-            proto.providerConfiguration=[
-                "wgQuickConfig":prepared.wgQuickConfig,
-                "sessionID":prepared.sessionID,
-                "sessionAPI":prepared.sessionAPI
-            ]
+            proto.serverAddress=next.serverAddress
+            proto.providerConfiguration=next.providerConfiguration
             current.protocolConfiguration=proto
             current.localizedDescription="VPNX3"
             current.isEnabled=true
@@ -93,6 +94,7 @@ final class TunnelManager: ObservableObject {
             try current.connection.startVPNTunnel()
             status=.connecting
         }catch{
+            if let prepared{await repository.release(prepared)}
             errorMessage="Не удалось подготовить VPN-соединение"
         }
     }
@@ -102,13 +104,24 @@ final class TunnelManager: ObservableObject {
         status=.disconnecting
     }
 
+    private func cleanupPersistedSession() async {
+        guard let proto=manager?.protocolConfiguration as? NETunnelProviderProtocol,
+              let values=proto.providerConfiguration,
+              let sessionID=values["sessionID"] as? String,
+              let sessionAPI=values["sessionAPI"] as? String else{return}
+        await repository.release(sessionID:sessionID,sessionAPI:sessionAPI)
+        proto.providerConfiguration=nil
+        manager?.protocolConfiguration=proto
+        try? await manager?.saveAsync()
+    }
+
     func refreshAccount() async {
         do{
             let (_,current,available)=try await repository.account()
             account=current
             plans=available
         }catch{
-            // Account may legitimately be absent after trial expiry; keep plans usable.
+            account=nil
             plans=(try? await IOSControlClient().plans()) ?? []
         }
     }

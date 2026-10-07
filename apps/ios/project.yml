@@ -13,6 +13,7 @@ targets:
     platform: iOS
     sources:
       - path: VPNX3
+      - path: Shared
     info:
       path: VPNX3/Info.plist
       properties:
@@ -36,6 +37,7 @@ targets:
     platform: iOS
     sources:
       - path: PacketTunnel
+      - path: Shared
     info:
       path: PacketTunnel/Info.plist
       properties:

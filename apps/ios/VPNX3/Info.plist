@@ -11,4 +11,5 @@
 <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
 <key>VPNX3ControlURL</key><string></string>
 <key>VPNX3ConfigPublicKey</key><string></string>
+<key>VPNX3KeychainAccessGroup</key><string>$(AppIdentifierPrefix)ru.vpnx3.shared</string>
 </dict></plist>
