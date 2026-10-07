@@ -229,13 +229,32 @@ func (s *Store) ApplyPaymentEvent(ctx context.Context,event PaymentEvent) (bool,
 		attemptStatus:="pending"
 		if event.Status=="succeeded"{attemptStatus="succeeded"}
 		if event.Status=="failed"||event.Status=="cancelled"{attemptStatus="failed"}
-		if _,err:=tx.Exec(ctx,`
+		var subscriptionID string
+		var failureCounted bool
+		err:=tx.QueryRow(ctx,`
 			UPDATE subscription_renewal_attempts
 			SET provider_payment_id=$2,status=$3,updated_at=now(),
 			    error_summary=CASE WHEN $3='failed' THEN COALESCE(error_summary,'provider payment failed') ELSE NULL END
 			WHERE id=$1
-		`,event.RenewalAttemptID,event.ProviderPaymentID,attemptStatus);err!=nil{
-			return false,fmt.Errorf("update renewal attempt: %w",err)
+			RETURNING subscription_id::text,failure_counted
+		`,event.RenewalAttemptID,event.ProviderPaymentID,attemptStatus).Scan(&subscriptionID,&failureCounted)
+		if errors.Is(err,pgx.ErrNoRows){return false,fmt.Errorf("renewal attempt not found")}
+		if err!=nil{return false,fmt.Errorf("update renewal attempt: %w",err)}
+
+		if attemptStatus=="failed"&&!failureCounted{
+			if _,err:=tx.Exec(ctx,`
+				UPDATE subscription_renewal_attempts
+				SET failure_counted=true,updated_at=now()
+				WHERE id=$1 AND failure_counted=false
+			`,event.RenewalAttemptID);err!=nil{return false,err}
+			if _,err:=tx.Exec(ctx,`
+				UPDATE subscriptions
+				SET renewal_failures=LEAST(3,renewal_failures+1),
+				    auto_renew=CASE WHEN renewal_failures+1>=3 THEN false ELSE auto_renew END,
+				    renewal_lock_until=NULL,
+				    updated_at=now()
+				WHERE id=$1
+			`,subscriptionID);err!=nil{return false,err}
 		}
 	}
 

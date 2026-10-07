@@ -112,15 +112,16 @@ func (s *Store) MarkRenewalFailure(ctx context.Context,attemptID,errorSummary st
 	var subscriptionID string
 	err=tx.QueryRow(ctx,`
 		UPDATE subscription_renewal_attempts
-		SET status='failed',error_summary=$2,updated_at=now()
-		WHERE id=$1 AND status IN ('claimed','pending')
+		SET status='failed',error_summary=COALESCE(NULLIF($2,''),error_summary),
+		    failure_counted=true,updated_at=now()
+		WHERE id=$1 AND status<>'succeeded' AND failure_counted=false
 		RETURNING subscription_id::text
 	`,attemptID,errorSummary).Scan(&subscriptionID)
 	if errors.Is(err,pgx.ErrNoRows){return nil}
 	if err!=nil{return err}
 	if _,err:=tx.Exec(ctx,`
 		UPDATE subscriptions
-		SET renewal_failures=renewal_failures+1,
+		SET renewal_failures=LEAST(3,renewal_failures+1),
 		    renewal_lock_until=NULL,
 		    auto_renew=CASE WHEN renewal_failures+1>=3 THEN false ELSE auto_renew END,
 		    updated_at=now()
