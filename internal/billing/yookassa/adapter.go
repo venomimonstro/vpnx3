@@ -126,7 +126,7 @@ func (a *Adapter) CreatePayment(ctx context.Context,userID string,plan store.Pla
 		RawPayload:responseRaw,
 		PaymentMethodID:payment.PaymentMethod.ID,
 		PaymentMethodSaved:payment.PaymentMethod.Saved,
-		AutoRenewRequested:autoRenew,
+		AutoRenewRequested:strings.EqualFold(payment.Metadata.AutoRenew,"true"),
 	}
 	return CreateResult{Event:event,ConfirmationURL:payment.Confirmation.ConfirmationURL},nil
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -61,7 +62,7 @@ func (s *Server) handleClientCreatePayment(w http.ResponseWriter,r *http.Request
 	}
 
 	bucket:=time.Now().UTC().Truncate(15*time.Minute).Format(time.RFC3339)
-	sum:=sha256.Sum256([]byte("vpnx3-payment-v1\x00"+deviceID+"\x00"+plan.ID+"\x00"+bucket))
+	sum:=sha256.Sum256([]byte("vpnx3-payment-v2\x00"+deviceID+"\x00"+plan.ID+"\x00"+strconv.FormatBool(req.AutoRenew)+"\x00"+bucket))
 	idempotenceKey:=hex.EncodeToString(sum[:])
 
 	result,err:=s.yooKassa.CreatePayment(r.Context(),state.UserID,plan,idempotenceKey,req.AutoRenew)

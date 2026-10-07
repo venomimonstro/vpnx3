@@ -65,9 +65,9 @@ func (s *Store) ClaimDueRenewal(ctx context.Context,now time.Time)(RenewalAttemp
 	if err!=nil{return RenewalAttempt{},fmt.Errorf("claim renewal candidate: %w",err)}
 
 	var attempts int
-	var lastAttempt *time.Time
+	var lastAttempt time.Time
 	if err:=tx.QueryRow(ctx,`
-		SELECT count(*)::int,max(updated_at)
+		SELECT count(*)::int,COALESCE(max(updated_at),'epoch'::timestamptz)
 		FROM subscription_renewal_attempts
 		WHERE subscription_id=$1 AND cycle_expires_at=$2
 	`,a.SubscriptionID,a.CycleExpiresAt).Scan(&attempts,&lastAttempt);err!=nil{
@@ -78,7 +78,7 @@ func (s *Store) ClaimDueRenewal(ctx context.Context,now time.Time)(RenewalAttemp
 		if err:=tx.Commit(ctx);err!=nil{return RenewalAttempt{},err}
 		return RenewalAttempt{},ErrNotFound
 	}
-	if lastAttempt!=nil && lastAttempt.Add(30*time.Minute).After(now){
+	if !lastAttempt.Equal(time.Unix(0,0).UTC()) && lastAttempt.Add(30*time.Minute).After(now){
 		if _,err:=tx.Exec(ctx,`
 			UPDATE subscriptions SET renewal_lock_until=$2,updated_at=now() WHERE id=$1
 		`,a.SubscriptionID,lastAttempt.Add(30*time.Minute));err!=nil{return RenewalAttempt{},err}
