@@ -60,6 +60,7 @@ func (e Executor) Run(ctx context.Context,job Job) (Result,error) {
 			return Result{},fmt.Errorf("android apk build: %w",err)
 		}
 		artifact=filepath.Join(src,"apps","android","app","build","outputs","apk","release","app-release.apk")
+		if err:=run(buildCtx,src,nil,"bash","scripts/validate-android-release.sh","--apk",artifact);err!=nil{return Result{},fmt.Errorf("android apk validation: %w",err)}
 	case "android_aab":
 		env,err:=androidBuildEnv(job.Version)
 		if err!=nil{return Result{},err}
@@ -67,6 +68,7 @@ func (e Executor) Run(ctx context.Context,job Job) (Result,error) {
 			return Result{},fmt.Errorf("android aab build: %w",err)
 		}
 		artifact=filepath.Join(src,"apps","android","app","build","outputs","bundle","release","app-release.aab")
+		if err:=run(buildCtx,src,nil,"bash","scripts/validate-android-release.sh","--aab",artifact);err!=nil{return Result{},fmt.Errorf("android aab validation: %w",err)}
 	case "chrome_zip":
 		dir:=filepath.Join(src,"apps","browser-extension","chrome")
 		if _,err:=os.Stat(dir);err!=nil{return Result{},fmt.Errorf("chrome extension source unavailable")}
@@ -75,6 +77,7 @@ func (e Executor) Run(ctx context.Context,job Job) (Result,error) {
 		if err:=run(buildCtx,src,nil,"python3","scripts/validate-browser-extension.py","--browser","chrome","--dir",dir);err!=nil{return Result{},fmt.Errorf("chrome extension validation: %w",err)}
 		artifact=filepath.Join(work,"vpnx3-chrome.zip")
 		if err:=run(buildCtx,dir,nil,"zip","-qr",artifact,".");err!=nil{return Result{},err}
+		if err:=run(buildCtx,src,nil,"python3","scripts/validate-browser-package.py","--browser","chrome","--zip",artifact);err!=nil{return Result{},fmt.Errorf("chrome package validation: %w",err)}
 	case "firefox_zip":
 		dir:=filepath.Join(src,"apps","browser-extension","firefox")
 		if _,err:=os.Stat(dir);err!=nil{return Result{},fmt.Errorf("firefox extension source unavailable")}
@@ -83,6 +86,7 @@ func (e Executor) Run(ctx context.Context,job Job) (Result,error) {
 		if err:=run(buildCtx,src,nil,"python3","scripts/validate-browser-extension.py","--browser","firefox","--dir",dir);err!=nil{return Result{},fmt.Errorf("firefox extension validation: %w",err)}
 		artifact=filepath.Join(work,"vpnx3-firefox.zip")
 		if err:=run(buildCtx,dir,nil,"zip","-qr",artifact,".");err!=nil{return Result{},err}
+		if err:=run(buildCtx,src,nil,"python3","scripts/validate-browser-package.py","--browser","firefox","--zip",artifact);err!=nil{return Result{},fmt.Errorf("firefox package validation: %w",err)}
 	case "ios_ipa":
 		if runtime.GOOS!="darwin" { return Result{},fmt.Errorf("ios_ipa requires a macOS build worker") }
 		return Result{},fmt.Errorf("ios recipe is not enabled until the Xcode project is present")
