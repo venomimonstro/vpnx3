@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import java.time.Instant
 
 class MainActivity : ComponentActivity() {
     private var currentViewModel: MainViewModel? = null
@@ -104,6 +105,7 @@ private fun HomeScreen(
     val busy = state.connection == ConnectionState.PREPARING ||
         state.connection == ConnectionState.CONNECTING ||
         state.connection == ConnectionState.DISCONNECTING
+    val accessAvailable = hasUsableAccess(state)
 
     var showAccount by remember { mutableStateOf(false) }
     var showExtra by remember { mutableStateOf(false) }
@@ -162,15 +164,26 @@ private fun HomeScreen(
                     Button(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = state.registered,
-                        onClick = onConnect
+                        onClick = {
+                            if (accessAvailable) onConnect()
+                            else showAccount = true
+                        }
                     ) {
-                        Text("Подключить")
+                        Text(if (accessAvailable) "Подключить" else "Выбрать тариф")
                     }
                 }
             }
         }
 
         Spacer(Modifier.height(16.dp))
+        if (!accessAvailable && state.registered) {
+            Text(
+                "Доступ закончился — выберите тариф, чтобы снова подключиться.",
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(Modifier.height(8.dp))
+        }
         accessSummary(state)?.let {
             Text(
                 it,
@@ -364,3 +377,15 @@ private fun displayDate(value: String): String =
 
 private fun displayDateTime(value: String): String =
     value.replace("T", " ").take(16)
+
+
+private fun hasUsableAccess(state: MainUiState): Boolean {
+    state.account?.let { account ->
+        val until = account.graceUntil ?: account.expiresAt
+        return isFutureTime(until)
+    }
+    return state.trialExpiresAt?.takeIf { it.isNotBlank() }?.let(::isFutureTime) ?: false
+}
+
+private fun isFutureTime(value: String): Boolean =
+    runCatching { Instant.parse(value).isAfter(Instant.now()) }.getOrDefault(true)
