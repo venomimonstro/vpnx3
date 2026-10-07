@@ -23,6 +23,11 @@ final class PersonalKeyStore {
         return try create()
     }
 
+    func rotate() throws -> KeyInfo {
+        try delete()
+        return try ensure()
+    }
+
     func delete() throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

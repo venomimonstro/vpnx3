@@ -31,6 +31,11 @@ struct IOSPaymentStart {
     let confirmationURL:URL
 }
 
+struct IOSPairingCode {
+    let code:String
+    let expiresAt:String
+}
+
 enum IOSControlError: Error {
     case runtimeNotConfigured
     case invalidResponse
@@ -99,6 +104,25 @@ final class IOSControlClient {
         let raw=try await IOSDeviceIdentity.shared.signedJSON(
             controlURL:runtime.controlURL,path:"/api/v1/client/account/auto-renew",deviceID:deviceID,
             object:["enabled":enabled]
+        )
+        return try parseAccount(Data(raw.utf8))
+    }
+
+    func createPairingCode(deviceID:String) async throws->IOSPairingCode{
+        let raw=try await IOSDeviceIdentity.shared.signedJSON(
+            controlURL:runtime.controlURL,path:"/api/v1/client/pairing-code",deviceID:deviceID,object:[:]
+        )
+        guard let data=raw.data(using:.utf8),
+              let json=try JSONSerialization.jsonObject(with:data) as? [String:Any],
+              let code=json["code"] as? String,
+              let expires=json["expires_at"] as? String else{throw IOSControlError.invalidResponse}
+        return IOSPairingCode(code:code,expiresAt:expires)
+    }
+
+    func claimPairingCode(deviceID:String,code:String) async throws->IOSAccountStatus{
+        let raw=try await IOSDeviceIdentity.shared.signedJSON(
+            controlURL:runtime.controlURL,path:"/api/v1/client/pairing-claim",deviceID:deviceID,
+            object:["code":code]
         )
         return try parseAccount(Data(raw.utf8))
     }

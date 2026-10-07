@@ -12,12 +12,22 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var account: IOSAccountStatus?
     @Published private(set) var plans: [IOSPlan] = []
     @Published private(set) var paymentBusy = false
+    @Published private(set) var pairingBusy = false
+    @Published private(set) var pairingCode: IOSPairingCode?
 
     private var manager: NETunnelProviderManager?
     private let personalKeys = PersonalKeyStore()
     private lazy var repository = IOSVPNRepository(personalKeys:personalKeys)
 
     var isConnected: Bool { status == .connected || status == .reasserting }
+    var canChangePersonalKey: Bool {
+        status == .disconnected || status == .invalid
+    }
+    var hasUsableAccess: Bool {
+        guard let account else { return false }
+        let raw=account.graceUntil ?? account.expiresAt
+        return ISO8601DateFormatter().date(from:raw).map{$0>Date()} ?? true
+    }
 
     var statusTitle: String {
         switch status {
@@ -116,6 +126,24 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    func createPairingCode() async {
+        guard !pairingBusy else{return}
+        pairingBusy=true;defer{pairingBusy=false}
+        do{pairingCode=try await repository.createPairingCode()}
+        catch{errorMessage="Нельзя добавить ещё одно устройство"}
+    }
+
+    func claimPairingCode(_ code:String) async {
+        let normalized=code.trimmingCharacters(in:.whitespacesAndNewlines)
+        guard !normalized.isEmpty,!pairingBusy else{return}
+        pairingBusy=true;defer{pairingBusy=false}
+        do{
+            account=try await repository.claimPairingCode(normalized)
+            pairingCode=nil
+            await refreshAccount()
+        }catch{errorMessage="Не удалось привязать устройство"}
+    }
+
     func setAutoRenew(_ enabled:Bool) async {
         do{
             account=try await repository.setAutoRenew(enabled)
@@ -127,13 +155,34 @@ final class TunnelManager: ObservableObject {
     }
 
     func setPersonalKeyEnabled(_ enabled:Bool) async {
-        guard !isConnected && !isBusy else{return}
+        guard canChangePersonalKey && !isBusy else{return}
         do{
             if enabled{_ = try personalKeys.ensure()}
             personalKeyEnabled=enabled
             UserDefaults.standard.set(enabled,forKey:"personal_key_enabled")
             refreshPersonalKeyInfo()
         }catch{errorMessage="Не удалось изменить личный ключ"}
+    }
+
+    func rotatePersonalKey() async {
+        guard canChangePersonalKey && !isBusy else{return}
+        do{
+            let info=try personalKeys.rotate()
+            personalKeyEnabled=true
+            UserDefaults.standard.set(true,forKey:"personal_key_enabled")
+            let value=info.publicKey.base64Key
+            personalKeyFingerprint=String(value.prefix(10))+"…"+String(value.suffix(8))
+        }catch{errorMessage="Не удалось заменить личный ключ"}
+    }
+
+    func deletePersonalKey() async {
+        guard canChangePersonalKey && !isBusy else{return}
+        do{
+            try personalKeys.delete()
+            personalKeyEnabled=false
+            personalKeyFingerprint=nil
+            UserDefaults.standard.set(false,forKey:"personal_key_enabled")
+        }catch{errorMessage="Не удалось удалить личный ключ"}
     }
 
     private func refreshPersonalKeyInfo(){

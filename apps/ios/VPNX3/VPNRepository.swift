@@ -23,6 +23,18 @@ final class IOSVPNRepository {
         return try await (registration,account,plans)
     }
 
+    func createPairingCode() async throws->IOSPairingCode{
+        let client=IOSControlClient()
+        let registration=try await client.ensureRegistered()
+        return try await client.createPairingCode(deviceID:registration.deviceID)
+    }
+
+    func claimPairingCode(_ code:String) async throws->IOSAccountStatus{
+        let client=IOSControlClient()
+        let registration=try await client.ensureRegistered()
+        return try await client.claimPairingCode(deviceID:registration.deviceID,code:code)
+    }
+
     func createPayment(planID:String,autoRenew:Bool) async throws->IOSPaymentStart{
         let client=IOSControlClient()
         let registration=try await client.ensureRegistered()

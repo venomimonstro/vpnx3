@@ -4,34 +4,48 @@ import NetworkExtension
 struct ContentView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showAccount=false
     @State private var autoRenewOnPurchase=false
+    @State private var showPairing=false
+    @State private var pairingInput=""
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing:20) {
                     Text("VPNX3").font(.largeTitle.bold())
                     Text("Защищённое подключение без лишних настроек")
                         .foregroundStyle(.secondary)
 
                     VStack(spacing:12){
                         Text(tunnel.statusTitle).font(.title2.bold())
-                        Text(tunnel.statusHint).foregroundStyle(.secondary)
+                        Text(tunnel.statusHint)
+                            .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
 
-                        if let error=tunnel.errorMessage{
+                        if let error=tunnel.errorMessage {
                             Text(error).foregroundStyle(.red)
                         }
 
                         Button {
                             Task {
-                                if tunnel.isConnected { await tunnel.disconnect() }
-                                else { await tunnel.connect() }
+                                if tunnel.isConnected {
+                                    await tunnel.disconnect()
+                                } else if tunnel.hasUsableAccess {
+                                    await tunnel.connect()
+                                } else {
+                                    showAccount=true
+                                }
                             }
                         } label: {
-                            Text(tunnel.isConnected ? "Отключить защиту" : "Подключить")
-                                .frame(maxWidth:.infinity).padding(.vertical,8)
+                            Text(
+                                tunnel.isConnected
+                                ? "Отключить защиту"
+                                : (tunnel.hasUsableAccess ? "Подключить" : "Выбрать тариф")
+                            )
+                            .frame(maxWidth:.infinity)
+                            .padding(.vertical,8)
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(tunnel.isBusy)
@@ -48,13 +62,17 @@ struct ContentView: View {
                             account:tunnel.account,
                             plans:tunnel.plans,
                             paymentBusy:tunnel.paymentBusy,
+                            pairingBusy:tunnel.pairingBusy,
+                            pairingCode:tunnel.pairingCode,
                             autoRenewOnPurchase:$autoRenewOnPurchase,
                             onAutoRenew:{enabled in Task{await tunnel.setAutoRenew(enabled)}},
+                            onCreatePairing:{Task{await tunnel.createPairingCode()}},
+                            onClaimPairing:{showPairing=true},
                             onBuy:{plan in
                                 Task{
-                                    if let url=await tunnel.startPayment(planID:plan.id,autoRenew:autoRenewOnPurchase){
-                                        openURL(url)
-                                    }
+                                    if let url=await tunnel.startPayment(
+                                        planID:plan.id,autoRenew:autoRenewOnPurchase
+                                    ){openURL(url)}
                                 }
                             }
                         )
@@ -66,6 +84,35 @@ struct ContentView: View {
             }
             .refreshable { await tunnel.refreshAccount() }
         }
+        .onChange(of:scenePhase){phase in
+            if phase == .active { Task{await tunnel.refreshAccount()} }
+        }
+        .sheet(isPresented:$showPairing){
+            NavigationStack {
+                Form {
+                    Section("Код подключения") {
+                        TextField("Одноразовый код",text:$pairingInput)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                    }
+                    Section {
+                        Button("Привязать"){
+                            let code=pairingInput
+                            showPairing=false
+                            pairingInput=""
+                            Task{await tunnel.claimPairingCode(code)}
+                        }
+                        .disabled(pairingInput.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                .navigationTitle("Привязать устройство")
+                .toolbar {
+                    ToolbarItem(placement:.cancellationAction){
+                        Button("Отмена"){showPairing=false}
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -73,8 +120,12 @@ private struct AccountView:View{
     let account:IOSAccountStatus?
     let plans:[IOSPlan]
     let paymentBusy:Bool
+    let pairingBusy:Bool
+    let pairingCode:IOSPairingCode?
     @Binding var autoRenewOnPurchase:Bool
     let onAutoRenew:(Bool)->Void
+    let onCreatePairing:()->Void
+    let onClaimPairing:()->Void
     let onBuy:(IOSPlan)->Void
 
     var body:some View{
@@ -87,6 +138,20 @@ private struct AccountView:View{
                     get:{account.autoRenew},
                     set:onAutoRenew
                 ))
+
+                HStack {
+                    Button("Добавить устройство",action:onCreatePairing)
+                        .disabled(pairingBusy || account.activeDevices>=account.deviceLimit)
+                    Button("Ввести код",action:onClaimPairing)
+                        .disabled(pairingBusy)
+                }
+                .buttonStyle(.bordered)
+
+                if let pairingCode {
+                    Text("Код: \(pairingCode.code)").font(.headline)
+                    Text("Действует до \(displayDateTime(pairingCode.expiresAt))")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             }else{
                 Text("Активный тариф не найден").font(.headline)
             }
@@ -97,9 +162,7 @@ private struct AccountView:View{
                 .font(.footnote).foregroundStyle(.secondary)
 
             ForEach(plans){plan in
-                Button {
-                    onBuy(plan)
-                } label: {
+                Button { onBuy(plan) } label: {
                     Text("\(plan.name) — \(plan.priceMinor/100) ₽ на \(plan.billingPeriodDays) дней")
                         .frame(maxWidth:.infinity)
                 }
@@ -111,8 +174,9 @@ private struct AccountView:View{
         .background(.thinMaterial,in:RoundedRectangle(cornerRadius:16))
     }
 
-    private func displayDate(_ value:String)->String{
-        String(value.prefix(10))
+    private func displayDate(_ value:String)->String { String(value.prefix(10)) }
+    private func displayDateTime(_ value:String)->String {
+        String(value.replacingOccurrences(of:"T",with:" ").prefix(16))
     }
 }
 
@@ -124,20 +188,27 @@ private struct SettingsView: View {
             Section("Личный ключ") {
                 Toggle(
                     "Использовать ключ только этого устройства",
-                    isOn: Binding(
-                        get: { tunnel.personalKeyEnabled },
-                        set: { enabled in Task { await tunnel.setPersonalKeyEnabled(enabled) } }
+                    isOn:Binding(
+                        get:{tunnel.personalKeyEnabled},
+                        set:{enabled in Task{await tunnel.setPersonalKeyEnabled(enabled)}}
                     )
                 )
-                .disabled(tunnel.isConnected || tunnel.isBusy)
+                .disabled(!tunnel.canChangePersonalKey || tunnel.isBusy)
 
-                if let fingerprint = tunnel.personalKeyFingerprint {
-                    LabeledContent("Отпечаток", value: fingerprint)
+                if let fingerprint=tunnel.personalKeyFingerprint {
+                    LabeledContent("Отпечаток",value:fingerprint)
+                    Button("Заменить личный ключ"){
+                        Task{await tunnel.rotatePersonalKey()}
+                    }
+                    .disabled(!tunnel.canChangePersonalKey)
+                    Button("Удалить личный ключ",role:.destructive){
+                        Task{await tunnel.deletePersonalKey()}
+                    }
+                    .disabled(!tunnel.canChangePersonalKey)
                 }
 
-                Text("Приватный WireGuard-ключ хранится только в Keychain этого устройства и не отправляется в Control Plane.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                Text("Приватный WireGuard-ключ хранится только в Keychain этого устройства и не отправляется в Control Plane. После удаления восстановить его нельзя.")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Настройки")
