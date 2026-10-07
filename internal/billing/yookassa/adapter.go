@@ -52,7 +52,7 @@ type CreateResult struct {
 	ConfirmationURL string
 }
 
-func (a *Adapter) CreatePayment(ctx context.Context,userID string,plan store.Plan,idempotence string) (CreateResult,error) {
+func (a *Adapter) CreatePayment(ctx context.Context,userID string,plan store.Plan,idempotence string,autoRenew bool) (CreateResult,error) {
 	idempotence=strings.TrimSpace(idempotence)
 	if idempotence=="" {
 		var err error
@@ -74,8 +74,10 @@ func (a *Adapter) CreatePayment(ctx context.Context,userID string,plan store.Pla
 		"metadata":map[string]string{
 			"user_id":userID,
 			"plan_id":plan.ID,
+			"auto_renew":strconv.FormatBool(autoRenew),
 		},
 	}
+	if autoRenew { payload["save_payment_method"]=true }
 	raw,err:=json.Marshal(payload)
 	if err!=nil { return CreateResult{},err }
 
@@ -122,8 +124,47 @@ func (a *Adapter) CreatePayment(ctx context.Context,userID string,plan store.Pla
 		Currency:payment.Amount.Currency,
 		OccurredAt:payment.CreatedAt,
 		RawPayload:responseRaw,
+		PaymentMethodID:payment.PaymentMethod.ID,
+		PaymentMethodSaved:payment.PaymentMethod.Saved,
+		AutoRenewRequested:autoRenew,
 	}
 	return CreateResult{Event:event,ConfirmationURL:payment.Confirmation.ConfirmationURL},nil
+}
+
+
+func (a *Adapter) CreateRecurringPayment(ctx context.Context,userID string,plan store.Plan,paymentMethodID,attemptID,idempotence string) (CreateResult,error) {
+	paymentMethodID=strings.TrimSpace(paymentMethodID)
+	attemptID=strings.TrimSpace(attemptID)
+	idempotence=strings.TrimSpace(idempotence)
+	if paymentMethodID==""||attemptID==""||idempotence==""{return CreateResult{},fmt.Errorf("invalid recurring payment request")}
+	payload:=map[string]any{
+		"amount":map[string]string{"value":minorToDecimal(plan.PriceMinor),"currency":plan.Currency},
+		"capture":true,
+		"payment_method_id":paymentMethodID,
+		"description":fmt.Sprintf("VPNX3 автопродление %s",plan.Name),
+		"metadata":map[string]string{
+			"user_id":userID,"plan_id":plan.ID,"auto_renew":"true","renewal_attempt_id":attemptID,
+		},
+	}
+	raw,err:=json.Marshal(payload);if err!=nil{return CreateResult{},err}
+	req,err:=http.NewRequestWithContext(ctx,http.MethodPost,apiBase+"/payments",bytes.NewReader(raw));if err!=nil{return CreateResult{},err}
+	req.SetBasicAuth(a.shopID,a.secretKey);req.Header.Set("Content-Type","application/json");req.Header.Set("Accept","application/json");req.Header.Set("Idempotence-Key",idempotence)
+	resp,err:=a.client.Do(req);if err!=nil{return CreateResult{},fmt.Errorf("create YooKassa recurring payment: %w",err)}
+	defer resp.Body.Close()
+	responseRaw,err:=io.ReadAll(io.LimitReader(resp.Body,1<<20));if err!=nil{return CreateResult{},err}
+	if resp.StatusCode<200||resp.StatusCode>=300{return CreateResult{},fmt.Errorf("YooKassa recurring payment status %d",resp.StatusCode)}
+	payment,err:=parsePayment(responseRaw);if err!=nil{return CreateResult{},err}
+	if payment.Metadata.UserID!=userID||payment.Metadata.PlanID!=plan.ID||payment.Metadata.RenewalAttemptID!=attemptID{return CreateResult{},fmt.Errorf("unexpected recurring payment metadata")}
+	amountMinor,err:=decimalToMinor(payment.Amount.Value);if err!=nil{return CreateResult{},err}
+	if amountMinor!=plan.PriceMinor||payment.Amount.Currency!=plan.Currency{return CreateResult{},fmt.Errorf("unexpected recurring payment amount")}
+	event:=billing.NormalizedEvent{
+		Provider:a.Name(),ProviderEventID:"create:"+payment.ID,EventType:"payment.created",
+		ProviderPaymentID:payment.ID,UserID:userID,PlanID:plan.ID,Status:normalizePaymentStatus(payment.Status),
+		AmountMinor:amountMinor,Currency:payment.Amount.Currency,OccurredAt:payment.CreatedAt,RawPayload:responseRaw,
+		PaymentMethodID:payment.PaymentMethod.ID,PaymentMethodSaved:payment.PaymentMethod.Saved,
+		AutoRenewRequested:true,RenewalAttemptID:attemptID,
+	}
+	return CreateResult{Event:event},nil
 }
 
 func (a *Adapter) VerifyAndNormalizeWebhook(ctx context.Context,_ http.Header,raw []byte) (billing.NormalizedEvent,error) {
@@ -174,6 +215,10 @@ func (a *Adapter) VerifyAndNormalizeWebhook(ctx context.Context,_ http.Header,ra
 		Currency:payment.Amount.Currency,
 		OccurredAt:occurred,
 		RawPayload:append(append([]byte{},raw...),verifiedRaw...),
+		PaymentMethodID:payment.PaymentMethod.ID,
+		PaymentMethodSaved:payment.PaymentMethod.Saved,
+		AutoRenewRequested:strings.EqualFold(payment.Metadata.AutoRenew,"true"),
+		RenewalAttemptID:payment.Metadata.RenewalAttemptID,
 	},nil
 }
 
@@ -261,7 +306,13 @@ type paymentObject struct {
 	Metadata struct {
 		UserID string `json:"user_id"`
 		PlanID string `json:"plan_id"`
+		AutoRenew string `json:"auto_renew"`
+		RenewalAttemptID string `json:"renewal_attempt_id"`
 	} `json:"metadata"`
+	PaymentMethod struct {
+		ID string `json:"id"`
+		Saved bool `json:"saved"`
+	} `json:"payment_method"`
 	CreatedAt time.Time `json:"created_at"`
 	CapturedAt *time.Time `json:"captured_at"`
 }

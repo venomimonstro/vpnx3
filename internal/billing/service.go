@@ -20,6 +20,10 @@ type NormalizedEvent struct {
 	Currency          string
 	OccurredAt        time.Time
 	RawPayload        []byte
+	PaymentMethodID   string
+	PaymentMethodSaved bool
+	AutoRenewRequested bool
+	RenewalAttemptID string
 }
 
 type Provider interface {
@@ -46,6 +50,10 @@ func (s *Service) ApplyVerifiedEvent(ctx context.Context,event NormalizedEvent) 
 		Currency:event.Currency,
 		OccurredAt:event.OccurredAt,
 		RawPayload:event.RawPayload,
+		PaymentMethodID:event.PaymentMethodID,
+		PaymentMethodSaved:event.PaymentMethodSaved,
+		AutoRenewRequested:event.AutoRenewRequested,
+		RenewalAttemptID:event.RenewalAttemptID,
 	})
 }
 

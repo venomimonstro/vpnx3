@@ -111,6 +111,10 @@ type PaymentEvent struct {
 	Currency          string
 	OccurredAt        time.Time
 	RawPayload        []byte
+	PaymentMethodID   string
+	PaymentMethodSaved bool
+	AutoRenewRequested bool
+	RenewalAttemptID string
 }
 
 func (s *Store) ApplyPaymentEvent(ctx context.Context,event PaymentEvent) (bool,error) {
@@ -174,11 +178,11 @@ func (s *Store) ApplyPaymentEvent(ctx context.Context,event PaymentEvent) (bool,
 	if isNew {
 		err=tx.QueryRow(ctx,`
 			INSERT INTO payments(user_id,plan_id,provider,provider_payment_id,status,
-			                     amount_minor,currency,paid_at)
-			VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $5='succeeded' THEN $8 ELSE NULL END)
+			                     amount_minor,currency,paid_at,auto_renew_requested)
+			VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $5='succeeded' THEN $8 ELSE NULL END,$9)
 			RETURNING id::text
 		`,event.UserID,event.PlanID,event.Provider,event.ProviderPaymentID,event.Status,
-			event.AmountMinor,event.Currency,event.OccurredAt).Scan(&paymentID)
+			event.AmountMinor,event.Currency,event.OccurredAt,event.AutoRenewRequested).Scan(&paymentID)
 		if err!=nil { return false,fmt.Errorf("insert payment: %w",err) }
 		shouldGrant=event.Status=="succeeded"
 	} else {
@@ -207,6 +211,34 @@ func (s *Store) ApplyPaymentEvent(ctx context.Context,event PaymentEvent) (bool,
 		}
 	}
 
+	var paymentMethodID *string
+	if event.Status=="succeeded" && event.PaymentMethodSaved && strings.TrimSpace(event.PaymentMethodID)!="" {
+		var id string
+		err:=tx.QueryRow(ctx,`
+			INSERT INTO payment_methods(user_id,provider,provider_method_id,status,last_used_at)
+			VALUES($1,$2,$3,'active',$4)
+			ON CONFLICT(provider,provider_method_id) DO UPDATE
+			SET user_id=EXCLUDED.user_id,status='active',last_used_at=EXCLUDED.last_used_at
+			RETURNING id::text
+		`,event.UserID,event.Provider,strings.TrimSpace(event.PaymentMethodID),event.OccurredAt).Scan(&id)
+		if err!=nil{return false,fmt.Errorf("save payment method: %w",err)}
+		paymentMethodID=&id
+	}
+
+	if event.RenewalAttemptID!="" {
+		attemptStatus:="pending"
+		if event.Status=="succeeded"{attemptStatus="succeeded"}
+		if event.Status=="failed"||event.Status=="cancelled"{attemptStatus="failed"}
+		if _,err:=tx.Exec(ctx,`
+			UPDATE subscription_renewal_attempts
+			SET provider_payment_id=$2,status=$3,updated_at=now(),
+			    error_summary=CASE WHEN $3='failed' THEN COALESCE(error_summary,'provider payment failed') ELSE NULL END
+			WHERE id=$1
+		`,event.RenewalAttemptID,event.ProviderPaymentID,attemptStatus);err!=nil{
+			return false,fmt.Errorf("update renewal attempt: %w",err)
+		}
+	}
+
 	if shouldGrant {
 		var subscriptionID string
 		var currentExpires time.Time
@@ -226,16 +258,21 @@ func (s *Store) ApplyPaymentEvent(ctx context.Context,event PaymentEvent) (bool,
 
 		if errors.Is(err,pgx.ErrNoRows) {
 			err=tx.QueryRow(ctx,`
-				INSERT INTO subscriptions(user_id,plan_id,status,starts_at,expires_at,grace_until,auto_renew)
-				VALUES($1,$2,'active',$3,$4,$5,false)
+				INSERT INTO subscriptions(user_id,plan_id,status,starts_at,expires_at,grace_until,auto_renew,renewal_payment_method_id,renewal_failures)
+				VALUES($1,$2,'active',$3,$4,$5,$6,$7,0)
 				RETURNING id::text
-			`,event.UserID,event.PlanID,event.OccurredAt,expires,grace).Scan(&subscriptionID)
+			`,event.UserID,event.PlanID,event.OccurredAt,expires,grace,event.AutoRenewRequested && paymentMethodID!=nil,paymentMethodID).Scan(&subscriptionID)
 		} else if err==nil {
 			_,err=tx.Exec(ctx,`
 				UPDATE subscriptions
-				SET plan_id=$2,status='active',expires_at=$3,grace_until=$4,updated_at=now()
+				SET plan_id=$2,status='active',expires_at=$3,grace_until=$4,
+				    auto_renew=CASE WHEN $5 AND $6::uuid IS NOT NULL THEN true ELSE auto_renew END,
+				    renewal_payment_method_id=CASE WHEN $5 AND $6::uuid IS NOT NULL THEN $6::uuid ELSE renewal_payment_method_id END,
+				    renewal_failures=CASE WHEN $7<>'' THEN 0 ELSE renewal_failures END,
+				    renewal_lock_until=NULL,
+				    updated_at=now()
 				WHERE id=$1
-			`,subscriptionID,event.PlanID,expires,grace)
+			`,subscriptionID,event.PlanID,expires,grace,event.AutoRenewRequested,paymentMethodID,event.RenewalAttemptID)
 		}
 		if err!=nil { return false,fmt.Errorf("apply subscription entitlement: %w",err) }
 
