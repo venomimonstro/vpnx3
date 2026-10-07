@@ -167,6 +167,27 @@ func (a *Adapter) CreateRecurringPayment(ctx context.Context,userID string,plan 
 	return CreateResult{Event:event},nil
 }
 
+func (a *Adapter) FetchPaymentEvent(ctx context.Context,paymentID string)(billing.NormalizedEvent,error){
+	payment,raw,err:=a.fetchPayment(ctx,strings.TrimSpace(paymentID))
+	if err!=nil{return billing.NormalizedEvent{},err}
+	if payment.Metadata.UserID==""||payment.Metadata.PlanID==""{
+		return billing.NormalizedEvent{},fmt.Errorf("verified payment metadata is incomplete")
+	}
+	amountMinor,err:=decimalToMinor(payment.Amount.Value);if err!=nil{return billing.NormalizedEvent{},err}
+	occurred:=payment.CreatedAt
+	if payment.CapturedAt!=nil{occurred=*payment.CapturedAt}
+	return billing.NormalizedEvent{
+		Provider:a.Name(),ProviderEventID:"reconcile:"+payment.ID+":"+payment.Status,
+		EventType:"payment.reconcile",ProviderPaymentID:payment.ID,
+		UserID:payment.Metadata.UserID,PlanID:payment.Metadata.PlanID,
+		Status:normalizePaymentStatus(payment.Status),AmountMinor:amountMinor,
+		Currency:payment.Amount.Currency,OccurredAt:occurred,RawPayload:raw,
+		PaymentMethodID:payment.PaymentMethod.ID,PaymentMethodSaved:payment.PaymentMethod.Saved,
+		AutoRenewRequested:strings.EqualFold(payment.Metadata.AutoRenew,"true"),
+		RenewalAttemptID:payment.Metadata.RenewalAttemptID,
+	},nil
+}
+
 func (a *Adapter) VerifyAndNormalizeWebhook(ctx context.Context,_ http.Header,raw []byte) (billing.NormalizedEvent,error) {
 	var notice struct {
 		Type string `json:"type"`

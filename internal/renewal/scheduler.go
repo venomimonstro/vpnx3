@@ -37,11 +37,29 @@ func (s *Scheduler) Run(ctx context.Context){
 }
 
 func (s *Scheduler) runBatch(parent context.Context){
-	recoveryCtx,recoveryCancel:=context.WithTimeout(parent,10*time.Second)
-	if recovered,err:=s.store.RecoverStaleRenewals(recoveryCtx,time.Now().UTC());err!=nil{
-		s.logger.Warn("stale renewal recovery failed","error",err)
-	}else if recovered>0{
-		s.logger.Warn("stale renewals recovered","subscriptions",recovered)
+	recoveryCtx,recoveryCancel:=context.WithTimeout(parent,30*time.Second)
+	stale,err:=s.store.StaleRenewalAttempts(recoveryCtx,time.Now().UTC(),20)
+	if err!=nil{
+		s.logger.Warn("stale renewal lookup failed","error",err)
+	}else{
+		for _,attempt:=range stale{
+			if attempt.ProviderPaymentID==nil||*attempt.ProviderPaymentID==""{
+				_ = s.store.MarkRenewalFailure(recoveryCtx,attempt.ID,"renewal creation timeout")
+				continue
+			}
+			event,fetchErr:=s.provider.FetchPaymentEvent(recoveryCtx,*attempt.ProviderPaymentID)
+			if fetchErr!=nil{
+				s.logger.Warn("stale renewal provider reconciliation failed","attempt_id",attempt.ID,"error",fetchErr)
+				continue
+			}
+			if _,applyErr:=s.billing.ApplyVerifiedEvent(recoveryCtx,event);applyErr!=nil{
+				s.logger.Warn("stale renewal apply failed","attempt_id",attempt.ID,"error",applyErr)
+				continue
+			}
+			if event.Status=="failed"||event.Status=="cancelled"{
+				_ = s.store.MarkRenewalFailure(recoveryCtx,attempt.ID,"provider confirmed renewal failure")
+			}
+		}
 	}
 	recoveryCancel()
 

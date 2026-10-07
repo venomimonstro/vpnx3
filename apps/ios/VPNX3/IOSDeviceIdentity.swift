@@ -144,68 +144,89 @@ final class IOSDeviceIdentity {
 }
 
 private final class IOSLocalState {
-    private let defaults = UserDefaults.standard
-    private let sequenceService="ru.vpnx3.device-sequence"
-    private let sequenceAccount="request-sequence-v1"
+    private let service="ru.vpnx3.device-state-v1"
 
-    var userID: String? {
-        get { defaults.string(forKey: "user_id") }
-        set { defaults.set(newValue, forKey: "user_id") }
-    }
-    var deviceID: String? {
-        get { defaults.string(forKey: "device_id") }
-        set { defaults.set(newValue, forKey: "device_id") }
+    var userID:String? {
+        get { try? readString("user_id") }
+        set { try? writeString("user_id",newValue) }
     }
 
-    func resetSequence() {
-        try? writeSequence(0)
+    var deviceID:String? {
+        get { try? readString("device_id") }
+        set { try? writeString("device_id",newValue) }
     }
 
-    func reserveNextSequence() throws -> Int64 {
-        let next=try readSequence()+1
-        guard next>0 else { throw IOSControlError.invalidResponse }
-        try writeSequence(next)
+    func resetSequence(){ try? writeInt64("request_sequence",0) }
+
+    func reserveNextSequence() throws->Int64 {
+        let current=try readInt64("request_sequence")
+        guard current<Int64.max else{throw IOSControlError.invalidResponse}
+        let next=current+1
+        try writeInt64("request_sequence",next)
         return next
     }
 
-    private func readSequence() throws -> Int64 {
-        let query:[String:Any]=[
+    private func query(_ account:String)->[String:Any] {
+        [
             kSecClass as String:kSecClassGenericPassword,
-            kSecAttrService as String:sequenceService,
-            kSecAttrAccount as String:sequenceAccount,
-            kSecReturnData as String:true,
-            kSecMatchLimit as String:kSecMatchLimitOne
+            kSecAttrService as String:service,
+            kSecAttrAccount as String:account
         ]
-        var item:CFTypeRef?
-        let status=SecItemCopyMatching(query as CFDictionary,&item)
-        if status==errSecItemNotFound{return 0}
-        guard status==errSecSuccess,let data=item as? Data,data.count==8 else {
-            throw NSError(domain:NSOSStatusErrorDomain,code:Int(status))
-        }
-        return data.reduce(Int64(0)) { ($0 << 8) | Int64($1) }
     }
 
-    private func writeSequence(_ value:Int64)throws{
-        var big=value.bigEndian
-        let data=Data(bytes:&big,count:8)
-        let query:[String:Any]=[
-            kSecClass as String:kSecClassGenericPassword,
-            kSecAttrService as String:sequenceService,
-            kSecAttrAccount as String:sequenceAccount
-        ]
+    private func readData(_ account:String)throws->Data? {
+        var q=query(account)
+        q[kSecReturnData as String]=true
+        q[kSecMatchLimit as String]=kSecMatchLimitOne
+        var item:CFTypeRef?
+        let status=SecItemCopyMatching(q as CFDictionary,&item)
+        if status==errSecItemNotFound{return nil}
+        guard status==errSecSuccess else{throw NSError(domain:NSOSStatusErrorDomain,code:Int(status))}
+        return item as? Data
+    }
+
+    private func writeData(_ account:String,_ data:Data?)throws {
+        let q=query(account)
+        if data==nil {
+            let status=SecItemDelete(q as CFDictionary)
+            if status != errSecSuccess && status != errSecItemNotFound {
+                throw NSError(domain:NSOSStatusErrorDomain,code:Int(status))
+            }
+            return
+        }
         let attrs:[String:Any]=[
-            kSecValueData as String:data,
+            kSecValueData as String:data!,
             kSecAttrAccessible as String:kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
-        let status=SecItemUpdate(query as CFDictionary,attrs as CFDictionary)
-        if status==errSecItemNotFound{
-            var add=query
+        let status=SecItemUpdate(q as CFDictionary,attrs as CFDictionary)
+        if status==errSecItemNotFound {
+            var add=q
             attrs.forEach{add[$0.key]=$0.value}
             let addStatus=SecItemAdd(add as CFDictionary,nil)
-            guard addStatus==errSecSuccess else { throw NSError(domain:NSOSStatusErrorDomain,code:Int(addStatus)) }
-        }else if status != errSecSuccess{
+            guard addStatus==errSecSuccess else{throw NSError(domain:NSOSStatusErrorDomain,code:Int(addStatus))}
+        } else if status != errSecSuccess {
             throw NSError(domain:NSOSStatusErrorDomain,code:Int(status))
         }
+    }
+
+    private func readString(_ account:String)throws->String? {
+        guard let data=try readData(account) else{return nil}
+        return String(data:data,encoding:.utf8)
+    }
+
+    private func writeString(_ account:String,_ value:String?)throws {
+        try writeData(account,value.map{Data($0.utf8)})
+    }
+
+    private func readInt64(_ account:String)throws->Int64 {
+        guard let data=try readData(account) else{return 0}
+        guard data.count==8 else{throw IOSControlError.invalidResponse}
+        return data.reduce(Int64(0)){($0<<8)|Int64($1)}
+    }
+
+    private func writeInt64(_ account:String,_ value:Int64)throws {
+        var big=value.bigEndian
+        try writeData(account,Data(bytes:&big,count:8))
     }
 }
 
