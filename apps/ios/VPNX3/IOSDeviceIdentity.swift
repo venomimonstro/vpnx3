@@ -91,7 +91,7 @@ final class IOSDeviceIdentity {
         ]
         var item:CFTypeRef?
         let status=SecItemCopyMatching(query as CFDictionary,&item)
-        if status==errSecSuccess,let key=item as! SecKey? { return key }
+        if status==errSecSuccess,let item { return (item as! SecKey) }
         if status != errSecItemNotFound {
             throw NSError(domain:NSOSStatusErrorDomain,code:Int(status))
         }
@@ -182,7 +182,7 @@ private final class IOSLocalState {
         guard status==errSecSuccess,let data=item as? Data,data.count==8 else {
             throw NSError(domain:NSOSStatusErrorDomain,code:Int(status))
         }
-        return data.withUnsafeBytes { $0.load(as:Int64.self).bigEndian }
+        return data.reduce(Int64(0)) { ($0 << 8) | Int64($1) }
     }
 
     private func writeSequence(_ value:Int64)throws{
