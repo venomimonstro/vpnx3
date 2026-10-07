@@ -37,6 +37,14 @@ func (s *Scheduler) Run(ctx context.Context){
 }
 
 func (s *Scheduler) runBatch(parent context.Context){
+	recoveryCtx,recoveryCancel:=context.WithTimeout(parent,10*time.Second)
+	if recovered,err:=s.store.RecoverStaleRenewals(recoveryCtx,time.Now().UTC());err!=nil{
+		s.logger.Warn("stale renewal recovery failed","error",err)
+	}else if recovered>0{
+		s.logger.Warn("stale renewals recovered","subscriptions",recovered)
+	}
+	recoveryCancel()
+
 	for i:=0;i<20;i++{
 		if parent.Err()!=nil{return}
 		ctx,cancel:=context.WithTimeout(parent,20*time.Second)

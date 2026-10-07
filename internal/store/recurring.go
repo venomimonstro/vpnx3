@@ -174,3 +174,31 @@ func (s *Store) SetDeviceAutoRenew(ctx context.Context,deviceID string,enabled b
 	if err:=tx.Commit(ctx);err!=nil{return ClientAccountStatus{},err}
 	return s.ClientAccountStatus(ctx,deviceID,time.Now().UTC())
 }
+
+
+func (s *Store) RecoverStaleRenewals(ctx context.Context,now time.Time)(int64,error){
+	tag,err:=s.DB.Exec(ctx,`
+		WITH stale AS (
+		  UPDATE subscription_renewal_attempts
+		  SET status='failed',
+		      error_summary=COALESCE(error_summary,'renewal confirmation timeout'),
+		      updated_at=$1
+		  WHERE status IN ('claimed','pending')
+		    AND updated_at < $1-interval '2 hours'
+		  RETURNING subscription_id
+		),
+		counts AS (
+		  SELECT subscription_id,count(*)::int AS failures
+		  FROM stale GROUP BY subscription_id
+		)
+		UPDATE subscriptions s
+		SET renewal_failures=LEAST(3,s.renewal_failures+c.failures),
+		    auto_renew=CASE WHEN s.renewal_failures+c.failures>=3 THEN false ELSE s.auto_renew END,
+		    renewal_lock_until=NULL,
+		    updated_at=$1
+		FROM counts c
+		WHERE s.id=c.subscription_id
+	`,now)
+	if err!=nil{return 0,err}
+	return tag.RowsAffected(),nil
+}
