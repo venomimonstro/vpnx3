@@ -69,12 +69,19 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - multi-device pairing в пределах тарифа;
 - переход в системные VPN settings для Always-on VPN / kill switch.
 
+Дополнительно реализованы:
+- упрощённый русскоязычный главный экран;
+- основной сценарий «состояние защиты → Подключить»;
+- тариф/устройства и системные VPN-настройки вынесены во вторичные разделы;
+- закончившийся trial/доступ определяется до попытки соединения;
+- после ошибки первого запуска можно повторить инициализацию без перезапуска приложения.
+
 Следующие задачи:
 
 1. физическая сборка APK/AAB на Android SDK build-host;
 2. device/emulator smoke test;
 3. проверка Always-on/lockdown поведения на реальных версиях Android;
-4. UX-полировка и локализация.
+4. финальная UX-полировка по результатам реального device-test.
 
 ## Спринт 5 — распределённое наблюдение: В РАБОТЕ
 
@@ -121,13 +128,13 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - server-side verification webhook через повторный GET payment API;
 - транзакционное создание/продление subscription.
 
+Дополнительно реализованы refund lifecycle, payment history API/UI, финансовая аналитика, payment abuse protection и подготовлена схема сохранённых payment methods/renewal attempts для безопасного auto-renew.
+
 Следующие задачи:
 
 1. sandbox e2e ЮKassa;
-2. refund lifecycle;
-3. payment history API/UI;
-4. auto-renew;
-5. финансовая аналитика.
+2. завершить server-side auto-renew execution и пользовательский opt-in/opt-out;
+3. проверить recurring payment flow в тестовом магазине ЮKassa.
 
 ## Спринт 7 — административный интерфейс: ОСНОВА РЕАЛИЗОВАНА
 
@@ -268,9 +275,17 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 
 Следующие задачи:
 
-1. сквозные эксплуатационные тесты на реальном окружении;
-2. нагрузочные проверки Control Plane и ingress;
-3. автоматизированные runbook-проверки деградации/восстановления.
+Дополнительно реализованы:
+- ручной production smoke-suite без CI;
+- guarded failover drill с drain/restore и проверкой изменения signed manifest;
+- bounded load smoke с p50/p95/p99, error rate и throughput;
+- production failover drill по умолчанию заблокирован без явного подтверждения.
+
+Следующие задачи:
+
+1. прогнать smoke/failover/load проверки на реальной распределённой инфраструктуре;
+2. зафиксировать эксплуатационные пороги после измерений;
+3. провести длительный soak-test и проверить восстановление после реальных сетевых отказов.
 
 
 ## Спринт 11 — коммерческий preflight и операционная панель: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
@@ -289,4 +304,6 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - readiness artifact storage;
 - отдельный экран «Готовность запуска» с уровнями ok/warning/failed.
 
-Следующий этап: прогон preflight на реальной распределённой инфраструктуре и фиксация эксплуатационных порогов по фактической нагрузке.
+Дополнительно добавлены ручные production smoke, failover drill и bounded load smoke, использующие readiness как единый контрольный контур.
+
+Следующий этап: прогон preflight/smoke/failover/load на реальной распределённой инфраструктуре и фиксация эксплуатационных порогов по фактической нагрузке.
