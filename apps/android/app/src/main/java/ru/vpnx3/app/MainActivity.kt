@@ -71,6 +71,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     onDisconnect = vm::disconnect,
+                    onRetryInitialization = vm::retryInitialization,
                     onCreatePairingCode = vm::createPairingCode,
                     onClaimPairingCode = vm::claimPairingCode,
                     onVpnSettings = { startActivity(Intent(Settings.ACTION_VPN_SETTINGS)) },
@@ -97,6 +98,7 @@ private fun HomeScreen(
     state: MainUiState,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
+    onRetryInitialization: () -> Unit,
     onCreatePairingCode: () -> Unit,
     onClaimPairingCode: (String) -> Unit,
     onVpnSettings: () -> Unit,
@@ -160,10 +162,16 @@ private fun HomeScreen(
                     OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = onDisconnect) {
                         Text("Отключить защиту")
                     }
+                } else if (!state.registered) {
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onRetryInitialization
+                    ) {
+                        Text("Повторить")
+                    }
                 } else {
                     Button(
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = state.registered,
                         onClick = {
                             if (accessAvailable) onConnect()
                             else showAccount = true

@@ -59,6 +59,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun initialize() {
+        mutableState.value = mutableState.value.copy(
+            connection = ConnectionState.PREPARING,
+            error = null
+        )
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 val registration = repository.ensureRegistered()
@@ -85,6 +89,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+    }
+
+    fun retryInitialization() {
+        if (mutableState.value.connection == ConnectionState.PREPARING) return
+        initialize()
     }
 
     fun refreshAccount() {
