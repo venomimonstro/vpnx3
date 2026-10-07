@@ -42,7 +42,7 @@ func Preflight(targets []string) error {
 			}
 		case "ios_ipa":
 			if runtime.GOOS!="darwin"{return fmt.Errorf("ios_ipa target requires macOS")}
-			for _,tool:=range []string{"xcodebuild","xcodegen","xcrun","go","make","python3"}{
+			for _,tool:=range []string{"xcodebuild","xcodegen","xcrun","go","make","python3","codesign","unzip","plutil"}{
 				if _,err:=exec.LookPath(tool);err!=nil{return fmt.Errorf("%s is required for iOS builds",tool)}
 			}
 			for _,key:=range []string{"VPNX3_IOS_TEAM_ID","VPNX3_IOS_EXPORT_OPTIONS_PLIST","VPNX3_CLIENT_CONTROL_URL","VPNX3_CONFIG_PUBLIC_KEY"}{

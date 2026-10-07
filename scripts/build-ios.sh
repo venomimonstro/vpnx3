@@ -56,10 +56,12 @@ PRODUCTS="$DERIVED/Build/Products/Release-iphoneos"
 mkdir -p "$PRODUCTS"
 make -C "$WG"   ARCHS=arm64   PLATFORM_NAME=iphoneos   SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"   CONFIGURATION_BUILD_DIR="$PRODUCTS"   CONFIGURATION_TEMP_DIR="$DERIVED/Build/Intermediates.noindex/WireGuardGo"   build version-header
 
-xcodebuild archive   -project VPNX3.xcodeproj   -scheme VPNX3   -configuration Release   -derivedDataPath "$DERIVED"   -archivePath "$ARCHIVE"   -destination "generic/platform=iOS"   DEVELOPMENT_TEAM="$VPNX3_IOS_TEAM_ID"   MARKETING_VERSION="$MARKETING_VERSION"   CURRENT_PROJECT_VERSION="$CURRENT_PROJECT_VERSION"
+xcodebuild archive   -project VPNX3.xcodeproj   -scheme VPNX3   -configuration Release   -derivedDataPath "$DERIVED"   -archivePath "$ARCHIVE"   -destination "generic/platform=iOS"   DEVELOPMENT_TEAM="$VPNX3_IOS_TEAM_ID"   MARKETING_VERSION="$MARKETING_VERSION"   CURRENT_PROJECT_VERSION="$CURRENT_PROJECT_VERSION"   LIBRARY_SEARCH_PATHS="$PRODUCTS"
 
 xcodebuild -exportArchive   -archivePath "$ARCHIVE"   -exportPath "$EXPORT_DIR"   -exportOptionsPlist "$VPNX3_IOS_EXPORT_OPTIONS_PLIST"
 
 ipa_count="$(find "$EXPORT_DIR" -maxdepth 1 -type f -name '*.ipa' | wc -l | tr -d ' ')"
 [[ "$ipa_count" == "1" ]] || { echo "Expected exactly one IPA" >&2; exit 1; }
-find "$EXPORT_DIR" -maxdepth 1 -type f -name '*.ipa' -print
+IPA="$(find "$EXPORT_DIR" -maxdepth 1 -type f -name '*.ipa' -print)"
+bash "$ROOT/scripts/validate-ios-release.sh" --ipa "$IPA" --version "$MARKETING_VERSION"
+printf '%s\n' "$IPA"
