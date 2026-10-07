@@ -281,13 +281,14 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - ручной production smoke-suite без CI;
 - guarded failover drill с drain/restore и проверкой изменения signed manifest;
 - bounded load smoke с p50/p95/p99, error rate и throughput;
+- read-only soak monitor до 24 часов с availability и сериями отказов;
 - production failover drill по умолчанию заблокирован без явного подтверждения.
 
 Следующие задачи:
 
 1. прогнать smoke/failover/load проверки на реальной распределённой инфраструктуре;
 2. зафиксировать эксплуатационные пороги после измерений;
-3. провести длительный soak-test и проверить восстановление после реальных сетевых отказов.
+3. прогнать длительный soak-monitor и проверить восстановление после реальных сетевых отказов.
 
 
 ## Спринт 11 — коммерческий preflight и операционная панель: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
