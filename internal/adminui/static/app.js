@@ -90,6 +90,7 @@ function logout(callApi=true){
 const sections=[
   ["dashboard","Обзор","analytics.read"],
   ["readiness","Готовность запуска","analytics.read"],
+  ["issues","Требует внимания","analytics.read"],
   ["nodes","Сеть","nodes.read"],
   ["probes","Наблюдение","nodes.read"],
   ["telemetry","Клиентская диагностика","analytics.read"],
@@ -154,6 +155,26 @@ function field(label,input){
   return $("div",{class:"field"},$("label",{},label),input);
 }
 
+
+async function issues(){
+  const d=await api("/api/v1/admin/issues?limit=250");
+  const summary=$("div",{class:"toolbar"},
+    $("span",{class:"badge "+(d.critical?"bad":"good")},"Критичных: "+(d.critical||0)),
+    $("span",{class:"badge "+(d.total?"warn":"good")},"Всего: "+(d.total||0))
+  );
+  if(!d.issues.length){
+    return sectionFrame("Требует внимания",$("div",{class:"stack"},
+      summary,$("div",{class:"card"},$("strong",{},"Активных проблем не найдено"))
+    ));
+  }
+  const rows=d.issues.map(i=>[
+    dt(i.observed_at),badge(i.severity),i.category,i.title,i.detail,
+    $("span",{class:"mono"},i.resource_type+" "+i.resource_id)
+  ]);
+  return sectionFrame("Требует внимания",$("div",{class:"stack"},
+    summary,table(["Время","Уровень","Контур","Проблема","Описание","Ресурс"],rows)
+  ));
+}
 
 async function readiness(){
   const d=await api("/api/v1/admin/readiness");
@@ -828,7 +849,7 @@ async function renderSection(){
   const target=document.getElementById("section");if(!target)return;
   target.replaceChildren($("div",{class:"card"},"Загрузка…"));
   try{
-    const fn={dashboard,readiness,nodes,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
+    const fn={dashboard,readiness,issues,nodes,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
     target.replaceChildren(await fn());
   }catch(e){target.replaceChildren(sectionError("VPNX3",e))}
 }

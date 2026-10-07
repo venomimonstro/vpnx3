@@ -20,6 +20,15 @@ func pageParams(r *http.Request) (int,int) {
 	return limit,offset
 }
 
+func (s *Server) handleOperationalIssues(w http.ResponseWriter,r *http.Request){
+	limit,_:=pageParams(r)
+	issues,err:=s.store.OperationalIssues(r.Context(),limit)
+	if err!=nil{s.internalError(w,r,err);return}
+	critical:=0
+	for _,issue:=range issues{if issue.Severity=="critical"{critical++}}
+	writeJSON(w,http.StatusOK,map[string]any{"issues":issues,"total":len(issues),"critical":critical})
+}
+
 func (s *Server) handleDashboard(w http.ResponseWriter,r *http.Request) {
 	summary,err:=s.store.Dashboard(r.Context())
 	if err!=nil { s.internalError(w,r,err); return }
