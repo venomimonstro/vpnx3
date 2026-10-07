@@ -60,6 +60,6 @@ xcodebuild archive   -project VPNX3.xcodeproj   -scheme VPNX3   -configuration R
 
 xcodebuild -exportArchive   -archivePath "$ARCHIVE"   -exportPath "$EXPORT_DIR"   -exportOptionsPlist "$VPNX3_IOS_EXPORT_OPTIONS_PLIST"
 
-mapfile -t ipas < <(find "$EXPORT_DIR" -maxdepth 1 -type f -name '*.ipa' -print)
-[[ "${#ipas[@]}" -eq 1 ]] || { echo "Expected exactly one IPA" >&2; exit 1; }
-printf '%s\n' "${ipas[0]}"
+ipa_count="$(find "$EXPORT_DIR" -maxdepth 1 -type f -name '*.ipa' | wc -l | tr -d ' ')"
+[[ "$ipa_count" == "1" ]] || { echo "Expected exactly one IPA" >&2; exit 1; }
+find "$EXPORT_DIR" -maxdepth 1 -type f -name '*.ipa' -print

@@ -42,7 +42,13 @@ func Preflight(targets []string) error {
 			}
 		case "ios_ipa":
 			if runtime.GOOS!="darwin"{return fmt.Errorf("ios_ipa target requires macOS")}
-			if _,err:=exec.LookPath("xcodebuild");err!=nil{return fmt.Errorf("xcodebuild is required for iOS builds")}
+			for _,tool:=range []string{"xcodebuild","xcodegen","xcrun","go","make","python3"}{
+				if _,err:=exec.LookPath(tool);err!=nil{return fmt.Errorf("%s is required for iOS builds",tool)}
+			}
+			for _,key:=range []string{"VPNX3_IOS_TEAM_ID","VPNX3_IOS_EXPORT_OPTIONS_PLIST","VPNX3_CLIENT_CONTROL_URL","VPNX3_CONFIG_PUBLIC_KEY"}{
+				if strings.TrimSpace(os.Getenv(key))==""{return fmt.Errorf("%s is required for iOS builds",key)}
+			}
+			if _,err:=os.Stat(os.Getenv("VPNX3_IOS_EXPORT_OPTIONS_PLIST"));err!=nil{return fmt.Errorf("iOS ExportOptions.plist is unavailable")}
 		case "controlplane_linux_amd64","node_agent_linux_amd64","vpn_worker_linux_amd64","probe_agent_linux_amd64","ingress_proxy_linux_amd64","build_worker_darwin_arm64":
 			if _,err:=exec.LookPath("go");err!=nil{return fmt.Errorf("go toolchain is required for server binary builds")}
 		default:

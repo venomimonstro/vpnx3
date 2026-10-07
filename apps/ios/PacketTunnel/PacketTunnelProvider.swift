@@ -20,10 +20,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
         do {
             let config = try VPNX3WireGuardParser.parse(raw)
-            adapter.start(tunnelConfiguration: config) { error in
+            adapter.start(tunnelConfiguration: config) { [weak self] error in
+                if error != nil { self?.closeWorkerSession() }
                 completionHandler(error)
             }
         } catch {
+            closeWorkerSession()
             completionHandler(error)
         }
     }
@@ -32,7 +34,23 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         with reason: NEProviderStopReason,
         completionHandler: @escaping () -> Void
     ) {
+        closeWorkerSession()
         adapter.stop { _ in completionHandler() }
+    }
+
+    private func closeWorkerSession() {
+        guard
+            let proto=protocolConfiguration as? NETunnelProviderProtocol,
+            let sessionID=proto.providerConfiguration?["sessionID"] as? String,
+            let sessionAPI=proto.providerConfiguration?["sessionAPI"] as? String
+        else{return}
+
+        let base=sessionAPI.hasSuffix("/") ? String(sessionAPI.dropLast()) : sessionAPI
+        guard let url=URL(string:base+"/"+sessionID) else{return}
+        var request=URLRequest(url:url)
+        request.httpMethod="DELETE"
+        request.timeoutInterval=5
+        URLSession.shared.dataTask(with:request).resume()
     }
 }
 
@@ -86,6 +104,9 @@ enum VPNX3WireGuardParser {
         if let endpoint=peerValues["Endpoint"] { peer.endpoint=Endpoint(from:endpoint) }
         if let keepalive=peerValues["PersistentKeepalive"],let value=UInt16(keepalive) {
             peer.persistentKeepAlive=value
+        }
+        guard !iface.addresses.isEmpty,!peer.allowedIPs.isEmpty,peer.endpoint != nil else{
+            throw PacketTunnelError.invalidConfiguration
         }
         return TunnelConfiguration(name:"VPNX3",interface:iface,peers:[peer])
     }

@@ -89,7 +89,14 @@ func (e Executor) Run(ctx context.Context,job Job) (Result,error) {
 		if err:=run(buildCtx,src,nil,"python3","scripts/validate-browser-package.py","--browser","firefox","--zip",artifact);err!=nil{return Result{},fmt.Errorf("firefox package validation: %w",err)}
 	case "ios_ipa":
 		if runtime.GOOS!="darwin" { return Result{},fmt.Errorf("ios_ipa requires a macOS build worker") }
-		return Result{},fmt.Errorf("ios recipe is not enabled until the Xcode project is present")
+		env,err:=iosBuildEnv(job.Version)
+		if err!=nil{return Result{},err}
+		if err:=run(buildCtx,src,env,"bash","scripts/build-ios.sh");err!=nil{
+			return Result{},fmt.Errorf("ios ipa build: %w",err)
+		}
+		matches,err:=filepath.Glob(filepath.Join(src,"apps","ios",".export","*.ipa"))
+		if err!=nil||len(matches)!=1{return Result{},fmt.Errorf("ios build did not produce exactly one IPA")}
+		artifact=matches[0]
 	case "controlplane_linux_amd64":
 		artifact=filepath.Join(work,"vpnx3-controlplane")
 		if err:=run(buildCtx,src,[]string{"CGO_ENABLED=0","GOOS=linux","GOARCH=amd64"},"go","build","-trimpath","-ldflags=-s -w","-o",artifact,"./cmd/controlplane");err!=nil{return Result{},err}
@@ -210,4 +217,22 @@ func normalizeExtensionVersion(raw string)(string,error){
 		n,err:=strconv.Atoi(part);if err!=nil||n<0||n>65535{return "",fmt.Errorf("extension version component outside 0..65535")}
 	}
 	return strings.Join(parts,"."),nil
+}
+
+
+func iosBuildEnv(releaseVersion string)([]string,error){
+	versionName,_,err:=androidVersion(releaseVersion)
+	if err!=nil{return nil,fmt.Errorf("invalid iOS release version: %w",err)}
+	keys:=[]string{
+		"VPNX3_IOS_TEAM_ID","VPNX3_IOS_EXPORT_OPTIONS_PLIST",
+		"VPNX3_CLIENT_CONTROL_URL","VPNX3_CONFIG_PUBLIC_KEY","HOME",
+	}
+	out:=make([]string,0,len(keys)+1)
+	for _,k:=range keys{
+		v:=strings.TrimSpace(os.Getenv(k))
+		if v==""{return nil,fmt.Errorf("%s is required for iOS release builds",k)}
+		out=append(out,k+"="+v)
+	}
+	out=append(out,"VPNX3_RELEASE_VERSION="+versionName)
+	return out,nil
 }

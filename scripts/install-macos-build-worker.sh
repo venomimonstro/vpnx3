@@ -11,6 +11,8 @@ TARGETS="ios_ipa"
 CLIENT_CONTROL_URL=""
 CONFIG_PUBLIC_KEY=""
 RELEASE_PUBLIC_KEY=""
+IOS_TEAM_ID=""
+IOS_EXPORT_OPTIONS_PLIST=""
 WORK_ROOT="$HOME/Library/Application Support/VPNX3BuildWorker"
 INSTALL_DIR="/usr/local/bin"
 PLIST_PATH="$HOME/Library/LaunchAgents/ru.vpnx3.build-worker.plist"
@@ -32,6 +34,8 @@ Optional:
   --client-control-url https://...
   --config-public-key ...
   --release-public-key ...
+  --ios-team-id TEAMID
+  --ios-export-options-plist /secure/path/ExportOptions.plist
 
 Requirements:
 - Apple Silicon Mac (arm64);
@@ -55,6 +59,8 @@ while [[ $# -gt 0 ]]; do
     --client-control-url) CLIENT_CONTROL_URL="${2:-}"; shift 2;;
     --config-public-key) CONFIG_PUBLIC_KEY="${2:-}"; shift 2;;
     --release-public-key) RELEASE_PUBLIC_KEY="${2:-}"; shift 2;;
+    --ios-team-id) IOS_TEAM_ID="${2:-}"; shift 2;;
+    --ios-export-options-plist) IOS_EXPORT_OPTIONS_PLIST="${2:-}"; shift 2;;
     -h|--help) usage; exit 0;;
     *) echo "Unknown argument: $1" >&2; usage; exit 2;;
   esac
@@ -65,8 +71,12 @@ done
 [[ "$CONTROL_URL" == https://* ]] || { echo "control-url must use https" >&2; exit 2; }
 [[ "$BINARY_URL" == https://* ]] || { echo "binary-url must use https" >&2; exit 2; }
 [[ -n "$BINARY_SHA256" && -n "$ENROLLMENT_TOKEN" ]] || { echo "sha256 and enrollment-token are required" >&2; exit 2; }
+if [[ "$TARGETS" == *"ios_ipa"* ]]; then
+  [[ -n "$IOS_TEAM_ID" ]] || { echo "ios-team-id is required for ios_ipa" >&2; exit 2; }
+  [[ -f "$IOS_EXPORT_OPTIONS_PLIST" ]] || { echo "local ExportOptions.plist is required for ios_ipa" >&2; exit 2; }
+fi
 
-for cmd in curl shasum git xcodebuild xcode-select codesign security launchctl; do
+for cmd in curl shasum git xcodebuild xcode-select codesign security launchctl xcodegen go make python3; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Missing required tool: $cmd" >&2; exit 1; }
 done
 
@@ -84,7 +94,9 @@ tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 -o "$tmp" "$BINARY_URL"
 actual="$(shasum -a 256 "$tmp" | awk '{print $1}')"
-[[ "${actual,,}" == "${BINARY_SHA256,,}" ]] || {
+actual_lc="$(printf '%s' "$actual" | tr '[:upper:]' '[:lower:]')"
+expected_lc="$(printf '%s' "$BINARY_SHA256" | tr '[:upper:]' '[:lower:]')"
+[[ "$actual_lc" == "$expected_lc" ]] || {
   echo "SHA-256 mismatch" >&2
   exit 1
 }
@@ -100,6 +112,8 @@ VPNX3_BUILD_TARGETS=$TARGETS
 VPNX3_CLIENT_CONTROL_URL=$CLIENT_CONTROL_URL
 VPNX3_CONFIG_PUBLIC_KEY=$CONFIG_PUBLIC_KEY
 VPNX3_RELEASE_PUBLIC_KEY=$RELEASE_PUBLIC_KEY
+VPNX3_IOS_TEAM_ID=$IOS_TEAM_ID
+VPNX3_IOS_EXPORT_OPTIONS_PLIST=$IOS_EXPORT_OPTIONS_PLIST
 VPNX3_AGENT_IDENTITY_PATH=$WORK_ROOT/identity.json
 VPNX3_BUILD_WORK_ROOT=$WORK_ROOT/work
 HOME=$HOME
