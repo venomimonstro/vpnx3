@@ -122,6 +122,9 @@ func (e Executor) Run(ctx context.Context,job Job) (Result,error) {
 	case "runtime_updater_linux_amd64":
 		artifact=filepath.Join(work,"vpnx3-runtime-updater")
 		if err:=run(buildCtx,src,[]string{"CGO_ENABLED=0","GOOS=linux","GOARCH=amd64"},"go","build","-trimpath","-ldflags=-s -w","-o",artifact,"./cmd/runtime-updater");err!=nil{return Result{},err}
+	case "backup_replicator_linux_amd64":
+		artifact=filepath.Join(work,"vpnx3-backup-replicator")
+		if err:=run(buildCtx,src,[]string{"CGO_ENABLED=0","GOOS=linux","GOARCH=amd64"},"go","build","-trimpath","-ldflags=-s -w","-o",artifact,"./cmd/backup-replicator");err!=nil{return Result{},err}
 	default:
 		return Result{},fmt.Errorf("unsupported build target")
 	}
