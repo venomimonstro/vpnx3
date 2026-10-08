@@ -127,9 +127,6 @@ private fun HomeScreen(
     onRotatePersonalKey: () -> Unit,
     onDeletePersonalKey: () -> Unit,
     onSetAutoRenew: (Boolean) -> Unit,
-    onCreateReferralCode: () -> Unit,
-    onOpenReferralDialog: () -> Unit,
-    onShareReferral: (String) -> Unit,
     onBuy: (String, Boolean) -> Unit
 ) {
     val busy = state.connection == ConnectionState.PREPARING ||
@@ -417,6 +414,9 @@ private fun AccountSection(
     onCreatePairingCode: () -> Unit,
     onOpenPairDialog: () -> Unit,
     onSetAutoRenew: (Boolean) -> Unit,
+    onCreateReferralCode: () -> Unit,
+    onOpenReferralDialog: () -> Unit,
+    onShareReferral: (String) -> Unit,
     onBuy: (String, Boolean) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
