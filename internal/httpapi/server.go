@@ -23,6 +23,7 @@ type Server struct {
 	http *http.Server
 	logger *slog.Logger
 	db *pgxpool.Pool
+	replicaDB *pgxpool.Pool
 	store *store.Store
 	cfg config.Config
 	configService *configservice.Service
@@ -192,6 +193,8 @@ func (s *Server) internalError(w http.ResponseWriter,r *http.Request,err error){
 	s.logger.Error("request failed","request_id",requestIDFromContext(r.Context()),"error",err)
 	writeError(w,http.StatusInternalServerError,"internal_server_error")
 }
+func (s *Server) SetReplicaDB(pool *pgxpool.Pool){s.replicaDB=pool}
+
 func (s *Server) ListenAndServe() error { err:=s.http.ListenAndServe(); if err==http.ErrServerClosed{return nil}; return err }
 func (s *Server) Shutdown(ctx context.Context) error { return s.http.Shutdown(ctx) }
 func writeJSON(w http.ResponseWriter,status int,payload any){

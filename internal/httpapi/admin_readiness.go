@@ -276,6 +276,48 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 		}
 	}
 
+	primaryInRecovery:=false
+	primaryLSN:=""
+	if err:=s.db.QueryRow(r.Context(),`SELECT pg_is_in_recovery(),pg_current_wal_lsn()::text`).Scan(&primaryInRecovery,&primaryLSN);err!=nil{
+		add("database_primary","failed","Основная база данных","Не удалось проверить PostgreSQL writer.")
+	}else if primaryInRecovery{
+		add("database_primary","failed","Основная база данных","Control Plane подключён к standby вместо writer.")
+	}else{
+		add("database_primary","ok","Основная база данных","PostgreSQL writer доступен.")
+	}
+
+	if s.replicaDB==nil{
+		if s.cfg.DatabaseHARequired{
+			add("database_replica","failed","Резервная база данных","HA обязателен, но standby PostgreSQL не подключён.")
+		}else{
+			add("database_replica","warning","Резервная база данных","Standby PostgreSQL не настроен; база остаётся единичной точкой отказа.")
+		}
+	}else{
+		replicaRecovery:=false
+		replayLSN:=""
+		if err:=s.replicaDB.QueryRow(r.Context(),`SELECT pg_is_in_recovery(),COALESCE(pg_last_wal_replay_lsn()::text,'')`).Scan(&replicaRecovery,&replayLSN);err!=nil{
+			add("database_replica","failed","Резервная база данных","Standby PostgreSQL недоступен.")
+		}else if !replicaRecovery{
+			add("database_replica","failed","Резервная база данных","Replica endpoint подключён не к standby PostgreSQL.")
+		}else if replayLSN==""||primaryLSN==""{
+			add("database_replica","warning","Резервная база данных","Standby доступен, но WAL replay LSN пока недоступен.")
+		}else{
+			var lagBytes float64
+			if err:=s.db.QueryRow(r.Context(),`SELECT GREATEST(pg_wal_lsn_diff($1::pg_lsn,$2::pg_lsn),0)::float8`,primaryLSN,replayLSN).Scan(&lagBytes);err!=nil{
+				add("database_replica","warning","Резервная база данных","Standby доступен, но не удалось вычислить WAL lag.")
+			}else{
+				switch{
+				case lagBytes>512*1024*1024:
+					add("database_replica","failed","Резервная база данных","WAL lag standby превышает 512 МБ.")
+				case lagBytes>64*1024*1024:
+					add("database_replica","warning","Резервная база данных","WAL lag standby превышает 64 МБ.")
+				default:
+					add("database_replica","ok","Резервная база данных","Standby PostgreSQL доступен и WAL lag находится в рабочем диапазоне.")
+				}
+			}
+		}
+	}
+
 	if data.LeadershipHolder==nil||data.LeadershipHeartbeatAt==nil{
 		add("control_plane_leader","warning","Лидер фоновых задач","Ни один экземпляр Control Plane не подтверждает лидерство singleton-задач.")
 	}else{

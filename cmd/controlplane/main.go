@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/venomimonstro/vpnx3/internal/accountcleaner"
 	"github.com/venomimonstro/vpnx3/internal/alertnotifier"
 	"github.com/venomimonstro/vpnx3/internal/artifactcleaner"
@@ -50,6 +52,20 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+
+	var replicaDB *pgxpool.Pool
+	if cfg.DatabaseReplicaURL!=""{
+		replicaDB,err=database.OpenHealth(startupCtx,cfg.DatabaseReplicaURL)
+		if err!=nil{
+			if cfg.DatabaseHARequired{
+				logger.Error("database replica initialization failed","error",err)
+				os.Exit(1)
+			}
+			logger.Warn("database replica unavailable at startup","error",err)
+		}else{
+			defer replicaDB.Close()
+		}
+	}
 
 	if err := bootstrap.EnsureOwner(startupCtx,store.New(db),logger,cfg.BootstrapOwnerEmail,cfg.BootstrapOwnerPassword); err != nil {
 		logger.Error("bootstrap initialization failed","error",err)
@@ -179,6 +195,7 @@ func main() {
 	}
 
 	srv := httpapi.NewServer(cfg,logger,db,configSigner,accessSigner,releaseSigner,trustEnvelope,artifactStorage,publisher.Trigger)
+	srv.SetReplicaDB(replicaDB)
 	serverErr := make(chan error,1)
 	go func() {
 		logger.Info("control plane starting","addr",cfg.HTTPAddr,"env",cfg.Environment)

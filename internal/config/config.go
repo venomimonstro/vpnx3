@@ -19,6 +19,8 @@ type Config struct {
 	Environment            string
 	HTTPAddr               string
 	DatabaseURL            string
+	DatabaseReplicaURL     string
+	DatabaseHARequired     bool
 	LogLevel               slog.Level
 	ReadTimeout            time.Duration
 	WriteTimeout           time.Duration
@@ -68,6 +70,8 @@ func Load() (Config, error) {
 		Environment:            strings.ToLower(env("VPNX3_ENV", "development")),
 		HTTPAddr:               env("VPNX3_HTTP_ADDR", ":8080"),
 		DatabaseURL:            os.Getenv("VPNX3_DATABASE_URL"),
+		DatabaseReplicaURL:     strings.TrimSpace(os.Getenv("VPNX3_DATABASE_REPLICA_URL")),
+		DatabaseHARequired:     boolEnv("VPNX3_DATABASE_HA_REQUIRED",false),
 		LogLevel:               parseLogLevel(env("VPNX3_LOG_LEVEL", "info")),
 		ReadTimeout:            duration("VPNX3_HTTP_READ_TIMEOUT", 10*time.Second),
 		WriteTimeout:           duration("VPNX3_HTTP_WRITE_TIMEOUT", 15*time.Second),
@@ -176,6 +180,14 @@ func Load() (Config, error) {
 			return Config{},fmt.Errorf("production requires offline trust root public key and signed trust bundle")
 		}
 		if err:=validateProductionDatabaseTransport(cfg.DatabaseURL);err!=nil{return Config{},err}
+		if cfg.DatabaseReplicaURL!="" {
+			if err:=validateProductionDatabaseTransport(cfg.DatabaseReplicaURL);err!=nil{
+				return Config{},fmt.Errorf("VPNX3_DATABASE_REPLICA_URL: %w",err)
+			}
+		}
+		if cfg.DatabaseHARequired && cfg.DatabaseReplicaURL=="" {
+			return Config{},fmt.Errorf("VPNX3_DATABASE_HA_REQUIRED=true requires VPNX3_DATABASE_REPLICA_URL")
+		}
 	}
 	if cfg.WireGuardMTU < 576 || cfg.WireGuardMTU > 1500 {
 		return Config{}, fmt.Errorf("VPNX3_WG_CLIENT_MTU must be between 576 and 1500")
@@ -294,6 +306,16 @@ func intEnv(key string, fallback int) int {
 	v, err := strconv.Atoi(raw)
 	if err != nil { return fallback }
 	return v
+}
+
+func boolEnv(key string,fallback bool) bool {
+	raw:=strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if raw==""{return fallback}
+	switch raw{
+	case "1","true","yes","on":return true
+	case "0","false","no","off":return false
+	default:return fallback
+	}
 }
 
 func csvEnv(key string) []string {
