@@ -1073,3 +1073,31 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 4. проверить, что после снятия нагрузки admission slots полностью освобождаются;
 5. подобрать лимит относительно pgx pool/CPU/RAM по фактической инфраструктуре;
 6. повторить тест на двух Control Plane репликах за балансировщиком.
+
+
+## Спринт 33 — управление PostgreSQL connection pool: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: несколько Control Plane реплик должны потреблять предсказуемое число соединений БД и деградировать наблюдаемо, а не упираться в PostgreSQL внезапно.
+
+Реализовано:
+
+- явная конфигурация primary pgx pool;
+- `VPNX3_DATABASE_MAX_CONNS` и `VPNX3_DATABASE_MIN_CONNS`;
+- configurable connection lifetime, lifetime jitter и idle time;
+- jitter предотвращает одновременную массовую ротацию соединений;
+- старый `database.Open` сохранён как совместимый wrapper с безопасными default;
+- отдельный health-pool standby остаётся малым и изолированным от бизнес-трафика;
+- launch readiness публикует acquired/idle/total/max;
+- публикуются empty/canceled acquire counters;
+- warning при 80% занятых соединений;
+- failed при 95% занятых соединений;
+- параметры валидируются до старта.
+
+Физическая приёмка:
+
+1. определить реальный PostgreSQL max_connections;
+2. рассчитать budget на число Control Plane реплик + migrations/ops;
+3. прогнать HTTP load до admission saturation;
+4. подтвердить, что DB pool не достигает 100% раньше admission controller;
+5. проверить connection churn с lifetime jitter;
+6. проверить rolling deploy двух реплик без connection storm.

@@ -286,6 +286,27 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 		add("database_primary","ok","Основная база данных","PostgreSQL writer доступен.")
 	}
 
+	dbStats:=s.db.Stat()
+	dbSignals:=map[string]any{
+		"acquired":dbStats.AcquiredConns(),
+		"idle":dbStats.IdleConns(),
+		"total":dbStats.TotalConns(),
+		"max":dbStats.MaxConns(),
+		"empty_acquire_count":dbStats.EmptyAcquireCount(),
+		"canceled_acquire_count":dbStats.CanceledAcquireCount(),
+	}
+	dbUtilization:=float64(0)
+	if dbStats.MaxConns()>0{dbUtilization=float64(dbStats.AcquiredConns())/float64(dbStats.MaxConns())*100}
+	dbSignals["utilization_percent"]=dbUtilization
+	switch{
+	case dbUtilization>=95:
+		add("database_pool","failed","Пул PostgreSQL","Занято 95% или больше соединений primary pool.")
+	case dbUtilization>=80:
+		add("database_pool","warning","Пул PostgreSQL","Занято 80% или больше соединений primary pool.")
+	default:
+		add("database_pool","ok","Пул PostgreSQL","Primary connection pool имеет рабочий запас.")
+	}
+
 	if s.replicaDB==nil{
 		if s.cfg.DatabaseHARequired{
 			add("database_replica","failed","Резервная база данных","HA обязателен, но standby PostgreSQL не подключён.")
@@ -425,6 +446,7 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			"control_plane_leader_acquired_at":data.LeadershipAcquiredAt,
 			"control_plane_leadership_transitions":data.LeadershipTransitions,
 			"http_admission":admissionSignals,
+			"database_pool":dbSignals,
 		},
 	})
 }

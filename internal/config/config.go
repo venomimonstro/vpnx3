@@ -21,6 +21,11 @@ type Config struct {
 	DatabaseURL            string
 	DatabaseReplicaURL     string
 	DatabaseHARequired     bool
+	DatabaseMaxConns       int
+	DatabaseMinConns       int
+	DatabaseConnLifetime   time.Duration
+	DatabaseConnJitter     time.Duration
+	DatabaseConnIdleTime   time.Duration
 	LogLevel               slog.Level
 	ReadTimeout            time.Duration
 	WriteTimeout           time.Duration
@@ -76,6 +81,11 @@ func Load() (Config, error) {
 		DatabaseURL:            os.Getenv("VPNX3_DATABASE_URL"),
 		DatabaseReplicaURL:     strings.TrimSpace(os.Getenv("VPNX3_DATABASE_REPLICA_URL")),
 		DatabaseHARequired:     boolEnv("VPNX3_DATABASE_HA_REQUIRED",false),
+		DatabaseMaxConns:       intEnv("VPNX3_DATABASE_MAX_CONNS",20),
+		DatabaseMinConns:       intEnv("VPNX3_DATABASE_MIN_CONNS",2),
+		DatabaseConnLifetime:   duration("VPNX3_DATABASE_CONN_LIFETIME",30*time.Minute),
+		DatabaseConnJitter:     duration("VPNX3_DATABASE_CONN_JITTER",5*time.Minute),
+		DatabaseConnIdleTime:   duration("VPNX3_DATABASE_CONN_IDLE_TIME",5*time.Minute),
 		LogLevel:               parseLogLevel(env("VPNX3_LOG_LEVEL", "info")),
 		ReadTimeout:            duration("VPNX3_HTTP_READ_TIMEOUT", 10*time.Second),
 		WriteTimeout:           duration("VPNX3_HTTP_WRITE_TIMEOUT", 15*time.Second),
@@ -126,6 +136,21 @@ func Load() (Config, error) {
 
 	if strings.TrimSpace(cfg.HTTPAddr) == "" {
 		return Config{}, fmt.Errorf("VPNX3_HTTP_ADDR must not be empty")
+	}
+	if cfg.DatabaseMaxConns < 4 || cfg.DatabaseMaxConns > 500 {
+		return Config{},fmt.Errorf("VPNX3_DATABASE_MAX_CONNS must be between 4 and 500")
+	}
+	if cfg.DatabaseMinConns < 0 || cfg.DatabaseMinConns > cfg.DatabaseMaxConns {
+		return Config{},fmt.Errorf("VPNX3_DATABASE_MIN_CONNS must be between 0 and max conns")
+	}
+	if cfg.DatabaseConnLifetime < 5*time.Minute || cfg.DatabaseConnLifetime > 24*time.Hour {
+		return Config{},fmt.Errorf("VPNX3_DATABASE_CONN_LIFETIME must be between 5m and 24h")
+	}
+	if cfg.DatabaseConnJitter < 0 || cfg.DatabaseConnJitter > cfg.DatabaseConnLifetime/2 {
+		return Config{},fmt.Errorf("VPNX3_DATABASE_CONN_JITTER must be non-negative and not exceed half connection lifetime")
+	}
+	if cfg.DatabaseConnIdleTime < time.Minute || cfg.DatabaseConnIdleTime > time.Hour {
+		return Config{},fmt.Errorf("VPNX3_DATABASE_CONN_IDLE_TIME must be between 1m and 1h")
 	}
 	if cfg.ConfigSigningKey == "" {
 		return Config{}, fmt.Errorf("VPNX3_CONFIG_SIGNING_KEY must be set")

@@ -46,7 +46,14 @@ func main() {
 	startupCtx, startupCancel := context.WithTimeout(context.Background(),15*time.Second)
 	defer startupCancel()
 
-	db, err := database.Open(startupCtx,cfg.DatabaseURL)
+	db, err := database.OpenWithOptions(startupCtx,cfg.DatabaseURL,database.PoolOptions{
+		MaxConns:int32(cfg.DatabaseMaxConns),
+		MinConns:int32(cfg.DatabaseMinConns),
+		MaxConnLifetime:cfg.DatabaseConnLifetime,
+		MaxConnLifetimeJitter:cfg.DatabaseConnJitter,
+		MaxConnIdleTime:cfg.DatabaseConnIdleTime,
+		HealthCheckPeriod:30*time.Second,
+	})
 	if err != nil {
 		logger.Error("database initialization failed","error",err)
 		os.Exit(1)
