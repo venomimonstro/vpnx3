@@ -14,6 +14,9 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var paymentBusy = false
     @Published private(set) var pairingBusy = false
     @Published private(set) var pairingCode: IOSPairingCode?
+    @Published private(set) var referral: IOSReferralStatus?
+    @Published private(set) var referralBusy = false
+    @Published private(set) var referralMessage: String?
 
     private var manager: NETunnelProviderManager?
     private let personalKeys = PersonalKeyStore()
@@ -68,6 +71,7 @@ final class TunnelManager: ObservableObject {
                 await cleanupPersistedSession()
             }
             await refreshAccount()
+            await refreshReferral()
         } catch {
             errorMessage="Не удалось прочитать настройки VPN"
         }
@@ -155,6 +159,42 @@ final class TunnelManager: ObservableObject {
             pairingCode=nil
             await refreshAccount()
         }catch{errorMessage="Не удалось привязать устройство"}
+    }
+
+    func refreshReferral() async {
+        do{referral=try await repository.referralStatus()}
+        catch{ /* referral is non-critical for VPN availability */ }
+    }
+
+    func ensureReferralCode() async {
+        guard !referralBusy else{return}
+        referralBusy=true
+        referralMessage=nil
+        defer{referralBusy=false}
+        do{
+            _=try await repository.referralCode()
+            referral=try await repository.referralStatus()
+        }catch{
+            errorMessage="Не удалось создать код приглашения"
+        }
+    }
+
+    func claimReferralCode(_ code:String) async {
+        let normalized=code.trimmingCharacters(in:.whitespacesAndNewlines).uppercased()
+        guard !normalized.isEmpty,!referralBusy else{return}
+        referralBusy=true
+        referralMessage=nil
+        defer{referralBusy=false}
+        do{
+            let result=try await repository.claimReferralCode(normalized)
+            referral=try await repository.referralStatus()
+            referralMessage=result.rewardApplied
+                ? "Бонус +\(result.rewardDays) дней начислен"
+                : "Бонус \(result.rewardDays) дней сохранён и будет применён к доступу"
+            await refreshAccount()
+        }catch{
+            errorMessage="Не удалось применить код. Проверьте код и условия акции."
+        }
     }
 
     func setAutoRenew(_ enabled:Bool) async {
