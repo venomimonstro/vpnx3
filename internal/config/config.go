@@ -30,6 +30,8 @@ type Config struct {
 	ConfigSigningKey       string
 	AccessSigningKey       string
 	ReleaseSigningKey      string
+	TrustRootPublicKey    string
+	TrustBundleFile       string
 	AccessLeaseTTL         time.Duration
 	TrialDays              int
 	ClientDNS              []string
@@ -75,6 +77,8 @@ func Load() (Config, error) {
 		ConfigSigningKey:       strings.TrimSpace(os.Getenv("VPNX3_CONFIG_SIGNING_KEY")),
 		AccessSigningKey:       strings.TrimSpace(os.Getenv("VPNX3_ACCESS_SIGNING_KEY")),
 		ReleaseSigningKey:      strings.TrimSpace(os.Getenv("VPNX3_RELEASE_SIGNING_KEY")),
+		TrustRootPublicKey:    strings.TrimSpace(os.Getenv("VPNX3_TRUST_ROOT_PUBLIC_KEY")),
+		TrustBundleFile:       strings.TrimSpace(os.Getenv("VPNX3_TRUST_BUNDLE_FILE")),
 		AccessLeaseTTL:         duration("VPNX3_ACCESS_LEASE_TTL", 6*time.Hour),
 		TrialDays:              intEnv("VPNX3_TRIAL_DAYS", 7),
 		ClientDNS:              csvEnv("VPNX3_CLIENT_DNS"),
@@ -116,6 +120,19 @@ func Load() (Config, error) {
 	if err:=validateSigningSeeds(cfg.ConfigSigningKey,cfg.AccessSigningKey,cfg.ReleaseSigningKey);err!=nil{
 		return Config{},err
 	}
+	trustConfigured:=cfg.TrustRootPublicKey!=""||cfg.TrustBundleFile!=""
+	if trustConfigured{
+		if cfg.TrustRootPublicKey==""||cfg.TrustBundleFile==""{
+			return Config{},fmt.Errorf("trust bundle requires VPNX3_TRUST_ROOT_PUBLIC_KEY and VPNX3_TRUST_BUNDLE_FILE")
+		}
+		raw,err:=base64.RawURLEncoding.DecodeString(cfg.TrustRootPublicKey)
+		if err!=nil||len(raw)!=ed25519.PublicKeySize{
+			return Config{},fmt.Errorf("VPNX3_TRUST_ROOT_PUBLIC_KEY must be a 32-byte Ed25519 public key in base64url")
+		}
+		if !strings.HasPrefix(cfg.TrustBundleFile,"/"){
+			return Config{},fmt.Errorf("VPNX3_TRUST_BUNDLE_FILE must be an absolute path")
+		}
+	}
 	if cfg.RegistrationRateKey=="" {
 		sum:=sha256.Sum256([]byte("vpnx3-registration-rate-v1\x00"+cfg.AccessSigningKey))
 		cfg.RegistrationRateKey=hex.EncodeToString(sum[:])
@@ -147,6 +164,9 @@ func Load() (Config, error) {
 		}
 		if cfg.ReleaseSigningKey=="" {
 			return Config{},fmt.Errorf("VPNX3_RELEASE_SIGNING_KEY must be set in production")
+		}
+		if !trustConfigured{
+			return Config{},fmt.Errorf("production requires offline trust root public key and signed trust bundle")
 		}
 		if err:=validateProductionDatabaseTransport(cfg.DatabaseURL);err!=nil{return Config{},err}
 	}

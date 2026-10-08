@@ -30,6 +30,7 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/securityexport"
 	"github.com/venomimonstro/vpnx3/internal/store"
 	"github.com/venomimonstro/vpnx3/internal/systemmonitor"
+	"github.com/venomimonstro/vpnx3/internal/trustbundle"
 )
 
 func main() {
@@ -72,6 +73,30 @@ func main() {
 			logger.Error("release signing key initialization failed","error",err)
 			os.Exit(1)
 		}
+	}
+
+	var trustEnvelope *trustbundle.Envelope
+	if cfg.TrustRootPublicKey!=""{
+		env,payload,trustErr:=trustbundle.LoadFile(
+			cfg.TrustBundleFile,cfg.TrustRootPublicKey,0,time.Now().UTC(),
+		)
+		if trustErr!=nil{
+			logger.Error("trust bundle verification failed","error",trustErr)
+			os.Exit(1)
+		}
+		if err:=trustbundle.MatchesSigner(payload,"config",configSigner);err!=nil{
+			logger.Error("config signer is not authorized by trust bundle","error",err);os.Exit(1)
+		}
+		if err:=trustbundle.MatchesSigner(payload,"access",accessSigner);err!=nil{
+			logger.Error("access signer is not authorized by trust bundle","error",err);os.Exit(1)
+		}
+		if releaseSigner!=nil{
+			if err:=trustbundle.MatchesSigner(payload,"release",releaseSigner);err!=nil{
+				logger.Error("release signer is not authorized by trust bundle","error",err);os.Exit(1)
+			}
+		}
+		trustEnvelope=&env
+		logger.Info("offline-root trust bundle verified","version",payload.Version,"expires_at",payload.ExpiresAt)
 	}
 
 	var artifactStorage artifactstorage.Storage
@@ -138,7 +163,7 @@ func main() {
 		go renewal.New(nodeStore,billing.New(nodeStore),yoo,logger,5*time.Minute).Run(monitorCtx)
 	}
 
-	srv := httpapi.NewServer(cfg,logger,db,configSigner,accessSigner,releaseSigner,artifactStorage,publisher.Trigger)
+	srv := httpapi.NewServer(cfg,logger,db,configSigner,accessSigner,releaseSigner,trustEnvelope,artifactStorage,publisher.Trigger)
 	serverErr := make(chan error,1)
 	go func() {
 		logger.Info("control plane starting","addr",cfg.HTTPAddr,"env",cfg.Environment)

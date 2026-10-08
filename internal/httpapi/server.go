@@ -16,6 +16,7 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/billing/yookassa"
 	"github.com/venomimonstro/vpnx3/internal/signing"
 	"github.com/venomimonstro/vpnx3/internal/store"
+	"github.com/venomimonstro/vpnx3/internal/trustbundle"
 )
 
 type Server struct {
@@ -28,6 +29,7 @@ type Server struct {
 	configSigner *signing.Signer
 	accessSigner *signing.Signer
 	releaseSigner *signing.Signer
+	trustBundle *trustbundle.Envelope
 	billing *billing.Service
 	yooKassa *yookassa.Adapter
 	artifacts artifactstorage.Storage
@@ -39,6 +41,7 @@ func NewServer(
 	logger *slog.Logger,
 	db *pgxpool.Pool,
 	configSigner,accessSigner,releaseSigner *signing.Signer,
+	trustBundle *trustbundle.Envelope,
 	artifacts artifactstorage.Storage,
 	onConfigChange ...func(),
 ) *Server {
@@ -61,7 +64,7 @@ func NewServer(
 				GatewayIPv4:cfg.WireGuardGateway,
 			},
 		),
-		configSigner:configSigner,accessSigner:accessSigner,releaseSigner:releaseSigner,
+		configSigner:configSigner,accessSigner:accessSigner,releaseSigner:releaseSigner,trustBundle:trustBundle,
 		billing:billing.New(store.New(db)),yooKassa:yoo,artifacts:artifacts,
 	}
 	if len(onConfigChange)>0 {
@@ -85,6 +88,7 @@ func NewServer(
 	mux.HandleFunc("PUT /api/v1/build/jobs/{id}/artifact",s.handleBuildArtifact)
 	mux.HandleFunc("GET /api/v1/config/latest",s.handleLatestConfig)
 	mux.HandleFunc("GET /api/v1/config/signing-key",s.handleConfigSigningKey)
+	mux.HandleFunc("GET /api/v1/trust/bundle",s.handleTrustBundle)
 	mux.HandleFunc("POST /api/v1/client/register",s.handleClientRegister)
 	mux.HandleFunc("POST /api/v1/client/lease",s.handleClientLease)
 	mux.HandleFunc("POST /api/v1/client/proxy-lease",s.handleClientProxyLease)
