@@ -412,3 +412,157 @@ func (s *Store) UserPayments(ctx context.Context,userID string,limit int)([]Admi
 	}
 	return out,rows.Err()
 }
+
+
+type AdminRenewalAttemptRow struct {
+	ID string `json:"id"`
+	CycleExpiresAt time.Time `json:"cycle_expires_at"`
+	AttemptNo int `json:"attempt_no"`
+	Provider string `json:"provider"`
+	ProviderPaymentID *string `json:"provider_payment_id,omitempty"`
+	Status string `json:"status"`
+	ErrorSummary *string `json:"error_summary,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type AdminReferralDetail struct {
+	Code *string `json:"code,omitempty"`
+	ReferredBy *string `json:"referred_by,omitempty"`
+	Claimed30d int64 `json:"claimed_30d"`
+	Qualified30d int64 `json:"qualified_30d"`
+	RewardDaysGranted int64 `json:"reward_days_granted"`
+	RewardDaysPending int64 `json:"reward_days_pending"`
+	RewardDaysRevoked int64 `json:"reward_days_revoked"`
+}
+
+type AdminSupportSignal struct {
+	Code string `json:"code"`
+	Severity string `json:"severity"`
+	Title string `json:"title"`
+	Detail string `json:"detail"`
+}
+
+func (s *Store) UserRenewalAttempts(ctx context.Context,userID string,limit int)([]AdminRenewalAttemptRow,error){
+	if limit<=0||limit>100{limit=20}
+	rows,err:=s.DB.Query(ctx,`
+		SELECT ra.id::text,ra.cycle_expires_at,ra.attempt_no,ra.provider,ra.provider_payment_id,
+		       ra.status,ra.error_summary,ra.created_at,ra.updated_at
+		FROM subscription_renewal_attempts ra
+		JOIN subscriptions sub ON sub.id=ra.subscription_id
+		WHERE sub.user_id=$1
+		ORDER BY ra.created_at DESC LIMIT $2
+	`,userID,limit)
+	if err!=nil{return nil,err}
+	defer rows.Close()
+	out:=make([]AdminRenewalAttemptRow,0)
+	for rows.Next(){
+		var r AdminRenewalAttemptRow
+		if err:=rows.Scan(&r.ID,&r.CycleExpiresAt,&r.AttemptNo,&r.Provider,&r.ProviderPaymentID,
+			&r.Status,&r.ErrorSummary,&r.CreatedAt,&r.UpdatedAt);err!=nil{return nil,err}
+		out=append(out,r)
+	}
+	return out,rows.Err()
+}
+
+func (s *Store) UserReferralDetail(ctx context.Context,userID string)(AdminReferralDetail,error){
+	var out AdminReferralDetail
+	_ = s.DB.QueryRow(ctx,`SELECT code FROM referral_codes WHERE user_id=$1 AND status='active'`,userID).Scan(&out.Code)
+	_ = s.DB.QueryRow(ctx,`
+		SELECT rc.code
+		FROM referral_redemptions rr
+		JOIN referral_codes rc ON rc.id=rr.referral_code_id
+		WHERE rr.referred_user_id=$1 LIMIT 1
+	`,userID).Scan(&out.ReferredBy)
+	if err:=s.DB.QueryRow(ctx,`
+		SELECT
+		  count(*) FILTER(WHERE claimed_at>=now()-interval '30 days')::bigint,
+		  count(*) FILTER(WHERE qualified_at>=now()-interval '30 days')::bigint
+		FROM referral_redemptions WHERE referrer_user_id=$1
+	`,userID).Scan(&out.Claimed30d,&out.Qualified30d);err!=nil{return AdminReferralDetail{},err}
+	if err:=s.DB.QueryRow(ctx,`
+		SELECT
+		  COALESCE(sum(reward_days) FILTER(WHERE status='granted'),0)::bigint,
+		  COALESCE(sum(reward_days) FILTER(WHERE status='pending'),0)::bigint,
+		  COALESCE(sum(reward_days) FILTER(WHERE status='revoked'),0)::bigint
+		FROM referral_rewards WHERE user_id=$1
+	`,userID).Scan(&out.RewardDaysGranted,&out.RewardDaysPending,&out.RewardDaysRevoked);err!=nil{
+		return AdminReferralDetail{},err
+	}
+	return out,nil
+}
+
+func (s *Store) UserSupportSignals(ctx context.Context,userID string)([]AdminSupportSignal,error){
+	var status string
+	var activeDevices int
+	var entitlementOK bool
+	var renewalFailures int
+	var autoRenew bool
+	err:=s.DB.QueryRow(ctx,`
+		SELECT u.status,
+		       (SELECT count(*)::int FROM devices d WHERE d.user_id=u.id AND d.status='active'),
+		       EXISTS(
+		         SELECT 1 FROM subscriptions sub
+		         WHERE sub.user_id=u.id AND sub.status IN ('active','grace')
+		           AND COALESCE(sub.grace_until,sub.expires_at)>now()
+		       ) OR EXISTS(
+		         SELECT 1 FROM devices d
+		         WHERE d.user_id=u.id AND d.status='active' AND d.trial_expires_at>now()
+		       ),
+		       COALESCE((
+		         SELECT renewal_failures FROM subscriptions sub
+		         WHERE sub.user_id=u.id
+		         ORDER BY sub.expires_at DESC LIMIT 1
+		       ),0),
+		       COALESCE((
+		         SELECT auto_renew FROM subscriptions sub
+		         WHERE sub.user_id=u.id
+		         ORDER BY sub.expires_at DESC LIMIT 1
+		       ),false)
+		FROM users u WHERE u.id=$1
+	`,userID).Scan(&status,&activeDevices,&entitlementOK,&renewalFailures,&autoRenew)
+	if errors.Is(err,pgx.ErrNoRows){return nil,ErrNotFound}
+	if err!=nil{return nil,err}
+	out:=make([]AdminSupportSignal,0)
+	if status!="active"{out=append(out,AdminSupportSignal{"user_status","warning","Учётная запись ограничена","Статус пользователя: "+status})}
+	if activeDevices==0{out=append(out,AdminSupportSignal{"no_active_device","warning","Нет активного устройства","Пользователь не сможет создать клиентскую сессию, пока устройство не будет активно."})}
+	if !entitlementOK{out=append(out,AdminSupportSignal{"no_access","warning","Нет действующего доступа","Нет активной подписки, grace-периода или trial."})}
+	if renewalFailures>0{
+		severity:="warning";if renewalFailures>=3{severity="critical"}
+		detail:=fmt.Sprintf("Ошибок автопродления: %d.",renewalFailures)
+		if !autoRenew&&renewalFailures>=3{detail+=" Автопродление отключено автоматически."}
+		out=append(out,AdminSupportSignal{"renewal_failures",severity,"Проблема автопродления",detail})
+	}
+	var recentPaymentFailure bool
+	if err:=s.DB.QueryRow(ctx,`
+		SELECT EXISTS(
+		  SELECT 1 FROM payments WHERE user_id=$1 AND status IN ('failed','cancelled')
+		    AND created_at>=now()-interval '24 hours'
+		)
+	`,userID).Scan(&recentPaymentFailure);err!=nil{return nil,err}
+	if recentPaymentFailure{out=append(out,AdminSupportSignal{"payment_failure","warning","Недавняя ошибка оплаты","За последние 24 часа есть failed/cancelled payment."})}
+	return out,nil
+}
+
+func (s *Store) UserAuditEvents(ctx context.Context,userID string,limit int)([]AuditRow,error){
+	if limit<=0||limit>100{limit=30}
+	rows,err:=s.DB.Query(ctx,`
+		SELECT a.id,a.actor_type,a.actor_id,a.action,a.resource_type,a.resource_id,a.request_id,
+		       host(a.source_ip),a.result,a.created_at
+		FROM audit_log a
+		WHERE a.actor_id=$1
+		   OR a.resource_id=$1
+		   OR a.resource_id IN (SELECT d.id::text FROM devices d WHERE d.user_id=$1)
+		ORDER BY a.id DESC LIMIT $2
+	`,userID,limit)
+	if err!=nil{return nil,err}
+	defer rows.Close()
+	out:=make([]AuditRow,0)
+	for rows.Next(){
+		var a AuditRow
+		if err:=rows.Scan(&a.ID,&a.ActorType,&a.ActorID,&a.Action,&a.ResourceType,&a.ResourceID,
+			&a.RequestID,&a.SourceIP,&a.Result,&a.CreatedAt);err!=nil{return nil,err}
+		out=append(out,a)
+	}
+	return out,rows.Err()
+}

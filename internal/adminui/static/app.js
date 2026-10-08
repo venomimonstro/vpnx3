@@ -230,7 +230,10 @@ async function dashboard(){
     ["Автоплатежи ожидают",d.renewal_pending||0],
     ["Автопродления успешны 24ч",d.renewal_succeeded_24h||0],
     ["Автопродления с ошибкой 24ч",d.renewal_failed_24h||0],
-    ["Автопродление отключено после ошибок",d.renewal_disabled_failures||0]
+    ["Автопродление отключено после ошибок",d.renewal_disabled_failures||0],
+    ["Рефералы заявлены 30д",d.referrals_claimed_30d||0],
+    ["Рефералы квалифицированы 30д",d.referrals_qualified_30d||0],
+    ["Бонусных дней выдано 30д",d.referral_reward_days_30d||0]
   ];
   return sectionFrame("Обзор",$("div",{class:"grid"},metrics.map(([k,v])=>$("div",{class:"card metric"},$("span",{class:"muted"},k),$("strong",{},v)))));
 }
@@ -501,6 +504,19 @@ async function userDetail(userId){
       dt(p.created_at),p.plan_code+" v"+p.plan_version,p.provider,
       badge(p.status),money(p.amount_minor,p.currency),dt(p.paid_at)
     ]);
+    const renewalRows=(d.renewals||[]).map(r=>[
+      dt(r.created_at),dt(r.cycle_expires_at),r.attempt_no,r.provider,
+      badge(r.status),r.provider_payment_id||"—",r.error_summary||"—"
+    ]);
+    const eventRows=(d.events||[]).map(e=>[
+      dt(e.created_at),e.action,e.resource_type+" "+(e.resource_id||""),
+      badge(e.result),e.request_id||"—"
+    ]);
+    const signalCards=(d.support_signals||[]).map(s=>$("div",{class:"card readiness-check "+(s.severity==="critical"?"failed":"warning")},
+      $("div",{class:"row-actions"},badge(s.severity),$("strong",{},s.title)),
+      $("p",{},s.detail),$("span",{class:"mono muted"},s.code)
+    ));
+    const ref=d.referral||{};
 
     target.replaceChildren(sectionFrame("Пользователь",
       $("div",{class:"stack"},
@@ -514,10 +530,24 @@ async function userDetail(userId){
           $("p",{},"Создан: "+dt(u.created_at)),
           $("p",{},"Последняя активность: "+dt(u.last_seen_at))),
         sub,
+        signalCards.length
+          ? $("div",{class:"card"},$("h2",{},"Сигналы поддержки"),$("div",{class:"readiness-grid"},signalCards))
+          : $("div",{class:"card"},$("h2",{},"Сигналы поддержки"),$("p",{class:"muted"},"Явных проблем не найдено")),
+        $("div",{class:"card"},
+          $("h2",{},"Реферальная программа"),
+          $("p",{},"Код: "+(ref.code||"—")),
+          $("p",{},"Приглашён по коду: "+(ref.referred_by||"—")),
+          $("p",{},"Заявок 30 дней: "+(ref.claimed_30d||0)),
+          $("p",{},"Квалифицировано 30 дней: "+(ref.qualified_30d||0)),
+          $("p",{},"Бонусных дней: выдано "+(ref.reward_days_granted||0)+", ожидает "+(ref.reward_days_pending||0)+", отозвано "+(ref.reward_days_revoked||0))),
         $("div",{class:"card"},$("h2",{},"Устройства"),
           table(["Платформа","Название","Статус","Версия","Добавлено","Последняя активность","Действие"],deviceRows)),
         $("div",{class:"card"},$("h2",{},"Последние платежи"),
-          paymentRows.length?table(["Время","Тариф","Провайдер","Статус","Сумма","Оплачен"],paymentRows):$("p",{class:"muted"},"Платежей нет"))
+          paymentRows.length?table(["Время","Тариф","Провайдер","Статус","Сумма","Оплачен"],paymentRows):$("p",{class:"muted"},"Платежей нет")),
+        $("div",{class:"card"},$("h2",{},"Автопродление"),
+          renewalRows.length?table(["Попытка","Период до","№","Провайдер","Статус","Payment ID","Ошибка"],renewalRows):$("p",{class:"muted"},"Попыток автопродления нет")),
+        $("div",{class:"card"},$("h2",{},"Последние события"),
+          eventRows.length?table(["Время","Действие","Ресурс","Результат","Request ID"],eventRows):$("p",{class:"muted"},"Событий нет"))
       )
     ));
   }catch(e){

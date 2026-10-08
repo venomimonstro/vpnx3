@@ -55,7 +55,18 @@ func (s *Server) handleUserDetail(w http.ResponseWriter,r *http.Request) {
 	if err!=nil{s.internalError(w,r,err);return}
 	payments,err:=s.store.UserPayments(r.Context(),user.ID,20)
 	if err!=nil{s.internalError(w,r,err);return}
-	writeJSON(w,http.StatusOK,map[string]any{"user":user,"devices":devices,"payments":payments})
+	renewals,err:=s.store.UserRenewalAttempts(r.Context(),user.ID,20)
+	if err!=nil{s.internalError(w,r,err);return}
+	referral,err:=s.store.UserReferralDetail(r.Context(),user.ID)
+	if err!=nil{s.internalError(w,r,err);return}
+	signals,err:=s.store.UserSupportSignals(r.Context(),user.ID)
+	if err!=nil{s.internalError(w,r,err);return}
+	events,err:=s.store.UserAuditEvents(r.Context(),user.ID,30)
+	if err!=nil{s.internalError(w,r,err);return}
+	writeJSON(w,http.StatusOK,map[string]any{
+		"user":user,"devices":devices,"payments":payments,
+		"renewals":renewals,"referral":referral,"support_signals":signals,"events":events,
+	})
 }
 
 func (s *Server) handleUserDevices(w http.ResponseWriter,r *http.Request) {
