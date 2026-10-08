@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS referral_rewards (
     CHECK (status IN ('pending','granted','revoked')),
   target_type TEXT CHECK (target_type IS NULL OR target_type IN ('subscription','trial')),
   subscription_id UUID REFERENCES subscriptions(id) ON DELETE SET NULL,
+  target_device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
   granted_at TIMESTAMPTZ,
   revoked_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),

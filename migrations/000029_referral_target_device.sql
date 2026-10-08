@@ -1,0 +1,4 @@
+BEGIN;
+ALTER TABLE referral_rewards
+  ADD COLUMN IF NOT EXISTS target_device_id UUID REFERENCES devices(id) ON DELETE SET NULL;
+COMMIT;

@@ -304,7 +304,7 @@ func (s *Store) ApplyPaymentEvent(ctx context.Context,event PaymentEvent) (bool,
 			return false,fmt.Errorf("record subscription credit: %w",err)
 		}
 
-		if _,err:=applyPendingReferralRewardsTx(ctx,tx,event.UserID,event.OccurredAt);err!=nil{
+		if _,err:=applyPendingReferralRewardsTx(ctx,tx,event.UserID,nil,event.OccurredAt);err!=nil{
 			return false,fmt.Errorf("apply pending referral rewards: %w",err)
 		}
 		if err:=qualifyReferralOnPaymentTx(ctx,tx,event.UserID,paymentID,event.OccurredAt);err!=nil{

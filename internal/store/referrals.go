@@ -124,7 +124,7 @@ func (s *Store) ClaimReferralCode(ctx context.Context,deviceID,rawCode string,no
 		VALUES($1,$2,'referred',$3,'pending')
 	`,redemptionID,referredUser,referralRewardDays);err!=nil{return ReferralClaimResult{},err}
 
-	applied,err:=applyPendingReferralRewardsTx(ctx,tx,referredUser,now)
+	applied,err:=applyPendingReferralRewardsTx(ctx,tx,referredUser,&deviceID,now)
 	if err!=nil{return ReferralClaimResult{},err}
 	if err:=tx.Commit(ctx);err!=nil{return ReferralClaimResult{},err}
 	return ReferralClaimResult{
@@ -164,7 +164,7 @@ func (s *Store) ReferralStatusForDevice(ctx context.Context,deviceID string)(Ref
 	return out,nil
 }
 
-func applyPendingReferralRewardsTx(ctx context.Context,tx pgx.Tx,userID string,now time.Time)(bool,error){
+func applyPendingReferralRewardsTx(ctx context.Context,tx pgx.Tx,userID string,targetDeviceID *string,now time.Time)(bool,error){
 	rows,err:=tx.Query(ctx,`
 		SELECT id::text,reward_days
 		FROM referral_rewards
@@ -211,19 +211,22 @@ func applyPendingReferralRewardsTx(ctx context.Context,tx pgx.Tx,userID string,n
 	}
 	if !errors.Is(err,pgx.ErrNoRows){return false,err}
 
+	if targetDeviceID==nil||strings.TrimSpace(*targetDeviceID)==""{
+		return false,nil
+	}
 	seconds:=int64(total)*24*60*60
 	tag,err:=tx.Exec(ctx,`
 		UPDATE devices
-		SET trial_expires_at=GREATEST(COALESCE(trial_expires_at,$2),$2)+($3::bigint*interval '1 second')
-		WHERE user_id=$1 AND status='active'
-	`,userID,now,seconds)
+		SET trial_expires_at=GREATEST(COALESCE(trial_expires_at,$3),$3)+($4::bigint*interval '1 second')
+		WHERE id=$2 AND user_id=$1 AND status='active'
+	`,userID,*targetDeviceID,now,seconds)
 	if err!=nil{return false,err}
 	if tag.RowsAffected()==0{return false,nil}
 	if _,err:=tx.Exec(ctx,`
 		UPDATE referral_rewards
-		SET status='granted',target_type='trial',granted_at=$2
+		SET status='granted',target_type='trial',target_device_id=$2,granted_at=$3
 		WHERE user_id=$1 AND status='pending'
-	`,userID,now);err!=nil{return false,err}
+	`,userID,*targetDeviceID,now);err!=nil{return false,err}
 	return true,nil
 }
 
@@ -249,7 +252,7 @@ func qualifyReferralOnPaymentTx(ctx context.Context,tx pgx.Tx,referredUser,payme
 		VALUES($1,$2,'referrer',$3,'pending')
 		ON CONFLICT(redemption_id,role) DO NOTHING
 	`,redemptionID,referrerUser,days);err!=nil{return err}
-	_,err=applyPendingReferralRewardsTx(ctx,tx,referrerUser,now)
+	_,err=applyPendingReferralRewardsTx(ctx,tx,referrerUser,nil,now)
 	return err
 }
 
@@ -264,14 +267,14 @@ func revokeReferralQualificationTx(ctx context.Context,tx pgx.Tx,paymentID strin
 	if err!=nil{return err}
 
 	var rewardID,userID,status,targetType string
-	var subscriptionID *string
+	var subscriptionID,targetDeviceID *string
 	var days int
 	err=tx.QueryRow(ctx,`
-		SELECT id::text,user_id::text,status,COALESCE(target_type,''),subscription_id::text,reward_days
+		SELECT id::text,user_id::text,status,COALESCE(target_type,''),subscription_id::text,target_device_id::text,reward_days
 		FROM referral_rewards
 		WHERE redemption_id=$1 AND role='referrer'
 		FOR UPDATE
-	`,redemptionID).Scan(&rewardID,&userID,&status,&targetType,&subscriptionID,&days)
+	`,redemptionID).Scan(&rewardID,&userID,&status,&targetType,&subscriptionID,&targetDeviceID,&days)
 	if errors.Is(err,pgx.ErrNoRows){
 		_,err=tx.Exec(ctx,`UPDATE referral_redemptions SET status='reversed',reversed_at=$2,updated_at=now() WHERE id=$1`,redemptionID,now)
 		return err
@@ -292,14 +295,16 @@ func revokeReferralQualificationTx(ctx context.Context,tx pgx.Tx,paymentID strin
 				`,*subscriptionID,seconds);err!=nil{return err}
 			}
 		case "trial":
-			if _,err:=tx.Exec(ctx,`
-				UPDATE devices
-				SET trial_expires_at=CASE
-				  WHEN trial_expires_at IS NULL THEN NULL
-				  ELSE GREATEST(first_seen_at,trial_expires_at-($2::bigint*interval '1 second'))
-				END
-				WHERE user_id=$1
-			`,userID,seconds);err!=nil{return err}
+			if targetDeviceID!=nil{
+				if _,err:=tx.Exec(ctx,`
+					UPDATE devices
+					SET trial_expires_at=CASE
+					  WHEN trial_expires_at IS NULL THEN NULL
+					  ELSE GREATEST(first_seen_at,trial_expires_at-($2::bigint*interval '1 second'))
+					END
+					WHERE id=$1
+				`,*targetDeviceID,seconds);err!=nil{return err}
+			}
 		}
 	}
 	if _,err:=tx.Exec(ctx,`
