@@ -1215,3 +1215,29 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 4. восстановить endpoint и подтвердить half-open → closed;
 5. проверить большую загрузку, чтобы response-header timeout не обрывал нормальный streaming body;
 6. проверить повторное использование keep-alive соединений.
+
+
+## Спринт 38 — глобальная политика размера HTTP body: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: забытый endpoint без локального MaxBytesReader не должен позволять бесконтрольно читать большой request body.
+
+Реализовано:
+
+- глобальный body-limit middleware до application handlers;
+- configurable `VPNX3_HTTP_DEFAULT_BODY_KB`;
+- default JSON/API body limit 1 МБ;
+- запрос с известным Content-Length выше лимита немедленно получает HTTP 413;
+- chunked/неизвестный body ограничивается через `http.MaxBytesReader`;
+- build artifact upload выделен как явное исключение и использует `VPNX3_ARTIFACT_MAX_MB`;
+- GET/HEAD/OPTIONS не оборачиваются body limiter;
+- существующие более строгие локальные лимиты handlers продолжают действовать;
+- предел JSON body валидируется при запуске.
+
+Физическая приёмка:
+
+1. отправить oversized JSON с Content-Length и подтвердить быстрый 413;
+2. отправить oversized chunked request и подтвердить прекращение чтения;
+3. проверить обычные registration/payment/admin payload;
+4. загрузить artifact около configured max;
+5. проверить отказ artifact выше max;
+6. выполнить нагрузочный тест большими body и наблюдать стабильность RAM.

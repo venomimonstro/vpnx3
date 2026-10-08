@@ -37,6 +37,7 @@ type Config struct {
 	ShutdownTimeout        time.Duration
 	HTTPMaxInflight        int
 	HTTPMaxHeaderBytes     int
+	HTTPDefaultBodyBytes   int64
 	AdminSessionTTL        time.Duration
 	AdminSessionBinding    string
 	BootstrapOwnerEmail    string
@@ -100,6 +101,7 @@ func Load() (Config, error) {
 		ShutdownTimeout:        duration("VPNX3_SHUTDOWN_TIMEOUT", 20*time.Second),
 		HTTPMaxInflight:        intEnv("VPNX3_HTTP_MAX_INFLIGHT",512),
 		HTTPMaxHeaderBytes:     intEnv("VPNX3_HTTP_MAX_HEADER_KB",32)*1024,
+		HTTPDefaultBodyBytes:   int64(intEnv("VPNX3_HTTP_DEFAULT_BODY_KB",1024))*1024,
 		AdminSessionTTL:        duration("VPNX3_ADMIN_SESSION_TTL", 12*time.Hour),
 		AdminSessionBinding:    strings.ToLower(env("VPNX3_ADMIN_SESSION_BINDING","user-agent")),
 		BootstrapOwnerEmail:    strings.TrimSpace(os.Getenv("VPNX3_BOOTSTRAP_OWNER_EMAIL")),
@@ -216,6 +218,9 @@ func Load() (Config, error) {
 	}
 	if cfg.HTTPMaxHeaderBytes < 8*1024 || cfg.HTTPMaxHeaderBytes > 128*1024 {
 		return Config{}, fmt.Errorf("VPNX3_HTTP_MAX_HEADER_KB must be between 8 and 128")
+	}
+	if cfg.HTTPDefaultBodyBytes < 16*1024 || cfg.HTTPDefaultBodyBytes > 8*1024*1024 {
+		return Config{}, fmt.Errorf("VPNX3_HTTP_DEFAULT_BODY_KB must be between 16 and 8192")
 	}
 	if cfg.AdminSessionTTL < 15*time.Minute || cfg.AdminSessionTTL > 7*24*time.Hour {
 		return Config{}, fmt.Errorf("VPNX3_ADMIN_SESSION_TTL must be between 15m and 168h")

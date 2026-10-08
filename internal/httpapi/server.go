@@ -176,7 +176,10 @@ func NewServer(
 	mux.Handle("POST /api/v1/nodes/{id}/quarantine",s.requireAdmin(requirePermission("nodes.manage",s.handleNodeTransition("quarantined"))))
 	mux.Handle("POST /api/v1/nodes/{id}/retire",s.requireAdmin(requirePermission("nodes.manage",s.handleNodeTransition("retired"))))
 
-	handler:=trustedProxyContext(cfg.TrustedProxyCIDRs,requestContext(securityHeaders(requestLog(logger,recoverer(logger,httpMetricsMiddleware(s.httpMetrics,s.admission.wrap(mux)))))))
+	handler:=trustedProxyContext(cfg.TrustedProxyCIDRs,requestContext(securityHeaders(requestLog(logger,recoverer(logger,httpMetricsMiddleware(
+		s.httpMetrics,
+		s.admission.wrap(bodyLimitMiddleware(cfg.HTTPDefaultBodyBytes,cfg.ArtifactMaxBytes,mux)),
+	))))))
 	s.http=&http.Server{
 		Addr:cfg.HTTPAddr,Handler:handler,
 		ReadTimeout:cfg.ReadTimeout,WriteTimeout:cfg.WriteTimeout,IdleTimeout:cfg.IdleTimeout,

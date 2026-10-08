@@ -183,3 +183,31 @@ func (a *admissionController) wrap(next http.Handler)http.Handler{
 func (a *admissionController) snapshot()(current,limit,peak,rejected int64){
 	return a.current.Load(),a.limit,a.peak.Load(),a.rejected.Load()
 }
+
+
+func bodyLimitMiddleware(defaultLimit,artifactLimit int64,next http.Handler)http.Handler{
+	if defaultLimit<=0{defaultLimit=1<<20}
+	if artifactLimit<defaultLimit{artifactLimit=defaultLimit}
+	return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+		if r.Body==nil || r.Method==http.MethodGet || r.Method==http.MethodHead || r.Method==http.MethodOptions{
+			next.ServeHTTP(w,r)
+			return
+		}
+		limit:=defaultLimit
+		if r.Method==http.MethodPut &&
+			strings.HasPrefix(r.URL.Path,"/api/v1/build/jobs/") &&
+			strings.HasSuffix(r.URL.Path,"/artifact"){
+			limit=artifactLimit
+		}
+		if r.ContentLength>limit{
+			w.Header().Set("Connection","close")
+			writeJSON(w,http.StatusRequestEntityTooLarge,map[string]any{
+				"error":"request_body_too_large",
+				"max_bytes":limit,
+			})
+			return
+		}
+		r.Body=http.MaxBytesReader(w,r.Body,limit)
+		next.ServeHTTP(w,r)
+	})
+}
