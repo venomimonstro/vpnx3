@@ -136,6 +136,7 @@ func NewServer(
 	mux.Handle("GET /api/v1/probes/recent",s.requireAdmin(requirePermission("nodes.read",http.HandlerFunc(s.handleRecentProbeResults))))
 	mux.Handle("GET /api/v1/billing/plans",s.requireAdmin(requirePermission("billing.read",http.HandlerFunc(s.handleListPlans))))
 	mux.Handle("GET /api/v1/admin/finance/summary",s.requireAdmin(requirePermission("billing.read",http.HandlerFunc(s.handleFinanceSummary))))
+	mux.Handle("GET /api/v1/admin/referrals",s.requireAdmin(requirePermission("analytics.read",http.HandlerFunc(s.handleAdminReferrals))))
 	mux.Handle("POST /api/v1/billing/plans",s.requireAdmin(requirePermission("billing.manage",http.HandlerFunc(s.handleCreatePlan))))
 	mux.Handle("GET /api/v1/nodes",s.requireAdmin(requirePermission("nodes.read",http.HandlerFunc(s.handleListNodes))))
 	mux.Handle("GET /api/v1/nodes/{id}",s.requireAdmin(requirePermission("nodes.read",http.HandlerFunc(s.handleGetNode))))

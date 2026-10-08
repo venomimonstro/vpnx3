@@ -89,6 +89,7 @@ function logout(callApi=true){
 
 const sections=[
   ["dashboard","Обзор","analytics.read"],
+  ["referrals","Рефералы","analytics.read"],
   ["readiness","Готовность запуска","analytics.read"],
   ["issues","Требует внимания","analytics.read"],
   ["nodes","Сеть","nodes.read"],
@@ -206,6 +207,35 @@ async function readiness(){
     header,
     $("div",{class:"readiness-grid"},cards),
     $("div",{class:"card"},$("h2",{},"Сигналы"),signals)
+  ));
+}
+
+
+async function referrals(){
+  const d=await api("/api/v1/admin/referrals?limit=200");
+  const s=d.summary||{};
+  const cards=$("div",{class:"kpi-grid"},
+    kpi("Активные коды",s.codes_active||0),
+    kpi("Claims 30 дней",s.claims_30d||0),
+    kpi("Квалифицированы",s.qualified_30d||0),
+    kpi("Конверсия",Number(s.qualification_rate||0).toFixed(1)+"%"),
+    kpi("Наград выдано",s.granted_rewards_30d||0),
+    kpi("Бонусных дней",s.granted_days_30d||0),
+    kpi("Возвраты/отзывы",s.reversed_30d||0),
+    kpi("Доля отзывов",Number(s.reversal_rate||0).toFixed(1)+"%")
+  );
+  const rows=(d.redemptions||[]).map(x=>[
+    dt(x.claimed_at),x.code,$("span",{class:"mono"},x.referrer_user_id),
+    $("span",{class:"mono"},x.referred_user_id),badge(x.status),
+    x.reward_days,dt(x.qualified_at),dt(x.reversed_at)
+  ]);
+  return sectionFrame("Реферальная программа",$("div",{class:"stack"},
+    cards,
+    $("div",{class:"card"},
+      $("h2",{},"Воронка и последние применения"),
+      rows.length?table(["Claim","Код","Пригласил","Приглашённый","Статус","Дней","Квалификация","Отзыв"],rows):
+        $("div",{class:"empty"},"Применений пока нет")
+    )
   ));
 }
 
@@ -889,7 +919,7 @@ async function renderSection(){
   const target=document.getElementById("section");if(!target)return;
   target.replaceChildren($("div",{class:"card"},"Загрузка…"));
   try{
-    const fn={dashboard,readiness,issues,nodes,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
+    const fn={dashboard,referrals,readiness,issues,nodes,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
     target.replaceChildren(await fn());
   }catch(e){target.replaceChildren(sectionError("VPNX3",e))}
 }

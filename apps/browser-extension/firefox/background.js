@@ -198,32 +198,32 @@ async function createPairingCode(){
 async function claimPairingCode(code){
   const reg=await ensureRegistered();
   const sequence=await nextSequence();
-  const status=await request("POST","/api/v1/client/pairing-claim",{sequence,code},reg[STATE_KEYS.deviceId]);
-  await storageSet({[STATE_KEYS.userId]:status.user_id});
-  return status;
-}
-
-async function accountStatus(){
-  const reg=await ensureRegistered();
-  const sequence=await nextSequence();
-  return request("POST","/api/v1/client/account/status",{sequence},reg[STATE_KEYS.deviceId]);
-}
-
-async function createPairingCode(){
-  const reg=await ensureRegistered();
-  const sequence=await nextSequence();
-  return request("POST","/api/v1/client/pairing-code",{sequence},reg[STATE_KEYS.deviceId]);
-}
-
-async function claimPairingCode(code){
-  const reg=await ensureRegistered();
-  const sequence=await nextSequence();
   const status=await request("POST","/api/v1/client/pairing-claim",{
     sequence,
     code:String(code||"").trim().toUpperCase()
   },reg[STATE_KEYS.deviceId]);
   await storageSet({[STATE_KEYS.userId]:status.user_id});
   return status;
+}
+
+async function referralCode(){
+  const reg=await ensureRegistered();
+  const sequence=await nextSequence();
+  return request("POST","/api/v1/client/referral/code",{sequence},reg[STATE_KEYS.deviceId]);
+}
+
+async function referralStatus(){
+  const reg=await ensureRegistered();
+  const sequence=await nextSequence();
+  return request("POST","/api/v1/client/referral/status",{sequence},reg[STATE_KEYS.deviceId]);
+}
+
+async function referralClaim(code){
+  const reg=await ensureRegistered();
+  const sequence=await nextSequence();
+  return request("POST","/api/v1/client/referral/claim",{
+    sequence,code:String(code||"").trim().toUpperCase()
+  },reg[STATE_KEYS.deviceId]);
 }
 
 async function newProxyCredential(){
@@ -392,6 +392,18 @@ api.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(message?.type==="pairing-claim"){
     claimPairingCode(message.code||"")
       .then(account=>sendResponse({ok:true,account}))
+      .catch(e=>sendResponse({ok:false,error:e.message}));
+    return true;
+  }
+  if(message?.type==="referral-status"){
+    Promise.all([referralCode(),referralStatus()])
+      .then(([code,status])=>sendResponse({ok:true,code:code.code,status}))
+      .catch(e=>sendResponse({ok:false,error:e.message}));
+    return true;
+  }
+  if(message?.type==="referral-claim"){
+    referralClaim(message.code||"")
+      .then(status=>sendResponse({ok:true,status}))
       .catch(e=>sendResponse({ok:false,error:e.message}));
     return true;
   }

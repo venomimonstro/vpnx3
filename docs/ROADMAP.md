@@ -448,7 +448,9 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - refund qualifying payment отзывает соответствующую reward;
 - target device фиксируется для trial reward;
 - Android/iOS: просмотр кода, claim и статус наград;
+- Chrome/Firefox: просмотр своего кода, применение кода и статус наград через подписанный device API;
 - dashboard: claimed/qualified/reward days;
+- отдельный экран админки с 30-дневной воронкой, конверсией, отзывами наград и последними redemption;
 - карточка поддержки пользователя показывает реферальное состояние.
 
 Физическая приёмка: проверить полный цикл referral → первая оплата → reward → refund/revoke на sandbox-данных.
