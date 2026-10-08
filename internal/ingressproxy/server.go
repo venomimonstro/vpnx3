@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/venomimonstro/vpnx3/internal/proxylease"
+	"github.com/venomimonstro/vpnx3/internal/revocation"
 )
 
 type Server struct {
@@ -23,10 +24,16 @@ type Server struct {
 	mu sync.Mutex
 	active map[string]int
 	maxPerLease int
+	revokedDeviceHashes map[string]struct{}
+	activeConns map[string]map[net.Conn]struct{}
 }
 
 func New(addr string,logger *slog.Logger,verifier *proxylease.Verifier)*Server{
-	s:=&Server{logger:logger,verifier:verifier,active:map[string]int{},maxPerLease:32}
+	s:=&Server{
+		logger:logger,verifier:verifier,active:map[string]int{},maxPerLease:32,
+		revokedDeviceHashes:map[string]struct{}{},
+		activeConns:map[string]map[net.Conn]struct{}{},
+	}
 	s.http=&http.Server{
 		Addr:addr,Handler:s,
 		ReadHeaderTimeout:10*time.Second,
@@ -52,7 +59,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter,r *http.Request){
 	}
 	defer s.release(claims.LeaseID)
 
-	if r.Method==http.MethodConnect{s.handleConnect(w,r);return}
+	if r.Method==http.MethodConnect{s.handleConnect(w,r,claims);return}
 	s.handleHTTP(w,r)
 }
 
@@ -71,6 +78,13 @@ func (s *Server) authorize(w http.ResponseWriter,r *http.Request)(proxylease.Cla
 	if err!=nil{http.Error(w,"invalid proxy credentials",http.StatusProxyAuthRequired);return proxylease.Claims{},false}
 	claims,err:=s.verifier.Verify(env,time.Now().UTC())
 	if err!=nil{http.Error(w,"expired or invalid proxy lease",http.StatusProxyAuthRequired);return proxylease.Claims{},false}
+	s.mu.Lock()
+	_,revoked:=s.revokedDeviceHashes[revocation.DeviceHash(claims.DeviceID)]
+	s.mu.Unlock()
+	if revoked{
+		http.Error(w,"device access revoked",http.StatusProxyAuthRequired)
+		return proxylease.Claims{},false
+	}
 	return claims,true
 }
 
@@ -85,7 +99,7 @@ func (s *Server) release(id string){
 	if s.active[id]<=1{delete(s.active,id)}else{s.active[id]--}
 }
 
-func (s *Server) handleConnect(w http.ResponseWriter,r *http.Request){
+func (s *Server) handleConnect(w http.ResponseWriter,r *http.Request,claims proxylease.Claims){
 	host,port,err:=splitWebTarget(r.Host)
 	if err!=nil{http.Error(w,"invalid target",http.StatusBadRequest);return}
 	conn,err:=dialPublic(r.Context(),host,port)
@@ -96,6 +110,14 @@ func (s *Server) handleConnect(w http.ResponseWriter,r *http.Request){
 	client,buf,err:=hj.Hijack()
 	if err!=nil{return}
 	defer client.Close()
+	hash:=revocation.DeviceHash(claims.DeviceID)
+	if !s.trackConnection(hash,client,conn){
+		_ = client.Close()
+		_ = conn.Close()
+		return
+	}
+	defer s.untrackConnection(hash,client,conn)
+
 	_,_ = buf.WriteString("HTTP/1.1 200 Connection Established\r\n\r\n")
 	_ = buf.Flush()
 
@@ -180,3 +202,47 @@ func removeHopHeaders(h http.Header){
 
 func (s *Server) ListenAndServeTLS(cert,key string)error{return s.http.ListenAndServeTLS(cert,key)}
 func (s *Server) Shutdown(ctx context.Context)error{return s.http.Shutdown(ctx)}
+
+
+func (s *Server) trackConnection(deviceHash string,conns ...net.Conn)bool{
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _,revoked:=s.revokedDeviceHashes[deviceHash];revoked{return false}
+	set:=s.activeConns[deviceHash]
+	if set==nil{
+		set=map[net.Conn]struct{}{}
+		s.activeConns[deviceHash]=set
+	}
+	for _,conn:=range conns{
+		if conn!=nil{set[conn]=struct{}{}}
+	}
+	return true
+}
+
+func (s *Server) untrackConnection(deviceHash string,conns ...net.Conn){
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	set:=s.activeConns[deviceHash]
+	for _,conn:=range conns{delete(set,conn)}
+	if len(set)==0{delete(s.activeConns,deviceHash)}
+}
+
+func (s *Server) ApplyRevokedDeviceHashes(hashes []string)int{
+	next:=make(map[string]struct{},len(hashes))
+	for _,h:=range hashes{
+		if len(h)==64{next[h]=struct{}{}}
+	}
+
+	s.mu.Lock()
+	toClose:=make([]net.Conn,0)
+	for hash,connections:=range s.activeConns{
+		if _,revoked:=next[hash];!revoked{continue}
+		for conn:=range connections{toClose=append(toClose,conn)}
+		delete(s.activeConns,hash)
+	}
+	s.revokedDeviceHashes=next
+	s.mu.Unlock()
+
+	for _,conn:=range toClose{_ = conn.Close()}
+	return len(toClose)
+}

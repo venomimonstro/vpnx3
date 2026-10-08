@@ -15,6 +15,7 @@ NODE_PROVIDER=""
 NODE_COUNTRY=""
 NODE_PUBLIC_IP=""
 INGRESS_ADDR=":8443"
+REVOCATION_SOURCES=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -32,6 +33,7 @@ while [[ $# -gt 0 ]]; do
     --country) NODE_COUNTRY="${2:-}"; shift 2;;
     --public-ip) NODE_PUBLIC_IP="${2:-}"; shift 2;;
     --listen) INGRESS_ADDR="${2:-}"; shift 2;;
+    --revocation-sources) REVOCATION_SOURCES="${2:-}"; shift 2;;
     *) echo "Unknown argument: $1" >&2; exit 2;;
   esac
 done
@@ -75,6 +77,7 @@ download_verified "$INGRESS_URL" "$INGRESS_SHA256" /usr/local/bin/vpnx3-ingress-
 
 id vpnx3 >/dev/null 2>&1 || useradd --system --home /var/lib/vpnx3 --shell /usr/sbin/nologin vpnx3
 install -d -m 0750 -o vpnx3 -g vpnx3 /var/lib/vpnx3/agent
+install -d -m 0750 -o vpnx3 -g vpnx3 /var/lib/vpnx3
 
 # TLS files may live outside /var/lib/vpnx3. The service user must be able to read them.
 if ! runuser -u vpnx3 -- test -r "$TLS_CERT" 2>/dev/null; then
@@ -103,6 +106,10 @@ VPNX3_ACCESS_PUBLIC_KEY=$ACCESS_PUBLIC_KEY
 VPNX3_INGRESS_TLS_CERT=$TLS_CERT
 VPNX3_INGRESS_TLS_KEY=$TLS_KEY
 VPNX3_INGRESS_ADDR=$INGRESS_ADDR
+VPNX3_CONTROL_URL=$CONTROL_URL
+VPNX3_REVOCATION_SOURCES=$REVOCATION_SOURCES
+VPNX3_REVOCATION_STATE_PATH=/var/lib/vpnx3/ingress-revocations.json
+VPNX3_REVOCATION_POLL_INTERVAL=1m
 EOF
 chmod 0600 /etc/vpnx3-ingress.env
 
@@ -150,6 +157,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
+ReadWritePaths=/var/lib/vpnx3
 RestrictSUIDSGID=true
 LockPersonality=true
 CapabilityBoundingSet=
