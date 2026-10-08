@@ -116,6 +116,8 @@ func NewServer(
 	mux.Handle("POST /api/v1/admin/users/{id}/devices/{deviceId}/reactivate",s.requireAdmin(requirePermission("users.manage",http.HandlerFunc(s.handleReactivateUserDevice))))
 	mux.Handle("GET /api/v1/admin/payments",s.requireAdmin(requirePermission("billing.read",http.HandlerFunc(s.handlePayments))))
 	mux.Handle("GET /api/v1/admin/audit",s.requireAdmin(requirePermission("audit.read",http.HandlerFunc(s.handleAudit))))
+	mux.Handle("GET /api/v1/admin/security-export",s.requireAdmin(requirePermission("audit.read",http.HandlerFunc(s.handleSecurityExportStatus))))
+	mux.Handle("POST /api/v1/admin/security-export/requeue",s.requireAdmin(requirePermission("security.export.manage",http.HandlerFunc(s.handleRequeueSecurityExport))))
 	mux.Handle("GET /api/v1/admin/incidents",s.requireAdmin(requirePermission("incidents.read",http.HandlerFunc(s.handleIncidents))))
 	mux.Handle("GET /api/v1/admin/releases",s.requireAdmin(requirePermission("releases.read",http.HandlerFunc(s.handleReleases))))
 	mux.Handle("GET /api/v1/admin/release-policy",s.requireAdmin(requirePermission("releases.read",http.HandlerFunc(s.handleAdminReleasePolicy))))

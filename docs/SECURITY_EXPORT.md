@@ -1,42 +1,51 @@
-# Внешний журнал безопасности
+# Внешний аудит VPNX3
 
-Control Plane может отправлять копии новых audit-событий во внешний HTTPS/WORM/SIEM endpoint.
+Control Plane может отправлять каждую новую запись `audit_log` во внешний WORM/SIEM/receiver.
 
-## Переменные
+## Формат
 
-- `VPNX3_SECURITY_EXPORT_URL=https://security.example/events`
-- `VPNX3_SECURITY_EXPORT_SIGNING_KEY=<32-byte base64url Ed25519 seed>`
+HTTP POST JSON содержит:
 
-Ключ должен отличаться от Configuration/Access/Release signing keys.
+- `audit_id`;
+- `prev_hash`;
+- `entry_hash`;
+- actor/action/resource/result;
+- request id;
+- время.
 
-Получатель получает JSON envelope:
+Не экспортируются `before_state`, `after_state` и source IP.
 
-- `key_id`;
-- `payload` — exact JSON event в base64url;
-- `signature` — Ed25519 подпись exact payload.
+Заголовки:
 
-Payload включает `audit_id`, actor/action/resource, UTC timestamp и `prev_hash/entry_hash` основной audit chain.
+- `X-VPNX3-Audit-ID`;
+- `X-VPNX3-Timestamp`;
+- `X-VPNX3-Signature: sha256=<hex>`.
 
-## Локальная проверка
+HMAC считается как:
 
-Получить публичный ключ можно из того же seed штатной утилитой/владельцем ключа. Для локального smoke-test:
+`HMAC-SHA256(secret, timestamp + "\n" + exact_body_bytes)`.
+
+Receiver обязан:
+
+1. проверять HTTPS на своей стороне;
+2. проверять HMAC до разбора/сохранения;
+3. ограничивать допустимый возраст timestamp;
+4. дедуплицировать по `audit_id`;
+5. хранить exact body или минимум audit_id/prev_hash/entry_hash;
+6. проверять непрерывность цепочки между последовательными событиями;
+7. отвечать 2xx только после устойчивой записи события.
+
+## Retry
+
+Control Plane не блокирует основной запрос. Доставка идёт через outbox.
+
+После 10 ошибок событие становится dead-letter. Owner/security-admin может вручную вернуть до 500 записей в очередь через административный интерфейс/API. Requeue сам попадает в audit log.
+
+Локальная проверка webhook:
 
 ```bash
-export VPNX3_SECURITY_EXPORT_PUBLIC_KEY="..."
-export VPNX3_RECEIVER_ADDR="127.0.0.1:9099"
-export VPNX3_RECEIVER_OUTPUT="/tmp/vpnx3-security-events.ndjson"
-go run ./cmd/security-receiver
+cat event.json | python3 scripts/verify-security-export.py \
+  --secret "$VPNX3_SECURITY_EXPORT_SECRET" \
+  --timestamp "$TIMESTAMP" \
+  --signature "$SIGNATURE"
 ```
-
-Для Control Plane test URL должен быть HTTPS, поэтому локальный receiver обычно ставится за локальным тестовым TLS reverse proxy.
-
-Receiver специально отказывается слушать внешний интерфейс: это тестовая утилита, не production SIEM.
-
-## Readiness
-
-- не настроен exporter → warning;
-- pending до 15 минут → ok;
-- pending старше 15 минут или >=8 попыток → warning;
-- pending старше 2 часов → failed.
-
-Сбой внешнего получателя не блокирует VPN/API: события остаются в outbox и повторяются с capped exponential backoff.

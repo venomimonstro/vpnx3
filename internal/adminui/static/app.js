@@ -944,10 +944,47 @@ async function createRelease(){
 }
 
 async function audit(){
-  const d=await api("/api/v1/admin/audit?limit=250");
-  return sectionFrame("Аудит",table(["Время","Актор","Действие","Ресурс","Результат","IP","Request ID"],d.events.map(e=>[
-    dt(e.created_at),(e.actor_type+" "+(e.actor_id||"")),e.action,e.resource_type+" "+(e.resource_id||""),badge(e.result),e.source_ip||"—",$("span",{class:"mono"},e.request_id||"—")
-  ])));
+  const [d,external]=await Promise.all([
+    api("/api/v1/admin/audit?limit=250"),
+    api("/api/v1/admin/security-export")
+  ]);
+  const s=external.status||{};
+  const actions=[];
+  if(can("security.export.manage")&&(s.dead||0)>0){
+    actions.push($("button",{class:"btn danger",onclick:async()=>{
+      if(!confirm("Повторно поставить dead-letter события в очередь?"))return;
+      try{
+        const result=await api("/api/v1/admin/security-export/requeue?limit=100",{method:"POST"});
+        alert("Возвращено в очередь: "+(result.requeued||0));
+        renderSection();
+      }catch(e){alert(e.message)}
+    }},"Повторить dead-letter"));
+  }
+  const externalCard=$("div",{class:"card"},
+    $("div",{class:"card-title-row"},
+      $("h2",{},"Внешний журнал безопасности"),
+      $("div",{class:"row-actions"},...actions)
+    ),
+    $("div",{class:"kpi-grid"},
+      kpi("Настроен",external.configured?"Да":"Нет"),
+      kpi("В очереди",s.pending||0),
+      kpi("Dead-letter",s.dead||0),
+      kpi("Доставлено",s.delivered||0)
+    ),
+    $("p",{class:"muted"},
+      s.last_delivered_at
+        ?"Последняя доставка: "+dt(s.last_delivered_at)
+        :"Успешных доставок пока нет"
+    )
+  );
+  return sectionFrame("Аудит",$("div",{class:"stack"},
+    externalCard,
+    table(["Время","Актор","Действие","Ресурс","Результат","IP","Request ID"],d.events.map(e=>[
+      dt(e.created_at),(e.actor_type+" "+(e.actor_id||"")),e.action,
+      e.resource_type+" "+(e.resource_id||""),badge(e.result),
+      e.source_ip||"—",$("span",{class:"mono"},e.request_id||"—")
+    ]))
+  ));
 }
 
 async function admins(){

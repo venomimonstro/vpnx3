@@ -516,6 +516,10 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - экспоненциальные retry;
 - после 10 безуспешных попыток событие переходит в dead-letter;
 - launch readiness контролирует backlog, возраст очереди и dead-letter;
+- отдельное RBAC-разрешение security.export.manage;
+- owner/security-admin могут безопасно requeue dead-letter без ручного SQL;
+- requeue записывается в audit_log;
+- экран аудита показывает состояние внешней доставки;
 - configuration fail-closed: URL только HTTPS, URL/secret задаются парой, secret минимум 32 символа.
 
 Физическая приёмка:
