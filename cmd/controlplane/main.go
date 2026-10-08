@@ -30,6 +30,7 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/securityexport"
 	"github.com/venomimonstro/vpnx3/internal/securityexport"
 	"github.com/venomimonstro/vpnx3/internal/store"
+	"github.com/venomimonstro/vpnx3/internal/systemmonitor"
 )
 
 func main() {
@@ -117,6 +118,7 @@ func main() {
 	go artifactcleaner.New(nodeStore,logger,artifactStorage,cfg.ArtifactRetentionDays).Run(monitorCtx)
 	go accountcleaner.New(nodeStore,logger).Run(monitorCtx)
 	go buildwatchdog.New(nodeStore,logger,2*time.Minute).Run(monitorCtx)
+	go systemmonitor.New(nodeStore,logger,cfg.BackupStatusFile).Run(monitorCtx)
 	if cfg.AlertWebhookURL!="" {
 		go alertnotifier.New(nodeStore,cfg.AlertWebhookURL,cfg.AlertWebhookSecret,logger).Run(monitorCtx)
 	}
