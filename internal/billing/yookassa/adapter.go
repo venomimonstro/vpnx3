@@ -56,7 +56,7 @@ func (a *Adapter) do(req *http.Request)(*http.Response,error){
 	if !a.breaker.Allow(now){
 		return nil,resilience.ErrDependencyUnavailable
 	}
-	resp,err:=a.do(req)
+	resp,err:=a.client.Do(req)
 	if err!=nil{
 		a.breaker.Failure(now)
 		return nil,fmt.Errorf("%w: YooKassa transport: %v",resilience.ErrDependencyUnavailable,err)
