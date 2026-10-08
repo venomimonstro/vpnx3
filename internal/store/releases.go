@@ -91,3 +91,31 @@ func (s *Store) releaseByID(ctx context.Context,id string)(Release,error){
 	if errors.Is(err,pgx.ErrNoRows){return Release{},ErrNotFound}
 	return r,err
 }
+
+
+type ReleasePublicationAttestation struct {
+	ID string `json:"id"`
+	ReleaseID string `json:"release_id"`
+	AdminUserID *string `json:"admin_user_id,omitempty"`
+	Environment string `json:"environment"`
+	GateStatus string `json:"gate_status"`
+	Blockers []byte `json:"-"`
+	Warnings []byte `json:"-"`
+	Signals []byte `json:"-"`
+	CheckedAt time.Time `json:"checked_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (s *Store) RecordReleaseAttestation(
+	ctx context.Context,
+	releaseID,adminID,environment,gateStatus string,
+	blockers,warnings,signals []byte,
+	checkedAt time.Time,
+) error {
+	_,err:=s.DB.Exec(ctx,`
+		INSERT INTO release_publication_attestations(
+		  release_id,admin_user_id,environment,gate_status,blockers,warnings,signals,checked_at
+		) VALUES($1,NULLIF($2,'')::uuid,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8)
+	`,releaseID,adminID,environment,gateStatus,string(blockers),string(warnings),string(signals),checkedAt)
+	return err
+}

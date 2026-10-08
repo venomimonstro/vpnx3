@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
 	"time"
@@ -92,6 +93,15 @@ func (s *Server) handlePublishRelease(w http.ResponseWriter,r *http.Request) {
 		s.internalError(w,r,err);return
 	}
 	admin,_:=adminFromContext(r.Context())
+	blockersRaw,_:=json.Marshal(gate.Blockers)
+	warningsRaw,_:=json.Marshal(gate.Warnings)
+	signalsRaw,_:=json.Marshal(gate.Signals)
+	if err:=s.store.RecordReleaseAttestation(
+		r.Context(),release.ID,admin.ID,s.cfg.Environment,gate.Status,
+		blockersRaw,warningsRaw,signalsRaw,gate.CheckedAt,
+	);err!=nil{
+		s.logger.Error("release attestation write failed","release_id",release.ID,"error",err)
+	}
 	_ = s.store.WriteAudit(r.Context(),"admin",admin.ID,"release.publish","release",release.ID,
 		requestIDFromContext(r.Context()),ipString(clientIP(r)),"success")
 	writeJSON(w,http.StatusOK,release)
@@ -129,6 +139,7 @@ type releaseGateResult struct {
 	Enforced bool `json:"enforced"`
 	Blockers []string `json:"blockers"`
 	Warnings []string `json:"warnings"`
+	Signals map[string]any `json:"signals"`
 	CheckedAt time.Time `json:"checked_at"`
 }
 
@@ -138,6 +149,7 @@ func (s *Server) releaseGate(ctx context.Context,releaseID string)(releaseGateRe
 		Enforced:s.cfg.Environment=="production",
 		Blockers:[]string{},
 		Warnings:[]string{},
+		Signals:map[string]any{},
 		CheckedAt:time.Now().UTC(),
 	}
 	add:=func(message string,critical bool){
@@ -147,6 +159,17 @@ func (s *Server) releaseGate(ctx context.Context,releaseID string)(releaseGateRe
 
 	data,err:=s.store.LaunchReadiness(ctx)
 	if err!=nil{return releaseGateResult{},err}
+	result.Signals=map[string]any{
+		"active_workers":data.ActiveWorkers,
+		"routable_workers":data.RoutableWorkers,
+		"active_ingresses":data.ActiveIngresses,
+		"active_probes":data.ActiveProbes,
+		"fresh_probe_nodes":data.FreshProbeNodes,
+		"fresh_data_plane_workers":data.FreshDataPlaneWorkers,
+		"audit_chain_valid":data.AuditChainValid,
+		"renewal_failed_24h":data.RenewalFailed24h,
+		"renewal_disabled_failures":data.RenewalDisabledFailures,
+	}
 
 	if data.LatestManifestAt==nil||time.Since(data.LatestManifestAt.UTC())>2*time.Hour{
 		add("Нет свежего подписанного Configuration Manifest",true)
