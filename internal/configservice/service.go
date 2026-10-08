@@ -45,7 +45,19 @@ type Envelope struct {
 	KeyID     string `json:"key_id"`
 }
 
-func (s *Service) Publish(ctx context.Context, adminID string) (Envelope,error) {
+const configPublishAdvisoryLock int64 = 0x56504e5833434647
+
+func (s *Service) Publish(ctx context.Context,adminID string)(Envelope,error){
+	var out Envelope
+	err:=s.store.WithAdvisoryLock(ctx,configPublishAdvisoryLock,func(lockCtx context.Context)error{
+		env,err:=s.publishUnlocked(lockCtx,adminID)
+		if err==nil{out=env}
+		return err
+	})
+	return out,err
+}
+
+func (s *Service) publishUnlocked(ctx context.Context, adminID string) (Envelope,error) {
 	version,err:=s.store.NextConfigVersion(ctx)
 	if err!=nil { return Envelope{},err }
 	ingresses,err:=s.store.ActiveConfigNodes(ctx,"ingress")

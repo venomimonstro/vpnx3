@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/httpapi"
 	"github.com/venomimonstro/vpnx3/internal/nodemonitor"
 	"github.com/venomimonstro/vpnx3/internal/loginthrottle"
+	"github.com/venomimonstro/vpnx3/internal/leadership"
 	"github.com/venomimonstro/vpnx3/internal/probemonitor"
 	"github.com/venomimonstro/vpnx3/internal/renewal"
 	"github.com/venomimonstro/vpnx3/internal/billing"
@@ -30,7 +32,6 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/securityexport"
 	"github.com/venomimonstro/vpnx3/internal/store"
 	"github.com/venomimonstro/vpnx3/internal/systemmonitor"
-	"github.com/venomimonstro/vpnx3/internal/trustbundle"
 	"github.com/venomimonstro/vpnx3/internal/trustbundle"
 )
 
@@ -100,30 +101,6 @@ func main() {
 		logger.Info("offline-root trust bundle verified","version",payload.Version,"expires_at",payload.ExpiresAt)
 	}
 
-	var runtimeTrustBundle *trustbundle.Envelope
-	if cfg.TrustBundleFile!="" {
-		env,payload,trustErr:=trustbundle.LoadFile(
-			cfg.TrustBundleFile,cfg.TrustRootPublicKey,0,time.Now().UTC(),
-		)
-		if trustErr!=nil{
-			logger.Error("trust bundle verification failed","error",trustErr)
-			os.Exit(1)
-		}
-		if trustErr=trustbundle.MatchesSigner(payload,"config",configSigner);trustErr!=nil{
-			logger.Error("config signer is not authorized by trust bundle","error",trustErr);os.Exit(1)
-		}
-		if trustErr=trustbundle.MatchesSigner(payload,"access",accessSigner);trustErr!=nil{
-			logger.Error("access signer is not authorized by trust bundle","error",trustErr);os.Exit(1)
-		}
-		if releaseSigner!=nil {
-			if trustErr=trustbundle.MatchesSigner(payload,"release",releaseSigner);trustErr!=nil{
-				logger.Error("release signer is not authorized by trust bundle","error",trustErr);os.Exit(1)
-			}
-		}
-		runtimeTrustBundle=&env
-		logger.Info("offline-root trust bundle loaded","version",payload.Version,"expires_at",payload.ExpiresAt)
-	}
-
 	var artifactStorage artifactstorage.Storage
 	switch cfg.ArtifactStorage {
 	case "local":
@@ -160,14 +137,27 @@ func main() {
 
 	monitorCtx, monitorCancel := context.WithCancel(context.Background())
 	defer monitorCancel()
-	go nodemonitor.New(nodeStore,logger,publisher.Trigger).Run(monitorCtx)
-	go loginthrottle.New(nodeStore,logger).Run(monitorCtx)
 	go publisher.Run(monitorCtx)
-	go probemonitor.New(nodeStore,logger,publisher.Trigger).Run(monitorCtx)
-	go artifactcleaner.New(nodeStore,logger,artifactStorage,cfg.ArtifactRetentionDays).Run(monitorCtx)
-	go accountcleaner.New(nodeStore,logger).Run(monitorCtx)
-	go buildwatchdog.New(nodeStore,logger,2*time.Minute).Run(monitorCtx)
-	go systemmonitor.New(nodeStore,logger,cfg.BackupStatusFile).Run(monitorCtx)
+
+	const singletonLeadershipLock int64 = 0x56504e5833434841
+	go leadership.New(db,logger,singletonLeadershipLock).Run(monitorCtx,func(leaderCtx context.Context){
+		var wg sync.WaitGroup
+		jobs:=[]func(context.Context){
+			func(ctx context.Context){nodemonitor.New(nodeStore,logger,publisher.Trigger).Run(ctx)},
+			func(ctx context.Context){loginthrottle.New(nodeStore,logger).Run(ctx)},
+			func(ctx context.Context){probemonitor.New(nodeStore,logger,publisher.Trigger).Run(ctx)},
+			func(ctx context.Context){artifactcleaner.New(nodeStore,logger,artifactStorage,cfg.ArtifactRetentionDays).Run(ctx)},
+			func(ctx context.Context){accountcleaner.New(nodeStore,logger).Run(ctx)},
+			func(ctx context.Context){buildwatchdog.New(nodeStore,logger,2*time.Minute).Run(ctx)},
+			func(ctx context.Context){systemmonitor.New(nodeStore,logger,cfg.BackupStatusFile).Run(ctx)},
+		}
+		for _,job:=range jobs{
+			wg.Add(1)
+			go func(run func(context.Context)){defer wg.Done();run(leaderCtx)}(job)
+		}
+		<-leaderCtx.Done()
+		wg.Wait()
+	})
 	if cfg.AlertWebhookURL!="" {
 		go alertnotifier.New(nodeStore,cfg.AlertWebhookURL,cfg.AlertWebhookSecret,logger).Run(monitorCtx)
 	}
