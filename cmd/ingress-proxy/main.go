@@ -12,25 +12,57 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/ingressproxy"
 	"github.com/venomimonstro/vpnx3/internal/proxylease"
 	"github.com/venomimonstro/vpnx3/internal/revocation"
+	"github.com/venomimonstro/vpnx3/internal/trustbundle"
 )
 
 func main(){
 	logger:=slog.New(slog.NewJSONHandler(os.Stdout,nil))
-	publicKey:=strings.TrimSpace(os.Getenv("VPNX3_ACCESS_PUBLIC_KEY"))
+	controlURL:=strings.TrimSpace(os.Getenv("VPNX3_CONTROL_URL"))
+	legacyPublicKey:=strings.TrimSpace(os.Getenv("VPNX3_ACCESS_PUBLIC_KEY"))
+	trustRoot:=strings.TrimSpace(os.Getenv("VPNX3_TRUST_ROOT_PUBLIC_KEY"))
 	cert:=strings.TrimSpace(os.Getenv("VPNX3_INGRESS_TLS_CERT"))
 	key:=strings.TrimSpace(os.Getenv("VPNX3_INGRESS_TLS_KEY"))
-	if publicKey==""||cert==""||key==""{
-		logger.Error("VPNX3_ACCESS_PUBLIC_KEY, VPNX3_INGRESS_TLS_CERT and VPNX3_INGRESS_TLS_KEY are required")
+	if cert==""||key==""{
+		logger.Error("VPNX3_INGRESS_TLS_CERT and VPNX3_INGRESS_TLS_KEY are required")
 		os.Exit(1)
 	}
-	verifier,err:=proxylease.NewVerifier(publicKey)
-	if err!=nil{logger.Error("proxy verifier failed","error",err);os.Exit(1)}
+
+	var verifier *proxylease.Verifier
+	var revVerifier *revocation.Verifier
+	var trustClient *trustbundle.Client
+	var trustPayload trustbundle.Payload
+	var err error
+	if trustRoot!=""{
+		sources:=ingressTrustSources(controlURL,strings.TrimSpace(os.Getenv("VPNX3_TRUST_SOURCES")))
+		trustCtx,trustCancel:=context.WithTimeout(context.Background(),10*time.Second)
+		trustClient,trustPayload,err=trustbundle.Bootstrap(
+			trustCtx,sources,trustRoot,
+			env("VPNX3_TRUST_STATE_PATH","/var/lib/vpnx3/ingress-trust-bundle.json"),
+			time.Now().UTC(),
+		)
+		trustCancel()
+		if err!=nil{logger.Error("runtime trust bootstrap failed","error",err);os.Exit(1)}
+		keys:=trustbundle.VerificationKeys(trustPayload,"access")
+		verifier,err=proxylease.NewVerifierSet(keys)
+		if err==nil{err=verifier.ReplaceKeysUntil(keys,trustPayload.ExpiresAt)}
+		if err!=nil{logger.Error("proxy trust keyring initialization failed","error",err);os.Exit(1)}
+		revVerifier,err=revocation.NewVerifierSet(keys)
+		if err==nil{err=revVerifier.ReplaceKeysUntil(keys,trustPayload.ExpiresAt)}
+		if err!=nil{logger.Error("revocation trust keyring initialization failed","error",err);os.Exit(1)}
+		logger.Info("root-signed ingress keyring loaded","trust_version",trustPayload.Version,"expires_at",trustPayload.ExpiresAt)
+	}else{
+		if legacyPublicKey==""{logger.Error("VPNX3_TRUST_ROOT_PUBLIC_KEY or VPNX3_ACCESS_PUBLIC_KEY is required");os.Exit(1)}
+		verifier,err=proxylease.NewVerifier(legacyPublicKey)
+		if err!=nil{logger.Error("proxy verifier failed","error",err);os.Exit(1)}
+		revVerifier,err=revocation.NewVerifier(legacyPublicKey)
+		if err!=nil{logger.Error("revocation verifier failed","error",err);os.Exit(1)}
+		logger.Warn("legacy single access key mode enabled; configure offline-root trust bundle")
+	}
 	srv:=ingressproxy.New(env("VPNX3_INGRESS_ADDR",":8443"),logger,verifier)
 	revocationGrace:=durationEnv("VPNX3_REVOCATION_LKG_GRACE",30*time.Minute)
 	if revocationGrace<0{revocationGrace=0}
 	if revocationGrace>2*time.Hour{revocationGrace=2*time.Hour}
 
-	controlURL:=strings.TrimSpace(os.Getenv("VPNX3_CONTROL_URL"))
 	sources:=make([]string,0)
 	if controlURL!=""{sources=append(sources,controlURL)}
 	for _,source:=range strings.FieldsFunc(
@@ -43,8 +75,6 @@ func main(){
 		logger.Error("revocation sources are required for browser ingress")
 		os.Exit(1)
 	}
-	revVerifier,err:=revocation.NewVerifier(publicKey)
-	if err!=nil{logger.Error("revocation verifier failed","error",err);os.Exit(1)}
 	revClient,err:=revocation.NewClient(
 		sources,revVerifier,env("VPNX3_REVOCATION_STATE_PATH","/var/lib/vpnx3/ingress-revocations.json"),
 	)
@@ -79,6 +109,21 @@ func main(){
 
 	runCtx,runCancel:=context.WithCancel(context.Background())
 	defer runCancel()
+
+	if trustClient!=nil{
+		go trustbundle.Poll(
+			runCtx,trustClient,5*time.Minute,
+			func(payload trustbundle.Payload)error{
+				keys:=trustbundle.VerificationKeys(payload,"access")
+				if err:=verifier.ReplaceKeysUntil(keys,payload.ExpiresAt);err!=nil{return err}
+				if err:=revVerifier.ReplaceKeysUntil(keys,payload.ExpiresAt);err!=nil{return err}
+				logger.Info("runtime ingress keyring refreshed","trust_version",payload.Version,"expires_at",payload.ExpiresAt)
+				return nil
+			},
+			func(err error){logger.Warn("runtime ingress trust refresh failed","error",err)},
+		)
+	}
+
 	interval:=durationEnv("VPNX3_REVOCATION_POLL_INTERVAL",time.Minute)
 	if interval<15*time.Second{interval=15*time.Second}
 	go func(){
@@ -127,4 +172,22 @@ func durationEnv(key string,fallback time.Duration)time.Duration{
 	if raw==""{return fallback}
 	if value,err:=time.ParseDuration(raw);err==nil{return value}
 	return fallback
+}
+
+
+func ingressTrustSources(controlURL,raw string)[]string{
+	out:=make([]string,0,8)
+	seen:=map[string]struct{}{}
+	add:=func(value string){
+		value=strings.TrimSpace(value)
+		if value==""{return}
+		if _,ok:=seen[value];ok{return}
+		seen[value]=struct{}{}
+		out=append(out,value)
+	}
+	add(controlURL)
+	for _,part:=range strings.FieldsFunc(raw,func(r rune)bool{return r==','||r==';'}){
+		add(part)
+	}
+	return out
 }
