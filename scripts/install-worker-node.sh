@@ -96,6 +96,136 @@ fi
 
 [[ "$CONTROL_URL" == https://* ]] || { echo "Control URL должен использовать HTTPS." >&2; exit 2; }
 
+# Block CR/LF and invalid host metadata before passing values into root-owned env files.
+for var in NODE_NAME COUNTRY PROVIDER PUBLIC_IP WG_ENDPOINT ENROLLMENT_TOKEN NODE_AGENT_URL WORKER_URL; do
+  value="${!var}"
+  [[ "$value" != *
+
+if [[ -z "$PUBLIC_IP" ]]; then
+  endpoint_host="${WG_ENDPOINT%:*}"
+  if [[ "$endpoint_host" =~ ^[0-9a-fA-F:.]+$ ]]; then
+    PUBLIC_IP="$endpoint_host"
+  fi
+fi
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+worker_installer="$script_dir/install-worker.sh"
+node_installer="$script_dir/install-node.sh"
+
+[[ -x "$worker_installer" || -f "$worker_installer" ]] || { echo "Не найден $worker_installer" >&2; exit 1; }
+[[ -x "$node_installer" || -f "$node_installer" ]] || { echo "Не найден $node_installer" >&2; exit 1; }
+
+worker_args=(
+  --binary-url "$WORKER_URL"
+  --sha256 "$WORKER_SHA256"
+  --control-url "$CONTROL_URL"
+  --wg-interface "$WG_INTERFACE"
+  --wg-endpoint "$WG_ENDPOINT"
+  --wg-pool "$WG_POOL"
+  --wg-address "$WG_ADDRESS"
+  --wg-listen-port "$WG_LISTEN_PORT"
+  --auth-addr "$AUTH_ADDR"
+  --revocation-sources "$REVOCATION_SOURCES"
+  --install-deps "$INSTALL_DEPS"
+)
+[[ -n "$ACCESS_PUBLIC_KEY" ]] && worker_args+=(--access-public-key "$ACCESS_PUBLIC_KEY")
+[[ -n "$TRUST_ROOT_PUBLIC_KEY" ]] && worker_args+=(--trust-root-public-key "$TRUST_ROOT_PUBLIC_KEY")
+[[ -n "$TRUST_SOURCES" ]] && worker_args+=(--trust-sources "$TRUST_SOURCES")
+[[ -n "$PUBLIC_INTERFACE" ]] && worker_args+=(--public-interface "$PUBLIC_INTERFACE")
+
+echo "==> Этап 1/2: WireGuard Data Plane"
+bash "$worker_installer" "${worker_args[@]}"
+
+echo "==> Этап 2/2: Node Agent + enrollment"
+node_args=(
+  --control "$CONTROL_URL"
+  --token "$ENROLLMENT_TOKEN"
+  --name "$NODE_NAME"
+  --country "$COUNTRY"
+  --provider "$PROVIDER"
+  --binary-url "$NODE_AGENT_URL"
+  --sha256 "$NODE_AGENT_SHA256"
+  --capacity "$CAPACITY"
+  --status-url "http://$AUTH_ADDR/internal/v1/status"
+)
+[[ -n "$PUBLIC_IP" ]] && node_args+=(--public-ip "$PUBLIC_IP")
+
+bash "$node_installer" "${node_args[@]}"
+
+echo
+echo "Worker-нода установлена."
+echo "Control Plane должен увидеть её после enrollment/heartbeat."
+echo "Дальше: testing -> draft -> active и публикация endpoint."
+\\n'* && "$value" != *
+
+if [[ -z "$PUBLIC_IP" ]]; then
+  endpoint_host="${WG_ENDPOINT%:*}"
+  if [[ "$endpoint_host" =~ ^[0-9a-fA-F:.]+$ ]]; then
+    PUBLIC_IP="$endpoint_host"
+  fi
+fi
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+worker_installer="$script_dir/install-worker.sh"
+node_installer="$script_dir/install-node.sh"
+
+[[ -x "$worker_installer" || -f "$worker_installer" ]] || { echo "Не найден $worker_installer" >&2; exit 1; }
+[[ -x "$node_installer" || -f "$node_installer" ]] || { echo "Не найден $node_installer" >&2; exit 1; }
+
+worker_args=(
+  --binary-url "$WORKER_URL"
+  --sha256 "$WORKER_SHA256"
+  --control-url "$CONTROL_URL"
+  --wg-interface "$WG_INTERFACE"
+  --wg-endpoint "$WG_ENDPOINT"
+  --wg-pool "$WG_POOL"
+  --wg-address "$WG_ADDRESS"
+  --wg-listen-port "$WG_LISTEN_PORT"
+  --auth-addr "$AUTH_ADDR"
+  --revocation-sources "$REVOCATION_SOURCES"
+  --install-deps "$INSTALL_DEPS"
+)
+[[ -n "$ACCESS_PUBLIC_KEY" ]] && worker_args+=(--access-public-key "$ACCESS_PUBLIC_KEY")
+[[ -n "$TRUST_ROOT_PUBLIC_KEY" ]] && worker_args+=(--trust-root-public-key "$TRUST_ROOT_PUBLIC_KEY")
+[[ -n "$TRUST_SOURCES" ]] && worker_args+=(--trust-sources "$TRUST_SOURCES")
+[[ -n "$PUBLIC_INTERFACE" ]] && worker_args+=(--public-interface "$PUBLIC_INTERFACE")
+
+echo "==> Этап 1/2: WireGuard Data Plane"
+bash "$worker_installer" "${worker_args[@]}"
+
+echo "==> Этап 2/2: Node Agent + enrollment"
+node_args=(
+  --control "$CONTROL_URL"
+  --token "$ENROLLMENT_TOKEN"
+  --name "$NODE_NAME"
+  --country "$COUNTRY"
+  --provider "$PROVIDER"
+  --binary-url "$NODE_AGENT_URL"
+  --sha256 "$NODE_AGENT_SHA256"
+  --capacity "$CAPACITY"
+  --status-url "$AUTH_ADDR/internal/v1/status"
+)
+[[ -n "$PUBLIC_IP" ]] && node_args+=(--public-ip "$PUBLIC_IP")
+
+bash "$node_installer" "${node_args[@]}"
+
+echo
+echo "Worker-нода установлена."
+echo "Control Plane должен увидеть её после enrollment/heartbeat."
+echo "Дальше: testing -> draft -> active и публикация endpoint."
+\\r'* ]] || { echo "Newline in $var" >&2; exit 2; }
+done
+[[ "$COUNTRY" =~ ^[A-Z]{2}$ ]] || { echo "country must be ISO 3166-1 alpha-2." >&2; exit 2; }
+[[ "$NODE_NAME" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || { echo "Invalid node name." >&2; exit 2; }
+[[ "$PROVIDER" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || { echo "Invalid provider." >&2; exit 2; }
+[[ "$NODE_AGENT_URL" == https://* && "$WORKER_URL" == https://* ]] || { echo "Binary URLs require HTTPS." >&2; exit 2; }
+[[ "$NODE_AGENT_SHA256" =~ ^[a-fA-F0-9]{64}$ && "$WORKER_SHA256" =~ ^[a-fA-F0-9]{64}$ ]] || {
+  echo "Invalid binary SHA-256." >&2; exit 2;
+}
+[[ "$AUTH_ADDR" =~ ^127[.]0[.]0[.]1:[0-9]{2,5}$ ]] || {
+  echo "Worker status/API must bind to 127.0.0.1:<port>." >&2; exit 2;
+}
+
 if [[ -z "$PUBLIC_IP" ]]; then
   endpoint_host="${WG_ENDPOINT%:*}"
   if [[ "$endpoint_host" =~ ^[0-9a-fA-F:.]+$ ]]; then
