@@ -19,6 +19,12 @@ type Store struct {
 
 func New(db *pgxpool.Pool) *Store { return &Store{DB: db} }
 
+type AdminSession struct {
+	Admin Admin
+	SourceIP net.IP
+	UserAgent string
+}
+
 type Admin struct {
 	ID           string
 	Email        string
@@ -43,25 +49,33 @@ func (s *Store) AdminByEmail(ctx context.Context, email string) (Admin, error) {
 	return a, err
 }
 
-func (s *Store) AdminBySessionHash(ctx context.Context, hash []byte) (Admin, error) {
-	var a Admin
-	err := s.DB.QueryRow(ctx, `
-		SELECT u.id::text, u.email, COALESCE(u.password_hash,''), u.status
+func (s *Store) AdminSessionByHash(ctx context.Context, hash []byte) (AdminSession,error) {
+	var session AdminSession
+	var sourceIP *string
+	err:=s.DB.QueryRow(ctx,`
+		SELECT u.id::text,u.email,COALESCE(u.password_hash,''),u.status,
+		       host(s.source_ip),COALESCE(s.user_agent,'')
 		FROM admin_sessions s
 		JOIN admin_users u ON u.id=s.admin_user_id
 		WHERE s.token_hash=$1
 		  AND s.revoked_at IS NULL
-		  AND s.expires_at > now()
+		  AND s.expires_at>now()
 		  AND u.status='active'
-	`, hash).Scan(&a.ID, &a.Email, &a.PasswordHash, &a.Status)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Admin{}, ErrNotFound
-	}
-	if err != nil {
-		return Admin{}, fmt.Errorf("admin by session: %w", err)
-	}
-	a.Permissions, err = s.adminPermissions(ctx, a.ID)
-	return a, err
+	`,hash).Scan(
+		&session.Admin.ID,&session.Admin.Email,&session.Admin.PasswordHash,&session.Admin.Status,
+		&sourceIP,&session.UserAgent,
+	)
+	if errors.Is(err,pgx.ErrNoRows){return AdminSession{},ErrNotFound}
+	if err!=nil{return AdminSession{},fmt.Errorf("admin by session: %w",err)}
+	if sourceIP!=nil{session.SourceIP=net.ParseIP(*sourceIP)}
+	session.Admin.Permissions,err=s.adminPermissions(ctx,session.Admin.ID)
+	if err!=nil{return AdminSession{},err}
+	return session,nil
+}
+
+func (s *Store) AdminBySessionHash(ctx context.Context,hash []byte)(Admin,error){
+	session,err:=s.AdminSessionByHash(ctx,hash)
+	return session.Admin,err
 }
 
 func (s *Store) adminPermissions(ctx context.Context, adminID string) ([]string, error) {

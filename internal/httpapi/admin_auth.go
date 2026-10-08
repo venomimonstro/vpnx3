@@ -94,11 +94,18 @@ func (s *Server) requireAdmin(next http.Handler) http.Handler {
 		token := bearerToken(r)
 		if token == "" { writeError(w, http.StatusUnauthorized, "unauthorized"); return }
 		hash := adminauth.HashSessionToken(token)
-		admin, err := s.store.AdminBySessionHash(r.Context(), hash)
-		if errors.Is(err, store.ErrNotFound) { writeError(w, http.StatusUnauthorized, "unauthorized"); return }
-		if err != nil { s.internalError(w, r, err); return }
-		s.store.TouchAdminSession(r.Context(), hash)
-		ctx := context.WithValue(r.Context(), currentAdminKey, admin)
+		session,err:=s.store.AdminSessionByHash(r.Context(),hash)
+		if errors.Is(err,store.ErrNotFound){writeError(w,http.StatusUnauthorized,"unauthorized");return}
+		if err!=nil{s.internalError(w,r,err);return}
+		if !adminSessionContextMatches(s.cfg.AdminSessionBinding,session.SourceIP,session.UserAgent,clientIP(r),r.UserAgent()){
+			_ = s.store.RevokeAdminSession(r.Context(),hash)
+			_ = s.store.WriteAudit(r.Context(),"admin",session.Admin.ID,"admin.session.context_mismatch","admin_session","",
+				requestIDFromContext(r.Context()),ipString(clientIP(r)),"revoked")
+			writeError(w,http.StatusUnauthorized,"session_context_changed")
+			return
+		}
+		s.store.TouchAdminSession(r.Context(),hash)
+		ctx:=context.WithValue(r.Context(),currentAdminKey,session.Admin)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -149,4 +156,26 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 
 func writeError(w http.ResponseWriter, status int, code string) {
 	writeJSON(w, status, map[string]string{"error": code})
+}
+
+
+func adminSessionContextMatches(mode string,storedIP net.IP,storedUA string,currentIP net.IP,currentUA string) bool {
+	if mode=="off"{return true}
+	if strings.TrimSpace(storedUA)!=strings.TrimSpace(currentUA){return false}
+	if mode=="user-agent"{return true}
+	if mode!="network"{return false}
+	if storedIP==nil||currentIP==nil{return false}
+	return sameAdminNetwork(storedIP,currentIP)
+}
+
+func sameAdminNetwork(a,b net.IP) bool {
+	if av4:=a.To4();av4!=nil{
+		bv4:=b.To4()
+		return bv4!=nil&&av4[0]==bv4[0]&&av4[1]==bv4[1]&&av4[2]==bv4[2]
+	}
+	av6:=a.To16()
+	bv6:=b.To16()
+	if av6==nil||bv6==nil||b.To4()!=nil{return false}
+	for i:=0;i<8;i++{if av6[i]!=bv6[i]{return false}}
+	return true
 }

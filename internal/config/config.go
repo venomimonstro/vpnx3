@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ type Config struct {
 	WriteTimeout           time.Duration
 	IdleTimeout            time.Duration
 	AdminSessionTTL        time.Duration
+	AdminSessionBinding    string
 	BootstrapOwnerEmail    string
 	BootstrapOwnerPassword string
 	ConfigSigningKey       string
@@ -55,7 +57,7 @@ type Config struct {
 
 func Load() (Config, error) {
 	cfg := Config{
-		Environment:            env("VPNX3_ENV", "development"),
+		Environment:            strings.ToLower(env("VPNX3_ENV", "development")),
 		HTTPAddr:               env("VPNX3_HTTP_ADDR", ":8080"),
 		DatabaseURL:            os.Getenv("VPNX3_DATABASE_URL"),
 		LogLevel:               parseLogLevel(env("VPNX3_LOG_LEVEL", "info")),
@@ -63,6 +65,7 @@ func Load() (Config, error) {
 		WriteTimeout:           duration("VPNX3_HTTP_WRITE_TIMEOUT", 15*time.Second),
 		IdleTimeout:            duration("VPNX3_HTTP_IDLE_TIMEOUT", 60*time.Second),
 		AdminSessionTTL:        duration("VPNX3_ADMIN_SESSION_TTL", 12*time.Hour),
+		AdminSessionBinding:    strings.ToLower(env("VPNX3_ADMIN_SESSION_BINDING","user-agent")),
 		BootstrapOwnerEmail:    strings.TrimSpace(os.Getenv("VPNX3_BOOTSTRAP_OWNER_EMAIL")),
 		BootstrapOwnerPassword: os.Getenv("VPNX3_BOOTSTRAP_OWNER_PASSWORD"),
 		ConfigSigningKey:       strings.TrimSpace(os.Getenv("VPNX3_CONFIG_SIGNING_KEY")),
@@ -120,6 +123,24 @@ func Load() (Config, error) {
 	}
 	if cfg.AdminSessionTTL < 15*time.Minute || cfg.AdminSessionTTL > 7*24*time.Hour {
 		return Config{}, fmt.Errorf("VPNX3_ADMIN_SESSION_TTL must be between 15m and 168h")
+	}
+	if cfg.AdminSessionBinding!="off" && cfg.AdminSessionBinding!="user-agent" && cfg.AdminSessionBinding!="network" {
+		return Config{},fmt.Errorf("VPNX3_ADMIN_SESSION_BINDING must be off, user-agent or network")
+	}
+	if cfg.Environment=="production" {
+		if cfg.LogLevel==slog.LevelDebug {
+			return Config{},fmt.Errorf("VPNX3_LOG_LEVEL=debug is not allowed in production")
+		}
+		if cfg.AdminSessionTTL>24*time.Hour {
+			return Config{},fmt.Errorf("production admin session TTL must not exceed 24h")
+		}
+		if cfg.AdminSessionBinding=="off" {
+			return Config{},fmt.Errorf("production admin session binding must not be off")
+		}
+		if cfg.ReleaseSigningKey=="" {
+			return Config{},fmt.Errorf("VPNX3_RELEASE_SIGNING_KEY must be set in production")
+		}
+		if err:=validateProductionDatabaseTransport(cfg.DatabaseURL);err!=nil{return Config{},err}
 	}
 	if cfg.WireGuardMTU < 576 || cfg.WireGuardMTU > 1500 {
 		return Config{}, fmt.Errorf("VPNX3_WG_CLIENT_MTU must be between 576 and 1500")
@@ -245,4 +266,22 @@ func validateSigningSeeds(configSeed,accessSeed,releaseSeed string) error {
 		decoded=append(decoded,seed)
 	}
 	return nil
+}
+
+
+func validateProductionDatabaseTransport(raw string) error {
+	u,err:=url.Parse(strings.TrimSpace(raw))
+	if err!=nil||u.Scheme==""||u.Hostname()==""{
+		return fmt.Errorf("VPNX3_DATABASE_URL must be a valid postgres URL in production")
+	}
+	host:=strings.ToLower(u.Hostname())
+	local:=host=="localhost"||host=="127.0.0.1"||host=="::1"
+	if local{return nil}
+	mode:=strings.ToLower(strings.TrimSpace(u.Query().Get("sslmode")))
+	switch mode{
+	case "require","verify-ca","verify-full":
+		return nil
+	default:
+		return fmt.Errorf("remote production PostgreSQL requires sslmode=require, verify-ca or verify-full")
+	}
 }

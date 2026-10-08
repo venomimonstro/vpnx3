@@ -42,3 +42,19 @@ func TestValidateSigningSeedsRejectsPaddedBase64(t *testing.T){
 		t.Fatal("expected raw base64url validation error")
 	}
 }
+
+
+func TestValidateProductionDatabaseTransport(t *testing.T){
+	cases:=[]struct{url string;ok bool}{
+		{"postgres://u:p@127.0.0.1:5432/db?sslmode=disable",true},
+		{"postgres://u:p@db.example:5432/db?sslmode=require",true},
+		{"postgres://u:p@db.example:5432/db?sslmode=verify-full",true},
+		{"postgres://u:p@db.example:5432/db?sslmode=disable",false},
+		{"postgres://u:p@db.example:5432/db",false},
+	}
+	for _,tc:=range cases{
+		err:=validateProductionDatabaseTransport(tc.url)
+		if tc.ok&&err!=nil{t.Errorf("%s unexpected error: %v",tc.url,err)}
+		if !tc.ok&&err==nil{t.Errorf("%s expected error",tc.url)}
+	}
+}
