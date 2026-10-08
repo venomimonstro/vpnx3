@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"runtime/debug"
+	"sync/atomic"
 	"time"
 )
 
@@ -136,4 +137,50 @@ func ipInNetworks(ip net.IP,networks []*net.IPNet) bool {
 		if network.Contains(ip){return true}
 	}
 	return false
+}
+
+
+type admissionController struct{
+	limit int64
+	slots chan struct{}
+	current atomic.Int64
+	peak atomic.Int64
+	rejected atomic.Int64
+}
+
+func newAdmissionController(limit int)*admissionController{
+	if limit<1{limit=1}
+	return &admissionController{limit:int64(limit),slots:make(chan struct{},limit)}
+}
+
+func (a *admissionController) wrap(next http.Handler)http.Handler{
+	return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+		// Load-balancer health checks must stay observable even when the business
+		// request pool is saturated.
+		if r.URL.Path=="/health/live"||r.URL.Path=="/health/ready"{
+			next.ServeHTTP(w,r)
+			return
+		}
+		select{
+		case a.slots<-struct{}{}:
+			current:=a.current.Add(1)
+			for{
+				peak:=a.peak.Load()
+				if current<=peak||a.peak.CompareAndSwap(peak,current){break}
+			}
+			defer func(){a.current.Add(-1);<-a.slots}()
+			next.ServeHTTP(w,r)
+		default:
+			a.rejected.Add(1)
+			w.Header().Set("Retry-After","1")
+			writeJSON(w,http.StatusServiceUnavailable,map[string]any{
+				"error":"server_overloaded",
+				"retry_after_seconds":1,
+			})
+		}
+	})
+}
+
+func (a *admissionController) snapshot()(current,limit,peak,rejected int64){
+	return a.current.Load(),a.limit,a.peak.Load(),a.rejected.Load()
 }

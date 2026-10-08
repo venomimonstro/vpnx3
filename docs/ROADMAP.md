@@ -1046,3 +1046,30 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 6. убедиться, что новые запросы не идут на draining instance;
 7. проверить завершение уже начатых запросов в пределах shutdown timeout;
 8. повторить rolling deploy по одной реплике без клиентских 5xx.
+
+
+## Спринт 32 — HTTP backpressure и защита Control Plane от перегрузки: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: всплеск клиентских/служебных запросов не должен бесконтрольно накапливать goroutine и добивать PostgreSQL/Control Plane.
+
+Реализовано:
+
+- bounded admission controller для всех бизнес/API запросов;
+- configurable `VPNX3_HTTP_MAX_INFLIGHT`;
+- при насыщении новые запросы получают быстрый HTTP 503 `server_overloaded` + `Retry-After: 1`;
+- health/live и health/ready не занимают admission slots и остаются наблюдаемыми при перегрузке;
+- счётчики current/peak/rejected_total;
+- admission utilization доступен в launch readiness;
+- warning при 80% и 95% текущей загрузки;
+- configurable `VPNX3_HTTP_MAX_HEADER_KB`;
+- HTTP server ограничивает максимальный размер заголовков;
+- параметры валидируются при старте.
+
+Физическая приёмка:
+
+1. прогнать bounded load выше лимита inflight;
+2. подтвердить быстрые 503 вместо роста latency/timeouts;
+3. убедиться, что health endpoints продолжают отвечать;
+4. проверить, что после снятия нагрузки admission slots полностью освобождаются;
+5. подобрать лимит относительно pgx pool/CPU/RAM по фактической инфраструктуре;
+6. повторить тест на двух Control Plane репликах за балансировщиком.

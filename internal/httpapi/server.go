@@ -37,6 +37,7 @@ type Server struct {
 	artifacts artifactstorage.Storage
 	onConfigChange func()
 	draining atomic.Bool
+	admission *admissionController
 }
 
 func NewServer(
@@ -57,6 +58,7 @@ func NewServer(
 	}
 	s:=&Server{
 		logger:logger,db:db,store:store.New(db),cfg:cfg,
+		admission:newAdmissionController(cfg.HTTPMaxInflight),
 		configService:configservice.New(
 			store.New(db),
 			configSigner,
@@ -171,8 +173,12 @@ func NewServer(
 	mux.Handle("POST /api/v1/nodes/{id}/quarantine",s.requireAdmin(requirePermission("nodes.manage",s.handleNodeTransition("quarantined"))))
 	mux.Handle("POST /api/v1/nodes/{id}/retire",s.requireAdmin(requirePermission("nodes.manage",s.handleNodeTransition("retired"))))
 
-	handler:=trustedProxyContext(cfg.TrustedProxyCIDRs,requestContext(securityHeaders(requestLog(logger,recoverer(logger,mux)))))
-	s.http=&http.Server{Addr:cfg.HTTPAddr,Handler:handler,ReadTimeout:cfg.ReadTimeout,WriteTimeout:cfg.WriteTimeout,IdleTimeout:cfg.IdleTimeout,ReadHeaderTimeout:5*time.Second}
+	handler:=trustedProxyContext(cfg.TrustedProxyCIDRs,requestContext(securityHeaders(requestLog(logger,recoverer(logger,s.admission.wrap(mux))))))
+	s.http=&http.Server{
+		Addr:cfg.HTTPAddr,Handler:handler,
+		ReadTimeout:cfg.ReadTimeout,WriteTimeout:cfg.WriteTimeout,IdleTimeout:cfg.IdleTimeout,
+		ReadHeaderTimeout:5*time.Second,MaxHeaderBytes:cfg.HTTPMaxHeaderBytes,
+	}
 	return s
 }
 

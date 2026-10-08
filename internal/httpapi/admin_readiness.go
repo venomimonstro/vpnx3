@@ -359,6 +359,26 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 		add("browser_ingress","ok","Browser ingress","Есть active HTTPS ingress.")
 	}
 
+	admissionSignals:=map[string]any{}
+	if s.admission!=nil{
+		current,limit,peak,rejected:=s.admission.snapshot()
+		admissionSignals["current"]=current
+		admissionSignals["limit"]=limit
+		admissionSignals["peak"]=peak
+		admissionSignals["rejected_total"]=rejected
+		utilization:=float64(0)
+		if limit>0{utilization=float64(current)/float64(limit)*100}
+		admissionSignals["utilization_percent"]=utilization
+		switch{
+		case utilization>=95:
+			add("http_admission","warning","HTTP backpressure","Текущая загрузка достигла 95% лимита одновременных запросов.")
+		case utilization>=80:
+			add("http_admission","warning","HTTP backpressure","Текущая загрузка превышает 80% лимита одновременных запросов.")
+		default:
+			add("http_admission","ok","HTTP backpressure","Admission control работает в допустимом диапазоне.")
+		}
+	}
+
 	overall:="ok"
 	for _,check:=range checks{
 		if check.Status=="failed"{overall="failed";break}
@@ -404,6 +424,7 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			"control_plane_leader_heartbeat_at":data.LeadershipHeartbeatAt,
 			"control_plane_leader_acquired_at":data.LeadershipAcquiredAt,
 			"control_plane_leadership_transitions":data.LeadershipTransitions,
+			"http_admission":admissionSignals,
 		},
 	})
 }
