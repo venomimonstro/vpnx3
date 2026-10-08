@@ -849,3 +849,41 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 4. быстро менять tunnel key более 8 раз в минуту и подтвердить worker 429;
 5. проверить очистку rate buckets и восстановление после следующей минуты;
 6. прогнать нагрузочный тест на нескольких Control Plane репликах.
+
+
+## Спринт 26 — независимый off-site DR backup: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: потеря основного Control Plane, локального backup-диска или аккаунта основного провайдера не должна уничтожать единственную пригодную копию состояния.
+
+Реализовано:
+
+- отдельный `vpnx3-backup-replicator`;
+- источник — только уже зашифрованный `.tar.age`;
+- локальный SHA-256 проверяется до отправки;
+- отдельный S3-compatible endpoint/bucket/credentials, независимый от artifact storage;
+- timestamped object key считается неизменяемым;
+- существующий object с тем же именем и другим hash вызывает fail-closed;
+- после upload объект скачивается обратно и повторно проверяется SHA-256;
+- off-site success-marker создаётся только после download-back verification;
+- отдельный signed Build Factory target `backup_replicator_linux_amd64`;
+- hardened systemd oneshot + timer;
+- launch readiness отдельно контролирует локальный и off-site backup;
+- устранено повторное объявление `trustConfigured` в production config validation.
+
+Эксплуатационные требования:
+
+1. off-site bucket должен находиться в другом account/provider относительно Control Plane;
+2. provider-side Object Lock/versioning рекомендуется включить;
+3. recovery identity age не хранится рядом с ciphertext backup;
+4. реальный restore drill выполняется минимум ежемесячно;
+5. потеря локальной копии при наличии off-site должна регулярно имитироваться в staging.
+
+Физическая приёмка:
+
+1. создать локальный encrypted backup;
+2. дождаться off-site replication;
+3. удалить локальный bundle на staging;
+4. скачать только remote ciphertext;
+5. расшифровать recovery identity из независимого escrow;
+6. выполнить restore drill в пустую PostgreSQL;
+7. подтвердить readiness восстановленного Control Plane.
