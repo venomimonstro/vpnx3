@@ -1129,3 +1129,31 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 4. убедиться, что connection возвращается в pool после ошибки;
 5. прогнать обычные billing/config/admin flows и проверить отсутствие ложных timeout;
 6. подобрать production thresholds по slow-query telemetry.
+
+
+## Спринт 35 — приватная HTTP-наблюдаемость: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: оператор должен видеть HTTP-деградацию без сбора содержимого запросов и истории пользовательских IP.
+
+Реализовано:
+
+- in-memory агрегированные HTTP metrics на каждой Control Plane реплике;
+- active/total requests;
+- разбиение 2xx/3xx/4xx/5xx;
+- суммарный response bytes;
+- latency buckets <50/<100/<250/<500/<1000/<3000/>=3000 мс;
+- отдельный защищённый admin endpoint `/api/v1/admin/http-metrics`;
+- экран «HTTP метрики» в административной панели;
+- метрики явно помечены как per-replica/process-lifetime;
+- request log больше не сохраняет `remote_addr`, чтобы не создавать лишний постоянный IP-след;
+- не собираются request body, query string, URL посещаемых ресурсов или VPN-трафик;
+- ResponseWriter wrapper поддерживает `Unwrap` для совместимости с стандартным HTTP control path.
+
+Физическая приёмка:
+
+1. прогнать обычный клиентский трафик и проверить счётчики;
+2. вызвать контролируемые 4xx/5xx;
+3. прогнать bounded load и проверить latency buckets;
+4. сравнить показатели двух Control Plane реплик;
+5. убедиться, что логи не содержат клиентский IP/body/query;
+6. подключить внешний log/metrics collector только при необходимости агрегирования между репликами.

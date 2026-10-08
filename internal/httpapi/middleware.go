@@ -51,7 +51,6 @@ func requestLog(logger *slog.Logger, next http.Handler) http.Handler {
 			"request_id", requestIDFromContext(r.Context()),
 			"method", r.Method,
 			"path", r.URL.Path,
-			"remote_addr", r.RemoteAddr,
 			"duration_ms", time.Since(started).Milliseconds(),
 		)
 	})

@@ -38,6 +38,7 @@ type Server struct {
 	onConfigChange func()
 	draining atomic.Bool
 	admission *admissionController
+	httpMetrics *httpMetrics
 }
 
 func NewServer(
@@ -59,6 +60,7 @@ func NewServer(
 	s:=&Server{
 		logger:logger,db:db,store:store.New(db),cfg:cfg,
 		admission:newAdmissionController(cfg.HTTPMaxInflight),
+		httpMetrics:&httpMetrics{},
 		configService:configservice.New(
 			store.New(db),
 			configSigner,
@@ -118,6 +120,7 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/webhooks/yookassa",s.handleYooKassaWebhook)
 	mux.Handle("GET /api/v1/admin/me",s.requireAdmin(http.HandlerFunc(s.handleAdminMe)))
 	mux.Handle("GET /api/v1/admin/dashboard",s.requireAdmin(requirePermission("analytics.read",http.HandlerFunc(s.handleDashboard))))
+	mux.Handle("GET /api/v1/admin/http-metrics",s.requireAdmin(requirePermission("analytics.read",http.HandlerFunc(s.handleHTTPMetrics))))
 	mux.Handle("GET /api/v1/admin/issues",s.requireAdmin(requirePermission("analytics.read",http.HandlerFunc(s.handleOperationalIssues))))
 	mux.Handle("GET /api/v1/admin/readiness",s.requireAdmin(requirePermission("analytics.read",http.HandlerFunc(s.handleLaunchReadiness))))
 	mux.Handle("GET /api/v1/admin/network-risk",s.requireAdmin(requirePermission("analytics.read",http.HandlerFunc(s.handleNetworkRisk))))
@@ -173,7 +176,7 @@ func NewServer(
 	mux.Handle("POST /api/v1/nodes/{id}/quarantine",s.requireAdmin(requirePermission("nodes.manage",s.handleNodeTransition("quarantined"))))
 	mux.Handle("POST /api/v1/nodes/{id}/retire",s.requireAdmin(requirePermission("nodes.manage",s.handleNodeTransition("retired"))))
 
-	handler:=trustedProxyContext(cfg.TrustedProxyCIDRs,requestContext(securityHeaders(requestLog(logger,recoverer(logger,s.admission.wrap(mux))))))
+	handler:=trustedProxyContext(cfg.TrustedProxyCIDRs,requestContext(securityHeaders(requestLog(logger,recoverer(logger,httpMetricsMiddleware(s.httpMetrics,s.admission.wrap(mux)))))))
 	s.http=&http.Server{
 		Addr:cfg.HTTPAddr,Handler:handler,
 		ReadTimeout:cfg.ReadTimeout,WriteTimeout:cfg.WriteTimeout,IdleTimeout:cfg.IdleTimeout,

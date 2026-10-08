@@ -93,6 +93,7 @@ const sections=[
   ["networkrisk","Риск сети","analytics.read"],
   ["fleet","Здоровье нод","analytics.read"],
   ["readiness","Готовность запуска","analytics.read"],
+  ["httpmetrics","HTTP метрики","analytics.read"],
   ["issues","Требует внимания","analytics.read"],
   ["nodes","Сеть","nodes.read"],
   ["probes","Наблюдение","nodes.read"],
@@ -176,6 +177,28 @@ async function issues(){
   ]);
   return sectionFrame("Требует внимания",$("div",{class:"stack"},
     summary,table(["Время","Уровень","Контур","Проблема","Описание","Ресурс"],rows)
+  ));
+}
+
+async function httpMetrics(){
+  const d=await api("/api/v1/admin/http-metrics");
+  const m=d.since_process_start||{};
+  const rows=[
+    ["Активные запросы",m.active||0],
+    ["Всего запросов",m.total||0],
+    ["2xx",m.status_2xx||0],
+    ["3xx",m.status_3xx||0],
+    ["4xx",m.status_4xx||0],
+    ["5xx",m.status_5xx||0],
+    ["Отдано байт",m.bytes_out||0],
+  ];
+  const latency=m.latency_buckets_ms||{};
+  return sectionFrame("HTTP метрики",$("div",{class:"stack"},
+    $("div",{class:"card"},$("h2",{},"Текущая реплика"),table(["Показатель","Значение"],rows)),
+    $("div",{class:"card"},$("h2",{},"Задержка от старта процесса"),table(["Корзина, мс","Запросы"],
+      Object.entries(latency).map(([k,v])=>[k,v])
+    )),
+    $("p",{class:"muted"},"Метрики агрегированы в памяти текущей Control Plane реплики и не содержат body, query-параметры или историю IP.")
   ));
 }
 
