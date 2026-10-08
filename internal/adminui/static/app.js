@@ -838,7 +838,10 @@ async function createIncident(){
 async function releases(){
   const d=await api("/api/v1/admin/releases?limit=100");
   const toolbar=$("div",{class:"toolbar"});
-  if(can("releases.manage")) toolbar.append($("button",{class:"btn primary",onclick:createRelease},"Новый релиз"));
+  if(can("releases.manage")) toolbar.append(
+    $("button",{class:"btn primary",onclick:createRelease},"Новый релиз"),
+    $("button",{class:"btn",onclick:releasePolicyDialog},"Политика версий")
+  );
   const rows=d.releases.map(r=>[
     r.version,badge(r.status),$("span",{class:"mono"},r.source_commit),dt(r.created_at),r.notes||"—",
     $("div",{class:"row-actions"},
@@ -846,6 +849,73 @@ async function releases(){
     )
   ]);
   return sectionFrame("Релизы",$("div",{},toolbar,table(["Версия","Статус","Commit","Создан","Заметки","Сборки"],rows)));
+}
+
+async function releasePolicyDialog(){
+  const targets=[
+    ["android_apk","Android APK"],
+    ["ios_ipa","iOS IPA"],
+    ["chrome_zip","Chrome"],
+    ["firefox_zip","Firefox"]
+  ];
+  const target=$("select",{},...targets.map(([value,label])=>$("option",{value},label)));
+  const minimum=$("input",{placeholder:"например 1.4.0"});
+  const recommended=$("input",{placeholder:"например 1.5.0"});
+  const rollout=$("input",{type:"number",min:"0",max:"100",value:"100"});
+  const blocked=$("input",{placeholder:"1.2.0, 1.3.1"});
+  const message=$("textarea",{rows:"4",maxlength:"500",placeholder:"Сообщение пользователю"});
+  const status=$("div",{class:"muted"},"Загрузка политики…");
+
+  async function load(){
+    try{
+      const p=await api("/api/v1/admin/release-policy?target="+encodeURIComponent(target.value));
+      minimum.value=p.minimum_supported_version||"";
+      recommended.value=p.recommended_version||"";
+      rollout.value=String(p.rollout_percent??100);
+      blocked.value=(p.blocked_versions||[]).join(", ");
+      message.value=p.message||"";
+      status.textContent="Обновлено: "+dt(p.updated_at);
+    }catch(e){status.textContent=e.message}
+  }
+  target.addEventListener("change",load);
+
+  const body=$("div",{},
+    field("Клиент",target),
+    field("Минимально поддерживаемая версия",minimum),
+    field("Рекомендуемая версия",recommended),
+    field("Раскатка, % устройств",rollout),
+    field("Заблокированные версии через запятую",blocked),
+    field("Сообщение пользователю",message),
+    $("p",{class:"muted"},
+      "Заблокированные и версии ниже минимума всегда требуют обновление. Процент раскатки влияет только на рекомендуемую версию."
+    ),
+    status
+  );
+
+  const dialog=modal("Политика версий",body,[
+    {label:"Закрыть",onclick:d=>d.close()},
+    {label:"Сохранить",primary:true,onclick:async()=>{
+      const percent=Number(rollout.value);
+      if(!Number.isInteger(percent)||percent<0||percent>100){
+        alert("Процент раскатки должен быть от 0 до 100");return
+      }
+      try{
+        const p=await api("/api/v1/admin/release-policy",{
+          method:"PUT",
+          body:JSON.stringify({
+            target:target.value,
+            minimum_supported_version:minimum.value.trim(),
+            recommended_version:recommended.value.trim(),
+            rollout_percent:percent,
+            blocked_versions:blocked.value.split(",").map(x=>x.trim()).filter(Boolean),
+            message:message.value.trim()
+          })
+        });
+        status.textContent="Сохранено: "+dt(p.updated_at);
+      }catch(e){alert(e.message)}
+    }}
+  ]);
+  await load();
 }
 async function createRelease(){
   const version=$("input",{value:"0.1.0",placeholder:"0.1.0"});
