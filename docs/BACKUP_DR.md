@@ -72,3 +72,26 @@ bash scripts/restore-drill.sh
 - restore drill минимум раз в месяц и после изменения схемы backup;
 - успешность backup/restore фиксировать в операционном журнале;
 - recovery ключ `age` не хранить на том же сервере, где лежат backup bundles.
+
+
+## systemd timer
+
+Production-хост может запускать backup автоматически:
+
+```bash
+sudo install -d -m 0755 /usr/local/lib/vpnx3
+sudo install -m 0755 scripts/backup-control-state.sh /usr/local/lib/vpnx3/backup-control-state.sh
+sudo install -m 0600 /secure/vpnx3-backup.env /secure/vpnx3-backup.env
+
+sudo bash scripts/install-backup-timer.sh \
+  --env-file /secure/vpnx3-backup.env \
+  --status-file /var/lib/vpnx3/backup/last-success
+```
+
+Control Plane должен видеть тот же marker:
+
+```bash
+VPNX3_BACKUP_STATUS_FILE=/var/lib/vpnx3/backup/last-success
+```
+
+Marker обновляется только после успешного завершения backup script. Launch readiness помечает backup как failed, если последний успех старше 36 часов.

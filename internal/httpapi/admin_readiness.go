@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/venomimonstro/vpnx3/internal/artifactstorage"
@@ -19,7 +20,7 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 	data,err:=s.store.LaunchReadiness(r.Context())
 	if err!=nil{s.internalError(w,r,err);return}
 
-	checks:=make([]readinessCheck,0,10)
+	checks:=make([]readinessCheck,0,16)
 	add:=func(code,status,title,detail string){
 		checks=append(checks,readinessCheck{Code:code,Status:status,Title:title,Detail:detail})
 	}
@@ -99,6 +100,22 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 		}
 	}
 	add("artifact_storage",storageStatus,"Хранилище артефактов",storageDetail)
+
+	if s.cfg.BackupStatusFile=="" {
+		add("backup","warning","Резервное копирование","Backup health-marker не настроен.")
+	}else if stat,err:=os.Stat(s.cfg.BackupStatusFile);err!=nil {
+		add("backup","failed","Резервное копирование","Нет подтверждения успешной резервной копии.")
+	}else{
+		age:=time.Since(stat.ModTime().UTC())
+		switch{
+		case age<=30*time.Hour:
+			add("backup","ok","Резервное копирование","Есть свежая успешная резервная копия.")
+		case age<=36*time.Hour:
+			add("backup","warning","Резервное копирование","Последний успешный backup старше 30 часов.")
+		default:
+			add("backup","failed","Резервное копирование","Последний успешный backup старше 36 часов.")
+		}
+	}
 
 	if data.ActiveIngresses<1{
 		add("browser_ingress","warning","Browser ingress","Нет active ingress; браузерные расширения не смогут подключаться.")

@@ -48,6 +48,7 @@ type Config struct {
 	ArtifactTransferTimeout time.Duration
 	TrustedProxyCIDRs      []string
 	RegistrationRateKey    string
+	BackupStatusFile       string
 }
 
 func Load() (Config, error) {
@@ -87,6 +88,7 @@ func Load() (Config, error) {
 		ArtifactTransferTimeout: duration("VPNX3_ARTIFACT_TRANSFER_TIMEOUT",30*time.Minute),
 		TrustedProxyCIDRs:      csvEnv("VPNX3_TRUSTED_PROXY_CIDRS"),
 		RegistrationRateKey:    strings.TrimSpace(os.Getenv("VPNX3_REGISTRATION_RATE_KEY")),
+		BackupStatusFile:       strings.TrimSpace(os.Getenv("VPNX3_BACKUP_STATUS_FILE")),
 	}
 
 	if strings.TrimSpace(cfg.HTTPAddr) == "" {
@@ -145,6 +147,9 @@ func Load() (Config, error) {
 	configuredYooKassa:=cfg.YooKassaShopID!="" || cfg.YooKassaSecretKey!="" || cfg.YooKassaReturnURL!=""
 	if configuredYooKassa && (cfg.YooKassaShopID=="" || cfg.YooKassaSecretKey=="" || !strings.HasPrefix(cfg.YooKassaReturnURL,"https://")) {
 		return Config{}, fmt.Errorf("YooKassa configuration requires shop id, secret key and https return URL")
+	}
+	if cfg.BackupStatusFile!="" && !strings.HasPrefix(cfg.BackupStatusFile,"/") {
+		return Config{}, fmt.Errorf("VPNX3_BACKUP_STATUS_FILE must be an absolute path")
 	}
 	for _, cidr := range cfg.TrustedProxyCIDRs {
 		if _,_,err:=net.ParseCIDR(cidr);err!=nil {
