@@ -19,7 +19,15 @@ done
 [[ -f "$ENV_FILE" ]] || { echo "Env file missing" >&2; exit 1; }
 mode="$(stat -c "%a" "$ENV_FILE")"
 [[ "$mode" == "400" || "$mode" == "600" ]] || { echo "Env file must be 0400/0600" >&2; exit 1; }
-install -d -m 0700 /var/lib/vpnx3/wal-s3tmp /var/lib/vpnx3/backup
+set -a
+source "$ENV_FILE"
+set +a
+: "${VPNX3_WAL_ARCHIVE_DIR:?VPNX3_WAL_ARCHIVE_DIR is required}"
+: "${VPNX3_WAL_OFFSITE_STATUS_FILE:?VPNX3_WAL_OFFSITE_STATUS_FILE is required}"
+[[ "$VPNX3_WAL_ARCHIVE_DIR" == /* && "$VPNX3_WAL_OFFSITE_STATUS_FILE" == /* ]] || {
+  echo "WAL archive/status paths must be absolute" >&2; exit 2;
+}
+install -d -m 0700 "$VPNX3_WAL_ARCHIVE_DIR" /var/lib/vpnx3/wal-s3tmp "$(dirname "$VPNX3_WAL_OFFSITE_STATUS_FILE")"
 
 cat >/etc/systemd/system/vpnx3-wal-offsite.service <<EOF
 [Unit]
@@ -46,7 +54,7 @@ ProtectKernelLogs=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
-ReadWritePaths=/var/lib/vpnx3/wal-s3tmp /var/lib/vpnx3/backup
+ReadWritePaths=$VPNX3_WAL_ARCHIVE_DIR /var/lib/vpnx3/wal-s3tmp $(dirname "$VPNX3_WAL_OFFSITE_STATUS_FILE")
 EOF
 
 cat >/etc/systemd/system/vpnx3-wal-offsite.timer <<EOF

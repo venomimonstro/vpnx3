@@ -43,6 +43,8 @@ func run()error{
 	files,err:=completed(source)
 	if err!=nil{return err}
 	if len(files)==0{return fmt.Errorf("no completed encrypted WAL files")}
+	latestLocal:=filepath.Base(files[len(files)-1])
+	totalFiles:=len(files)
 	if len(files)>maxFiles{files=files[:maxFiles]}
 
 	ctx,cancel:=context.WithTimeout(context.Background(),20*time.Minute)
@@ -79,7 +81,9 @@ func run()error{
 			_ = os.Remove(side)
 		}
 	}
-	return writeStatus(status,newest,verified)
+	remaining:=totalFiles-verified
+	if remaining<0{remaining=0}
+	return writeStatus(status,latestLocal,newest,verified,remaining)
 }
 
 func completed(dir string)([]string,error){
@@ -114,10 +118,13 @@ func hashReader(r io.Reader)(string,error){
 	h:=sha256.New();_,err:=io.Copy(h,r);if err!=nil{return "",err}
 	return hex.EncodeToString(h.Sum(nil)),nil
 }
-func writeStatus(path,newest string,count int)error{
+func writeStatus(path,latestLocal,newestVerified string,count,backlog int)error{
 	if err:=os.MkdirAll(filepath.Dir(path),0700);err!=nil{return err}
 	tmp:=path+".tmp"
-	body:=fmt.Sprintf("verified_at=%s\nnewest=%s\nverified_files=%d\n",time.Now().UTC().Format(time.RFC3339),newest,count)
+	body:=fmt.Sprintf(
+		"verified_at=%s\nlatest_local=%s\nnewest_verified=%s\nverified_files=%d\nbacklog_files=%d\n",
+		time.Now().UTC().Format(time.RFC3339),latestLocal,newestVerified,count,backlog,
+	)
 	if err:=os.WriteFile(tmp,[]byte(body),0600);err!=nil{return err}
 	return os.Rename(tmp,path)
 }
