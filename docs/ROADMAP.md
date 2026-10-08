@@ -980,3 +980,40 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 6. поднять Control Plane приватно;
 7. добиться launch readiness без failed;
 8. только после этого переключать клиентские endpoints.
+
+
+## Спринт 30 — PostgreSQL HA visibility и standby lag: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: HA нескольких Control Plane не должен скрывать единичную точку отказа PostgreSQL.
+
+Реализовано:
+
+- отдельный optional `VPNX3_DATABASE_REPLICA_URL`;
+- отдельный малый health-pool, не используемый бизнес-транзакциями;
+- strict режим `VPNX3_DATABASE_HA_REQUIRED=true`;
+- в production strict mode отсутствие standby блокирует запуск;
+- readiness проверяет, что основной endpoint действительно writer (`pg_is_in_recovery=false`);
+- readiness проверяет, что replica endpoint действительно standby;
+- лаг измеряется по WAL LSN в байтах, а не по возрасту последней транзакции;
+- до 64 МБ lag — ok;
+- 64–512 МБ — warning;
+- более 512 МБ — failed;
+- optional replica health-pool сохраняется после transient startup failure и может восстановиться без рестарта Control Plane;
+- production transport validation применяется и к replica URL.
+
+Не автоматизируется внутри приложения:
+
+- promotion PostgreSQL standby;
+- STONITH/fencing старого writer;
+- provider-specific failover.
+
+Эти операции должны выполнять managed PostgreSQL, Patroni/repmgr или другой специализированный HA-контур.
+
+Физическая приёмка:
+
+1. развернуть writer + physical standby на независимых хостах/зонах;
+2. включить strict HA;
+3. создать WAL lag и проверить warning/failed пороги;
+4. остановить standby и подтвердить failed readiness;
+5. выполнить контролируемый switchover средствами DB HA-системы;
+6. проверить переподключение Control Plane, advisory leadership и очереди после смены writer.
