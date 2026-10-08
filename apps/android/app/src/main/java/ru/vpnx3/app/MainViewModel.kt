@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import ru.vpnx3.app.data.ClientAccountStatus
 import ru.vpnx3.app.data.ClientPlan
 import ru.vpnx3.app.data.PreparedConnection
+import ru.vpnx3.app.data.ReferralStatus
 import ru.vpnx3.app.data.VpnRepository
 import ru.vpnx3.app.update.UpdateRepository
 import ru.vpnx3.app.security.PersonalKeyInfo
@@ -37,7 +38,10 @@ data class MainUiState(
     val pairingCodeExpiresAt: String? = null,
     val pairingBusy: Boolean = false,
     val personalKeyEnabled: Boolean = false,
-    val personalKeyInfo: PersonalKeyInfo? = null
+    val personalKeyInfo: PersonalKeyInfo? = null,
+    val referral: ReferralStatus? = null,
+    val referralBusy: Boolean = false,
+    val referralMessage: String? = null
 )
 
 private data class InitResult(
@@ -47,7 +51,8 @@ private data class InitResult(
     val connected: Boolean,
     val account: ClientAccountStatus?,
     val personalKeyEnabled: Boolean,
-    val personalKeyInfo: PersonalKeyInfo?
+    val personalKeyInfo: PersonalKeyInfo?,
+    val referral: ReferralStatus?
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -78,7 +83,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val account=runCatching { repository.accountStatus() }.getOrNull()
                 val personalEnabled=repository.personalKeyEnabled()
                 val personalInfo=repository.personalKeyInfo()
-                InitResult(registration,update,plans,connected,account,personalEnabled,personalInfo)
+                val referral=runCatching { repository.referralStatus() }.getOrNull()
+                InitResult(registration,update,plans,connected,account,personalEnabled,personalInfo,referral)
             }.onSuccess { result ->
                 val registration=result.registration
                 mutableState.value = MainUiState(
@@ -89,7 +95,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     plans = result.plans,
                     account = result.account,
                     personalKeyEnabled = result.personalKeyEnabled,
-                    personalKeyInfo = result.personalKeyInfo
+                    personalKeyInfo = result.personalKeyInfo,
+                    referral = result.referral
                 )
             }.onFailure {
                 mutableState.value = MainUiState(
@@ -198,6 +205,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .onFailure {
                     mutableState.value=mutableState.value.copy(error="Не удалось удалить личный ключ")
                 }
+        }
+    }
+
+    fun refreshReferral() {
+        if(!mutableState.value.registered) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.referralStatus() }
+                .onSuccess { mutableState.value=mutableState.value.copy(referral=it) }
+        }
+    }
+
+    fun ensureReferralCode() {
+        if(mutableState.value.referralBusy) return
+        mutableState.value=mutableState.value.copy(referralBusy=true,referralMessage=null,error=null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                repository.referralCode()
+                repository.referralStatus()
+            }.onSuccess {
+                mutableState.value=mutableState.value.copy(referralBusy=false,referral=it)
+            }.onFailure {
+                mutableState.value=mutableState.value.copy(
+                    referralBusy=false,error="Не удалось создать код приглашения"
+                )
+            }
+        }
+    }
+
+    fun claimReferralCode(code:String) {
+        val normalized=code.trim().uppercase()
+        if(normalized.isEmpty()||mutableState.value.referralBusy) return
+        mutableState.value=mutableState.value.copy(referralBusy=true,referralMessage=null,error=null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val claim=repository.claimReferralCode(normalized)
+                val status=repository.referralStatus()
+                claim to status
+            }.onSuccess { pair ->
+                val claim=pair.first
+                mutableState.value=mutableState.value.copy(
+                    referralBusy=false,
+                    referral=pair.second,
+                    referralMessage=if(claim.rewardApplied)
+                        "Бонус +${claim.rewardDays} дней начислен"
+                    else
+                        "Бонус ${claim.rewardDays} дней сохранён и будет применён к доступу"
+                )
+                refreshAccount()
+            }.onFailure {
+                mutableState.value=mutableState.value.copy(
+                    referralBusy=false,
+                    error="Не удалось применить код. Проверьте код и условия акции."
+                )
+            }
         }
     }
 
