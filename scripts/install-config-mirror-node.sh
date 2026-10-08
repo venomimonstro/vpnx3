@@ -11,8 +11,7 @@ NODE_AGENT_URL=""
 NODE_AGENT_SHA256=""
 MIRROR_URL=""
 MIRROR_SHA256=""
-CONFIG_PUBLIC_KEY=""
-ACCESS_PUBLIC_KEY=""
+TRUST_ROOT_PUBLIC_KEY=""
 TLS_CERT=""
 TLS_KEY=""
 LISTEN_ADDR=":8443"
@@ -32,8 +31,7 @@ cat <<'EOF'
     --node-agent-sha256 SHA256 \
     --mirror-url https://.../vpnx3-config-mirror \
     --mirror-sha256 SHA256 \
-    --config-public-key BASE64URL_ED25519_PUBLIC_KEY \
-    --access-public-key BASE64URL_ED25519_PUBLIC_KEY \
+    --trust-root-public-key BASE64URL_ED25519_PUBLIC_KEY \
     --tls-cert /root/tls/fullchain.pem \
     --tls-key /root/tls/privkey.pem \
     [--listen-addr :8443]
@@ -57,8 +55,7 @@ while [[ $# -gt 0 ]]; do
     --node-agent-sha256) NODE_AGENT_SHA256="${2:-}"; shift 2;;
     --mirror-url) MIRROR_URL="${2:-}"; shift 2;;
     --mirror-sha256) MIRROR_SHA256="${2:-}"; shift 2;;
-    --config-public-key) CONFIG_PUBLIC_KEY="${2:-}"; shift 2;;
-    --access-public-key) ACCESS_PUBLIC_KEY="${2:-}"; shift 2;;
+    --trust-root-public-key) TRUST_ROOT_PUBLIC_KEY="${2:-}"; shift 2;;
     --tls-cert) TLS_CERT="${2:-}"; shift 2;;
     --tls-key) TLS_KEY="${2:-}"; shift 2;;
     --listen-addr) LISTEN_ADDR="${2:-}"; shift 2;;
@@ -71,7 +68,7 @@ done
 required=(
   CONTROL_URL ENROLLMENT_TOKEN NODE_NAME COUNTRY PROVIDER
   NODE_AGENT_URL NODE_AGENT_SHA256 MIRROR_URL MIRROR_SHA256
-  CONFIG_PUBLIC_KEY ACCESS_PUBLIC_KEY TLS_CERT TLS_KEY
+  TRUST_ROOT_PUBLIC_KEY TLS_CERT TLS_KEY
 )
 for name in "${required[@]}";do
   [[ -n "${!name}" ]] || { echo "Не задан обязательный параметр: $name" >&2; exit 2; }
@@ -101,11 +98,11 @@ install -m 0640 -o root -g vpnx3-mirror "$TLS_KEY" /etc/vpnx3-mirror/tls.key
 
 cat >/etc/vpnx3-mirror.env <<EOF
 VPNX3_CONTROL_URL=$CONTROL_URL
-VPNX3_CONFIG_PUBLIC_KEY=$CONFIG_PUBLIC_KEY
-VPNX3_ACCESS_PUBLIC_KEY=$ACCESS_PUBLIC_KEY
+VPNX3_TRUST_ROOT_PUBLIC_KEY=$TRUST_ROOT_PUBLIC_KEY
 VPNX3_MIRROR_ADDR=$LISTEN_ADDR
 VPNX3_MIRROR_CACHE=/var/lib/vpnx3/config-mirror/latest.json
 VPNX3_MIRROR_REVOCATION_CACHE=/var/lib/vpnx3/config-mirror/revocations.json
+VPNX3_MIRROR_TRUST_CACHE=/var/lib/vpnx3/config-mirror/trust-bundle.json
 VPNX3_MIRROR_TLS_CERT=/etc/vpnx3-mirror/tls.crt
 VPNX3_MIRROR_TLS_KEY=/etc/vpnx3-mirror/tls.key
 EOF
