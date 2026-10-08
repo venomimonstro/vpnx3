@@ -13,16 +13,49 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/ipam"
 	"github.com/venomimonstro/vpnx3/internal/revocation"
 	"github.com/venomimonstro/vpnx3/internal/sessions"
+	"github.com/venomimonstro/vpnx3/internal/trustbundle"
 	"github.com/venomimonstro/vpnx3/internal/workerauth"
 	wgadapter "github.com/venomimonstro/vpnx3/network/transport/wireguard"
 )
 
 func main() {
 	logger:=slog.New(slog.NewJSONHandler(os.Stdout,nil))
-	publicKey:=strings.TrimSpace(os.Getenv("VPNX3_ACCESS_PUBLIC_KEY"))
-	if publicKey=="" { logger.Error("VPNX3_ACCESS_PUBLIC_KEY is required"); os.Exit(1) }
-	verifier,err:=accesslease.NewVerifier(publicKey)
-	if err!=nil { logger.Error("access verifier initialization failed","error",err); os.Exit(1) }
+	controlURL:=strings.TrimSpace(os.Getenv("VPNX3_CONTROL_URL"))
+	legacyPublicKey:=strings.TrimSpace(os.Getenv("VPNX3_ACCESS_PUBLIC_KEY"))
+	trustRoot:=strings.TrimSpace(os.Getenv("VPNX3_TRUST_ROOT_PUBLIC_KEY"))
+
+	var verifier *accesslease.Verifier
+	var revVerifier *revocation.Verifier
+	var trustClient *trustbundle.Client
+	var trustPayload trustbundle.Payload
+	var err error
+
+	if trustRoot!=""{
+		sources:=trustSources(controlURL,strings.TrimSpace(os.Getenv("VPNX3_TRUST_SOURCES")))
+		trustCtx,trustCancel:=context.WithTimeout(context.Background(),10*time.Second)
+		trustClient,trustPayload,err=trustbundle.Bootstrap(
+			trustCtx,sources,trustRoot,
+			env("VPNX3_TRUST_STATE_PATH","/var/lib/vpnx3-worker/trust-bundle.json"),
+			time.Now().UTC(),
+		)
+		trustCancel()
+		if err!=nil{logger.Error("runtime trust bootstrap failed","error",err);os.Exit(1)}
+		keys:=trustbundle.VerificationKeys(trustPayload,"access")
+		verifier,err=accesslease.NewVerifierSet(keys)
+		if err==nil{err=verifier.ReplaceKeysUntil(keys,trustPayload.ExpiresAt)}
+		if err!=nil{logger.Error("access trust keyring initialization failed","error",err);os.Exit(1)}
+		revVerifier,err=revocation.NewVerifierSet(keys)
+		if err==nil{err=revVerifier.ReplaceKeysUntil(keys,trustPayload.ExpiresAt)}
+		if err!=nil{logger.Error("revocation trust keyring initialization failed","error",err);os.Exit(1)}
+		logger.Info("root-signed access keyring loaded","trust_version",trustPayload.Version,"expires_at",trustPayload.ExpiresAt)
+	}else{
+		if legacyPublicKey==""{logger.Error("VPNX3_TRUST_ROOT_PUBLIC_KEY or VPNX3_ACCESS_PUBLIC_KEY is required");os.Exit(1)}
+		verifier,err=accesslease.NewVerifier(legacyPublicKey)
+		if err!=nil{logger.Error("access verifier initialization failed","error",err);os.Exit(1)}
+		revVerifier,err=revocation.NewVerifier(legacyPublicKey)
+		if err!=nil{logger.Error("revocation verifier initialization failed","error",err);os.Exit(1)}
+		logger.Warn("legacy single access key mode enabled; configure offline-root trust bundle")
+	}
 
 	pool,err:=ipam.New(env("VPNX3_WG_POOL","10.66.0.0/24"))
 	if err!=nil { logger.Error("IP pool initialization failed","error",err); os.Exit(1) }
@@ -62,7 +95,20 @@ func main() {
 	defer runCancel()
 	go srv.RunSweeper(runCtx)
 
-	controlURL:=strings.TrimSpace(os.Getenv("VPNX3_CONTROL_URL"))
+	if trustClient!=nil{
+		go trustbundle.Poll(
+			runCtx,trustClient,5*time.Minute,
+			func(payload trustbundle.Payload)error{
+				keys:=trustbundle.VerificationKeys(payload,"access")
+				if err:=verifier.ReplaceKeysUntil(keys,payload.ExpiresAt);err!=nil{return err}
+				if err:=revVerifier.ReplaceKeysUntil(keys,payload.ExpiresAt);err!=nil{return err}
+				logger.Info("runtime access keyring refreshed","trust_version",payload.Version,"expires_at",payload.ExpiresAt)
+				return nil
+			},
+			func(err error){logger.Warn("runtime trust refresh failed","error",err)},
+		)
+	}
+
 	revocationSources:=make([]string,0)
 	if controlURL!=""{revocationSources=append(revocationSources,controlURL)}
 	for _,source:=range strings.FieldsFunc(
@@ -72,11 +118,6 @@ func main() {
 		if value:=strings.TrimSpace(source);value!=""{revocationSources=append(revocationSources,value)}
 	}
 	if len(revocationSources)>0{
-		revVerifier,revErr:=revocation.NewVerifier(publicKey)
-		if revErr!=nil{
-			logger.Error("revocation verifier initialization failed","error",revErr)
-			os.Exit(1)
-		}
 		revClient,revErr:=revocation.NewClient(
 			revocationSources,
 			revVerifier,
@@ -192,4 +233,22 @@ func durationEnv(key string,fallback time.Duration) time.Duration{
 	if raw==""{return fallback}
 	if value,err:=time.ParseDuration(raw);err==nil{return value}
 	return fallback
+}
+
+
+func trustSources(controlURL,raw string)[]string{
+	out:=make([]string,0,8)
+	seen:=map[string]struct{}{}
+	add:=func(value string){
+		value=strings.TrimSpace(value)
+		if value==""{return}
+		if _,ok:=seen[value];ok{return}
+		seen[value]=struct{}{}
+		out=append(out,value)
+	}
+	add(controlURL)
+	for _,part:=range strings.FieldsFunc(raw,func(r rune)bool{return r==','||r==';'}){
+		add(part)
+	}
+	return out
 }
