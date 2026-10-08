@@ -55,6 +55,8 @@ type Config struct {
 	BackupStatusFile       string
 	SecurityExportURL      string
 	SecurityExportSigningKey string
+	AlertWebhookURL         string
+	AlertWebhookSecret      string
 }
 
 func Load() (Config, error) {
@@ -100,6 +102,8 @@ func Load() (Config, error) {
 		SecurityExportSecret:   strings.TrimSpace(os.Getenv("VPNX3_SECURITY_EXPORT_SECRET")),
 		SecurityExportURL:      strings.TrimSpace(os.Getenv("VPNX3_SECURITY_EXPORT_URL")),
 		SecurityExportSigningKey: strings.TrimSpace(os.Getenv("VPNX3_SECURITY_EXPORT_SIGNING_KEY")),
+		AlertWebhookURL:         strings.TrimSpace(os.Getenv("VPNX3_ALERT_WEBHOOK_URL")),
+		AlertWebhookSecret:      strings.TrimSpace(os.Getenv("VPNX3_ALERT_WEBHOOK_SECRET")),
 	}
 
 	if strings.TrimSpace(cfg.HTTPAddr) == "" {
@@ -210,6 +214,16 @@ func Load() (Config, error) {
 		}
 		if cfg.SecurityExportSigningKey==cfg.ConfigSigningKey||cfg.SecurityExportSigningKey==cfg.AccessSigningKey||cfg.SecurityExportSigningKey==cfg.ReleaseSigningKey {
 			return Config{},fmt.Errorf("security export signing key must be independent")
+		}
+	}
+	alertConfigured:=cfg.AlertWebhookURL!=""||cfg.AlertWebhookSecret!=""
+	if alertConfigured{
+		if cfg.AlertWebhookURL==""||len(cfg.AlertWebhookSecret)<32{
+			return Config{},fmt.Errorf("incident alert webhook requires https URL and secret of at least 32 characters")
+		}
+		u,err:=url.Parse(cfg.AlertWebhookURL)
+		if err!=nil||u.Scheme!="https"||u.Hostname()==""||u.User!=nil{
+			return Config{},fmt.Errorf("VPNX3_ALERT_WEBHOOK_URL must be a credential-free https URL")
 		}
 	}
 	for _, cidr := range cfg.TrustedProxyCIDRs {

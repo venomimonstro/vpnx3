@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/venomimonstro/vpnx3/internal/accountcleaner"
+	"github.com/venomimonstro/vpnx3/internal/alertnotifier"
 	"github.com/venomimonstro/vpnx3/internal/artifactcleaner"
 	"github.com/venomimonstro/vpnx3/internal/artifactstorage"
 	"github.com/venomimonstro/vpnx3/internal/bootstrap"
@@ -116,6 +117,9 @@ func main() {
 	go artifactcleaner.New(nodeStore,logger,artifactStorage,cfg.ArtifactRetentionDays).Run(monitorCtx)
 	go accountcleaner.New(nodeStore,logger).Run(monitorCtx)
 	go buildwatchdog.New(nodeStore,logger,2*time.Minute).Run(monitorCtx)
+	if cfg.AlertWebhookURL!="" {
+		go alertnotifier.New(nodeStore,cfg.AlertWebhookURL,cfg.AlertWebhookSecret,logger).Run(monitorCtx)
+	}
 	if cfg.SecurityExportURL!="" {
 		go securityexport.New(nodeStore,cfg.SecurityExportURL,cfg.SecurityExportSecret,logger).Run(monitorCtx)
 	}

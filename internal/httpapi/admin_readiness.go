@@ -168,6 +168,32 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 		}
 	}
 
+	alertSignals:=map[string]any{"configured":s.cfg.AlertWebhookURL!=""}
+	if s.cfg.AlertWebhookURL==""{
+		add("incident_notifications","warning","Операционные уведомления","HTTPS webhook для инцидентов не настроен.")
+	}else{
+		pending,oldest,maxAttempts,alertErr:=s.store.IncidentNotificationHealth(r.Context())
+		if alertErr!=nil{
+			add("incident_notifications","failed","Операционные уведомления","Не удалось проверить очередь уведомлений.")
+		}else{
+			alertSignals["pending"]=pending
+			alertSignals["oldest_pending_at"]=oldest
+			alertSignals["max_attempts"]=maxAttempts
+			if oldest==nil{
+				add("incident_notifications","ok","Операционные уведомления","Очередь уведомлений пуста.")
+			}else{
+				age:=time.Since(oldest.UTC())
+				if age>2*time.Hour{
+					add("incident_notifications","failed","Операционные уведомления","Уведомление не доставляется больше 2 часов.")
+				}else if age>15*time.Minute||maxAttempts>=8{
+					add("incident_notifications","warning","Операционные уведомления","Есть задержка или повторные ошибки доставки.")
+				}else{
+					add("incident_notifications","ok","Операционные уведомления","Очередь находится в допустимом окне.")
+				}
+			}
+		}
+	}
+
 	if data.ActiveIngresses<1{
 		add("browser_ingress","warning","Browser ingress","Нет active ingress; браузерные расширения не смогут подключаться.")
 	}else{
@@ -205,6 +231,7 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			"security_export_oldest_pending_at":data.SecurityExportOldestPendingAt,
 			"security_export_last_delivered_at":data.SecurityExportLastDeliveredAt,
 			"security_export":securityExportSignals,
+			"incident_notifications":alertSignals,
 		},
 	})
 }

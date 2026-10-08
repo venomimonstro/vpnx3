@@ -494,9 +494,17 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - локальный loopback-only test receiver с Ed25519 verification и fsync NDJSON;
 - runbook проверки signed envelope.
 
+Дополнительно реализованы:
+- transactional incident notification outbox на уровне БД;
+- generic HTTPS webhook без сторонних SDK;
+- HMAC-SHA256 подпись каждого exact JSON payload;
+- notification retry/backoff независимо от Control Plane request path;
+- уведомления создаются при insert/update/resolved incidents независимо от источника;
+- readiness контролирует backlog/возраст/повторные ошибки уведомлений.
+
 Следующие задачи:
-1. добавить операционные уведомления по критическим readiness/incidents без внешних SDK;
-2. физически подключить независимый WORM/SIEM endpoint.
+1. добавить автоматическое создание/закрытие системных incidents для устойчивых критических состояний readiness;
+2. физически подключить независимый WORM/SIEM и рабочий канал уведомлений.
 
 
 ## Спринт 18 — внешний аудит и независимый след безопасности: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
