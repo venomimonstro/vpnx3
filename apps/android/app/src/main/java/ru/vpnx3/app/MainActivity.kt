@@ -54,6 +54,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         currentViewModel?.refreshAccount()
+        currentViewModel?.refreshReferral()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -75,6 +76,18 @@ class MainActivity : ComponentActivity() {
                     onRetryInitialization = vm::retryInitialization,
                     onCreatePairingCode = vm::createPairingCode,
                     onClaimPairingCode = vm::claimPairingCode,
+                    onCreateReferralCode = vm::ensureReferralCode,
+                    onClaimReferralCode = vm::claimReferralCode,
+                    onShareReferral = { code ->
+                        val share = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(
+                                Intent.EXTRA_TEXT,
+                                "VPNX3: установите приложение и введите код $code — получите 7 дней доступа."
+                            )
+                        }
+                        startActivity(Intent.createChooser(share, "Поделиться кодом"))
+                    },
                     onVpnSettings = { startActivity(Intent(Settings.ACTION_VPN_SETTINGS)) },
                     onPersonalKeyEnabled = vm::setPersonalKeyEnabled,
                     onRotatePersonalKey = vm::rotatePersonalKey,
@@ -106,11 +119,17 @@ private fun HomeScreen(
     onRetryInitialization: () -> Unit,
     onCreatePairingCode: () -> Unit,
     onClaimPairingCode: (String) -> Unit,
+    onCreateReferralCode: () -> Unit,
+    onClaimReferralCode: (String) -> Unit,
+    onShareReferral: (String) -> Unit,
     onVpnSettings: () -> Unit,
     onPersonalKeyEnabled: (Boolean) -> Unit,
     onRotatePersonalKey: () -> Unit,
     onDeletePersonalKey: () -> Unit,
     onSetAutoRenew: (Boolean) -> Unit,
+    onCreateReferralCode: () -> Unit,
+    onOpenReferralDialog: () -> Unit,
+    onShareReferral: (String) -> Unit,
     onBuy: (String, Boolean) -> Unit
 ) {
     val busy = state.connection == ConnectionState.PREPARING ||
@@ -122,6 +141,8 @@ private fun HomeScreen(
     var showExtra by remember { mutableStateOf(false) }
     var showPairDialog by remember { mutableStateOf(false) }
     var pairInput by remember { mutableStateOf("") }
+    var showReferralDialog by remember { mutableStateOf(false) }
+    var referralInput by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
@@ -228,6 +249,9 @@ private fun HomeScreen(
                 onCreatePairingCode = onCreatePairingCode,
                 onOpenPairDialog = { showPairDialog = true },
                 onSetAutoRenew = onSetAutoRenew,
+                onCreateReferralCode = onCreateReferralCode,
+                onOpenReferralDialog = { showReferralDialog = true },
+                onShareReferral = onShareReferral,
                 onBuy = onBuy
             )
         }
@@ -319,6 +343,38 @@ private fun HomeScreen(
                     }
                 }
             }
+        }
+
+        if (showReferralDialog) {
+            AlertDialog(
+                onDismissRequest = { showReferralDialog = false },
+                title = { Text("Код приглашения") },
+                text = {
+                    Column {
+                        Text("Введите код в течение 14 дней после регистрации и до первой оплаты.")
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = referralInput,
+                            onValueChange = { referralInput = it.uppercase() },
+                            singleLine = true,
+                            label = { Text("Код") }
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val code = referralInput.trim()
+                        if (code.isNotEmpty()) {
+                            showReferralDialog = false
+                            referralInput = ""
+                            onClaimReferralCode(code)
+                        }
+                    }) { Text("Применить") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showReferralDialog = false }) { Text("Отмена") }
+                }
+            )
         }
 
         if (showPairDialog) {
@@ -420,6 +476,77 @@ private fun AccountSection(
                 Text("Пробный доступ", style = MaterialTheme.typography.titleMedium)
                 Text("Действует до ${displayDate(it)}")
             } ?: Text("Активный доступ не найден")
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(12.dp))
+            Text("Пригласить друга", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Друг получает 7 дней после ввода кода. Ваши 7 дней начислятся после его первой успешной оплаты. При полном возврате платежа награда пригласившему отзывается.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            state.referralMessage?.let { message ->
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            val referral = state.referral
+            if (referral?.code.isNullOrBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !state.referralBusy,
+                    onClick = onCreateReferralCode
+                ) {
+                    Text(if (state.referralBusy) "Создаём код…" else "Получить код приглашения")
+                }
+            } else {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Ваш код: ${referral!!.code}",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    "За 30 дней: приглашено ${referral.claimed30d}, оплатили ${referral.qualified30d}. Начислено ${referral.rewardDaysGranted} дней.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        modifier = Modifier.weight(1f),
+                        onClick = { onShareReferral(referral.code!!) }
+                    ) {
+                        Text("Поделиться")
+                    }
+                    OutlinedButton(
+                        modifier = Modifier.weight(1f),
+                        enabled = referral.referredBy.isNullOrBlank() && !state.referralBusy,
+                        onClick = onOpenReferralDialog
+                    ) {
+                        Text("Ввести код")
+                    }
+                }
+            }
+
+            if (referral?.code.isNullOrBlank() && referral?.referredBy.isNullOrBlank()) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !state.referralBusy,
+                    onClick = onOpenReferralDialog
+                ) {
+                    Text("У меня есть код")
+                }
+            }
 
             if (state.plans.isNotEmpty()) {
                 var autoRenewOnPurchase by remember { mutableStateOf(false) }
