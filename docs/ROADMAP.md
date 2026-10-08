@@ -915,3 +915,37 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 5. выпустить новые config/access/release operational keys;
 6. подписать новый trust bundle offline root;
 7. поднять изолированный Control Plane и только после readiness публиковать endpoints.
+
+
+## Спринт 28 — PostgreSQL PITR и непрерывная WAL-репликация: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: уменьшить потенциальную потерю данных с интервала полного backup до минутного уровня.
+
+Реализовано:
+
+- отдельный безопасный PostgreSQL `archive_command`;
+- network-independent схема: PostgreSQL сначала пишет только в локальный encrypted spool;
+- каждый WAL/archive history file шифруется `age` до попадания во внешнее хранилище;
+- атомарное создание ciphertext;
+- SHA-256 sidecar каждого encrypted WAL object;
+- отдельный `restore_command` для расшифровки WAL в DR;
+- отдельный `vpnx3-wal-replicator`;
+- независимые S3 credentials/prefix для WAL;
+- immutable object semantics: существующий remote object с другим hash вызывает fail-closed;
+- remote object читается обратно и проверяется SHA-256;
+- bounded local retention после подтверждённой внешней копии;
+- backlog_count и latest_local/latest_verified записываются в status marker;
+- readiness предупреждает при backlog >16 и становится failed при backlog >128 или отсутствии подтверждения более 30 минут;
+- signed Build Factory target `wal_replicator_linux_amd64`;
+- hardened systemd timer для частой WAL replication.
+
+Физическая приёмка:
+
+1. включить `wal_level=replica`, `archive_mode=on`, `archive_timeout=300`;
+2. выполнить серию транзакций;
+3. подтвердить появление encrypted WAL и внешней копии;
+4. восстановить base backup на отдельный PostgreSQL;
+5. подать WAL через `restore_command`;
+6. восстановиться до заданного timestamp/LSN;
+7. сравнить ключевые бизнес-таблицы до точки восстановления;
+8. измерить реальный RPO/RTO.
