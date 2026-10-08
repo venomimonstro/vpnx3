@@ -1,0 +1,60 @@
+# Production single-host control plane. Postgres shares a private network namespace
+# with the application so all DB connections use loopback without exposing port 5432.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vpnx3
+      POSTGRES_USER: vpnx3
+      POSTGRES_PASSWORD: ${VPNX3_POSTGRES_PASSWORD:?set database password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vpnx3 -d vpnx3"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - vpnx3_postgres:/var/lib/postgresql/data
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+
+  migrate:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.controlplane
+    network_mode: "service:postgres"
+    entrypoint: ["/migrate"]
+    env_file: .env.production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+
+  controlplane:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.controlplane
+    network_mode: "service:postgres"
+    env_file: .env.production
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    volumes:
+      - ${VPNX3_ARTIFACT_HOST_DIR:?set artifact directory}:/var/lib/vpnx3/artifacts
+      - ${VPNX3_TRUST_BUNDLE_HOST_FILE:?set trust bundle file}:/etc/vpnx3/trust-bundle.json:ro
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  vpnx3_postgres:
+
+networks:
+  internal:
+    driver: bridge
