@@ -12,5 +12,6 @@
 <key>VPNX3ControlURL</key><string></string>
 <key>VPNX3ConfigPublicKey</key><string></string>
 <key>VPNX3ReleasePublicKey</key><string></string>
+<key>VPNX3ConfigBootstrapURLs</key><string></string>
 <key>VPNX3KeychainAccessGroup</key><string>$(AppIdentifierPrefix)ru.vpnx3.shared</string>
 </dict></plist>

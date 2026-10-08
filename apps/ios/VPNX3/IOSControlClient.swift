@@ -84,19 +84,65 @@ final class IOSControlClient {
     func latestVerifiedConfig() async throws -> IOSVerifiedConfig {
         let verifier=IOSConfigVerifier(publicKeyBase64:runtime.configPublicKey)
         let minimum=configStore.highestVersion
-        do {
-            guard let url=URL(string:"/api/v1/config/latest",relativeTo:runtime.controlURL)?.absoluteURL else {
-                throw IOSControlError.runtimeNotConfigured
+        var lastError:Error=IOSControlError.invalidResponse
+
+        var sources:[URL]=[]
+        if let primary=URL(string:"/api/v1/config/latest",relativeTo:runtime.controlURL)?.absoluteURL {
+            sources.append(primary)
+        }
+        sources.append(contentsOf:runtime.configBootstrapURLs)
+        sources.append(contentsOf:configStore.mirrorURLs)
+
+        var seen=Set<String>()
+        for url in sources where seen.insert(url.absoluteString).inserted {
+            guard url.scheme=="https",url.host != nil,url.user==nil,url.fragment==nil else{continue}
+            do {
+                var request=URLRequest(url:url)
+                request.timeoutInterval=10
+                request.cachePolicy=.reloadIgnoringLocalCacheData
+                request.setValue("application/json",forHTTPHeaderField:"Accept")
+                let (data,response)=try await URLSession.shared.data(for:request)
+                guard (response as? HTTPURLResponse)?.statusCode==200 else{
+                    throw IOSControlError.invalidResponse
+                }
+                let verified=try verifier.verify(envelopeData:data,minimumVersion:minimum)
+                configStore.envelope=data
+                configStore.highestVersion=max(minimum,verified.version)
+                configStore.mirrorURLs=extractConfigMirrorURLs(verified)
+                return verified
+            } catch {
+                lastError=error
             }
-            let (data,response)=try await URLSession.shared.data(from:url)
-            guard (response as? HTTPURLResponse)?.statusCode==200 else { throw IOSControlError.invalidResponse }
-            let verified=try verifier.verify(envelopeData:data,minimumVersion:minimum)
-            configStore.envelope=data
-            configStore.highestVersion=max(minimum,verified.version)
-            return verified
-        } catch {
-            guard let cached=configStore.envelope else{throw error}
-            return try verifier.verify(envelopeData:cached,minimumVersion:configStore.highestVersion)
+        }
+
+        guard let cached=configStore.envelope else{throw lastError}
+        return try verifier.verify(
+            envelopeData:cached,
+            minimumVersion:configStore.highestVersion
+        )
+    }
+
+    private func extractConfigMirrorURLs(_ config:IOSVerifiedConfig)->[URL]{
+        guard let nodes=config.json["config_mirrors"] as? [[String:Any]] else{return []}
+        var weighted:[(Int,URL)]=[]
+        for node in nodes {
+            guard let endpoints=node["endpoints"] as? [[String:Any]] else{continue}
+            for ep in endpoints {
+                guard (ep["kind"] as? String)=="config_mirror",
+                      (ep["scheme"] as? String)=="https",
+                      (ep["transport"] as? String)=="https",
+                      let host=ep["host"] as? String,
+                      let port=(ep["port"] as? NSNumber)?.intValue,
+                      (1...65535).contains(port) else{continue}
+                let rawPath=(ep["path"] as? String)?.trimmingCharacters(in:.whitespacesAndNewlines) ?? ""
+                let path=rawPath.isEmpty ? "/api/v1/config/latest" : rawPath
+                guard path.hasPrefix("/"),
+                      let url=URL(string:"https://\(host):\(port)\(path)") else{continue}
+                weighted.append(((ep["priority"] as? NSNumber)?.intValue ?? 100,url))
+            }
+        }
+        return weighted.sorted{$0.0<$1.0}.map{$0.1}.reduce(into:[]){result,url in
+            if !result.contains(url){result.append(url)}
         }
     }
 

@@ -11,6 +11,7 @@ EXPORT_DIR="$IOS/.export"
 : "${VPNX3_IOS_EXPORT_OPTIONS_PLIST:?VPNX3_IOS_EXPORT_OPTIONS_PLIST is required}"
 : "${VPNX3_CLIENT_CONTROL_URL:?VPNX3_CLIENT_CONTROL_URL is required}"
 : "${VPNX3_CONFIG_PUBLIC_KEY:?VPNX3_CONFIG_PUBLIC_KEY is required}"
+: "${VPNX3_CONFIG_BOOTSTRAP_URLS:?VPNX3_CONFIG_BOOTSTRAP_URLS is required}"
 : "${VPNX3_RELEASE_PUBLIC_KEY:?VPNX3_RELEASE_PUBLIC_KEY is required}"
 : "${VPNX3_RELEASE_VERSION:?VPNX3_RELEASE_VERSION is required}"
 
@@ -44,6 +45,8 @@ xcodegen generate --spec project.yml
   /usr/libexec/PlistBuddy -c "Add :VPNX3ControlURL string $VPNX3_CLIENT_CONTROL_URL" VPNX3/Info.plist
 /usr/libexec/PlistBuddy -c "Set :VPNX3ConfigPublicKey $VPNX3_CONFIG_PUBLIC_KEY" VPNX3/Info.plist 2>/dev/null ||
   /usr/libexec/PlistBuddy -c "Add :VPNX3ConfigPublicKey string $VPNX3_CONFIG_PUBLIC_KEY" VPNX3/Info.plist
+/usr/libexec/PlistBuddy -c "Set :VPNX3ConfigBootstrapURLs $VPNX3_CONFIG_BOOTSTRAP_URLS" VPNX3/Info.plist 2>/dev/null ||
+  /usr/libexec/PlistBuddy -c "Add :VPNX3ConfigBootstrapURLs string $VPNX3_CONFIG_BOOTSTRAP_URLS" VPNX3/Info.plist
 /usr/libexec/PlistBuddy -c "Set :VPNX3ReleasePublicKey $VPNX3_RELEASE_PUBLIC_KEY" VPNX3/Info.plist 2>/dev/null ||
   /usr/libexec/PlistBuddy -c "Add :VPNX3ReleasePublicKey string $VPNX3_RELEASE_PUBLIC_KEY" VPNX3/Info.plist
 

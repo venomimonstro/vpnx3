@@ -14,6 +14,19 @@ final class IOSConfigStore {
         set { try? writeData("envelope",newValue) }
     }
 
+    var mirrorURLs:[URL] {
+        get {
+            guard let data=try? readData("mirror_urls"),let data else{return []}
+            return (try? JSONDecoder().decode([String].self,from:data))?
+                .compactMap(URL.init(string:)) ?? []
+        }
+        set {
+            let values=Array(newValue.map(\.absoluteString).uniqued().prefix(16))
+            let data=try? JSONEncoder().encode(values)
+            try? writeData("mirror_urls",data)
+        }
+    }
+
     private func query(_ account:String)->[String:Any] {
         [
             kSecClass as String:kSecClassGenericPassword,
@@ -66,5 +79,13 @@ final class IOSConfigStore {
     private func writeInt64(_ account:String,_ value:Int64)throws{
         var big=value.bigEndian
         try writeData(account,Data(bytes:&big,count:8))
+    }
+}
+
+
+private extension Array where Element==String {
+    func uniqued()->[String]{
+        var seen=Set<String>()
+        return filter{seen.insert($0).inserted}
     }
 }
