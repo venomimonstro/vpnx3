@@ -101,6 +101,12 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 	}
 	add("artifact_storage",storageStatus,"Хранилище артефактов",storageDetail)
 
+	if !data.AuditChainValid {
+		add("audit_chain","failed","Целостность аудита","Хеш-цепочка audit_log повреждена или не соответствует данным.")
+	}else{
+		add("audit_chain","ok","Целостность аудита","Append-only журнал и хеш-цепочка согласованы.")
+	}
+
 	if s.cfg.BackupStatusFile=="" {
 		add("backup","warning","Резервное копирование","Backup health-marker не настроен.")
 	}else if stat,err:=os.Stat(s.cfg.BackupStatusFile);err!=nil {
@@ -148,6 +154,7 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			"renewal_pending":data.RenewalPending,
 			"renewal_failed_24h":data.RenewalFailed24h,
 			"renewal_disabled_failures":data.RenewalDisabledFailures,
+			"audit_chain_valid":data.AuditChainValid,
 		},
 	})
 }
