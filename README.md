@@ -6,6 +6,13 @@ VPNX3 — распределённая VPN-платформа с централ�
 
 Фактический статус: `docs/ROADMAP.md`.
 
+## Производственная установка
+
+Производственная установка основного сервера: [docs/PRODUCTION_INSTALL.md](docs/PRODUCTION_INSTALL.md).
+Используйте `docker-compose.production.yml` и двухэтапный `scripts/install-control-production.sh prepare|deploy`.
+
+**Важно:** обычный `docker-compose.yml` содержит настройки для разработки и не должен применяться на боевом сервере.
+
 ## Локальный запуск Control Plane
 
 1. Создать окружение:
