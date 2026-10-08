@@ -34,6 +34,7 @@ type Manifest struct {
 	ExpiresAt     time.Time             `json:"expires_at"`
 	Ingresses     []store.ConfigNode    `json:"ingresses"`
 	Workers       []store.ConfigNode    `json:"workers"`
+	ConfigMirrors []store.ConfigNode    `json:"config_mirrors"`
 	Network       NetworkPolicy         `json:"network"`
 	Features      map[string]bool       `json:"features"`
 }
@@ -51,6 +52,8 @@ func (s *Service) Publish(ctx context.Context, adminID string) (Envelope,error) 
 	if err!=nil { return Envelope{},err }
 	workers,err:=s.store.ActiveConfigNodes(ctx,"worker")
 	if err!=nil { return Envelope{},err }
+	mirrors,err:=s.store.ActiveConfigNodes(ctx,"config_mirror")
+	if err!=nil { return Envelope{},err }
 
 	now:=time.Now().UTC().Truncate(time.Second)
 	manifest:=Manifest{
@@ -60,6 +63,7 @@ func (s *Service) Publish(ctx context.Context, adminID string) (Envelope,error) 
 		ExpiresAt:now.Add(24*time.Hour),
 		Ingresses:ingresses,
 		Workers:workers,
+		ConfigMirrors:mirrors,
 		Network:s.policy,
 		Features:map[string]bool{"automatic_routing":true},
 	}

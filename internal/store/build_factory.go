@@ -22,6 +22,7 @@ var allowedBuildTargets=map[string]bool{
 	"probe_agent_linux_amd64":true,
 	"ingress_proxy_linux_amd64":true,
 	"build_worker_darwin_arm64":true,
+	"config_mirror_linux_amd64":true,
 }
 
 type Release struct {

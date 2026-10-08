@@ -55,6 +55,8 @@ func validateNodeEndpoint(in *CreateNodeEndpointInput) error {
 		if in.Scheme!="udp" || in.Transport!="wireguard" { return fmt.Errorf("wireguard endpoint requires udp/wireguard") }
 	case "ingress":
 		if in.Scheme!="https" { return fmt.Errorf("ingress endpoint requires https") }
+	case "config_mirror":
+		if in.Scheme!="https" || in.Transport!="https" { return fmt.Errorf("config_mirror endpoint requires https/https") }
 	default:
 		return fmt.Errorf("invalid endpoint kind")
 	}
@@ -72,6 +74,7 @@ func (s *Store) CreateNodeEndpoint(ctx context.Context,in CreateNodeEndpointInpu
 		return NodeEndpoint{},fmt.Errorf("worker endpoint requires worker node")
 	}
 	if in.Kind=="ingress" && role!="ingress" { return NodeEndpoint{},fmt.Errorf("ingress endpoint requires ingress node") }
+	if in.Kind=="config_mirror" && role!="config_mirror" { return NodeEndpoint{},fmt.Errorf("config_mirror endpoint requires config_mirror node") }
 
 	var ep NodeEndpoint
 	err:=s.DB.QueryRow(ctx,`

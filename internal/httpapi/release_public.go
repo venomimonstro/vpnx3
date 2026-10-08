@@ -25,7 +25,7 @@ func (s *Server) handleLatestRelease(w http.ResponseWriter,r *http.Request) {
 	switch target {
 	case "android_apk","android_aab","chrome_zip","firefox_zip","ios_ipa",
 		"controlplane_linux_amd64","node_agent_linux_amd64","vpn_worker_linux_amd64",
-		"probe_agent_linux_amd64","ingress_proxy_linux_amd64","build_worker_darwin_arm64":
+		"probe_agent_linux_amd64","ingress_proxy_linux_amd64","build_worker_darwin_arm64","config_mirror_linux_amd64":
 	default:
 		writeError(w,http.StatusBadRequest,"invalid_release_target");return
 	}

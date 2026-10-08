@@ -49,7 +49,7 @@ func Preflight(targets []string) error {
 				if strings.TrimSpace(os.Getenv(key))==""{return fmt.Errorf("%s is required for iOS builds",key)}
 			}
 			if _,err:=os.Stat(os.Getenv("VPNX3_IOS_EXPORT_OPTIONS_PLIST"));err!=nil{return fmt.Errorf("iOS ExportOptions.plist is unavailable")}
-		case "controlplane_linux_amd64","node_agent_linux_amd64","vpn_worker_linux_amd64","probe_agent_linux_amd64","ingress_proxy_linux_amd64","build_worker_darwin_arm64":
+		case "controlplane_linux_amd64","node_agent_linux_amd64","vpn_worker_linux_amd64","probe_agent_linux_amd64","ingress_proxy_linux_amd64","build_worker_darwin_arm64","config_mirror_linux_amd64":
 			if _,err:=exec.LookPath("go");err!=nil{return fmt.Errorf("go toolchain is required for server binary builds")}
 		default:
 			return fmt.Errorf("unsupported build target %q",target)
