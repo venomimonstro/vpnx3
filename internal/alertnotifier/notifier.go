@@ -35,7 +35,10 @@ type envelope struct {
 func New(s *store.Store,endpoint,secret string,logger *slog.Logger)*Notifier{
 	return &Notifier{
 		store:s,endpoint:endpoint,secret:[]byte(secret),logger:logger,
-		client:&http.Client{Timeout:10*time.Second},
+		client:&http.Client{
+			Timeout:10*time.Second,
+			CheckRedirect:func(_ *http.Request,_ []*http.Request)error{return http.ErrUseLastResponse},
+		},
 	}
 }
 
@@ -59,8 +62,9 @@ func (n *Notifier) flush(parent context.Context){
 		if parent.Err()!=nil{return}
 		if err:=n.deliver(parent,item);err!=nil{
 			delay:=backoff(item.Attempts)
-			_ = n.store.MarkIncidentNotificationFailed(parent,item.ID,time.Now().UTC().Add(delay),err.Error())
-			n.logger.Warn("incident notification delivery failed","notification_id",item.ID,"retry_in",delay.String(),"error",err)
+			dead:=item.Attempts>=10
+			_ = n.store.MarkIncidentNotificationFailed(parent,item.ID,time.Now().UTC().Add(delay),err.Error(),dead)
+			n.logger.Warn("incident notification delivery failed","notification_id",item.ID,"retry_in",delay.String(),"dead",dead,"error",err)
 			continue
 		}
 		_ = n.store.MarkIncidentNotificationDelivered(parent,item.ID,time.Now().UTC())

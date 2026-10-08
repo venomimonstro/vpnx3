@@ -719,14 +719,44 @@ async function createPlan(){
 }
 
 async function incidents(){
-  const d=await api("/api/v1/admin/incidents?limit=200");
+  const [d,notifications]=await Promise.all([
+    api("/api/v1/admin/incidents?limit=200"),
+    api("/api/v1/admin/incident-notifications")
+  ]);
+  const ns=notifications.status||{};
   const toolbar=$("div",{class:"toolbar"});
   if(can("incidents.manage")) toolbar.append($("button",{class:"btn primary",onclick:createIncident},"Создать инцидент"));
   const rows=d.incidents.map(i=>[
     dt(i.detected_at),badge(i.severity),badge(i.status),i.title,i.summary,i.root_cause||"—",
     can("incidents.manage")&&i.status!=="resolved"?$("button",{class:"btn",onclick:()=>resolveIncidentDialog(i)},"Закрыть"):"—"
   ]);
-  return sectionFrame("Инциденты",$("div",{},toolbar,table(["Обнаружен","Важность","Статус","Название","Описание","Причина","Действие"],rows)));
+  const notificationActions=[];
+  if(can("incidents.manage")&&(ns.dead||0)>0){
+    notificationActions.push($("button",{class:"btn danger",onclick:async()=>{
+      if(!confirm("Повторно поставить недоставленные уведомления в очередь?"))return;
+      try{
+        const result=await api("/api/v1/admin/incident-notifications/requeue?limit=100",{method:"POST"});
+        alert("Возвращено в очередь: "+(result.requeued||0));
+        renderSection();
+      }catch(e){alert(e.message)}
+    }},"Повторить dead-letter"));
+  }
+  const delivery=$("div",{class:"card"},
+    $("div",{class:"card-title-row"},
+      $("h2",{},"Доставка уведомлений"),
+      $("div",{class:"row-actions"},...notificationActions)
+    ),
+    $("div",{class:"kpi-grid"},
+      kpi("Webhook",notifications.configured?"Настроен":"Не настроен"),
+      kpi("В очереди",ns.pending||0),
+      kpi("Dead-letter",ns.dead||0),
+      kpi("Доставлено",ns.delivered||0)
+    )
+  );
+  return sectionFrame("Инциденты",$("div",{class:"stack"},
+    delivery,
+    $("div",{},toolbar,table(["Обнаружен","Важность","Статус","Название","Описание","Причина","Действие"],rows))
+  ));
 }
 
 function resolveIncidentDialog(i){

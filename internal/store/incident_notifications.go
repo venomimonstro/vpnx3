@@ -58,20 +58,63 @@ func (s *Store) MarkIncidentNotificationDelivered(ctx context.Context,id int64,n
 	return err
 }
 
-func (s *Store) MarkIncidentNotificationFailed(ctx context.Context,id int64,next time.Time,message string)error{
+func (s *Store) MarkIncidentNotificationFailed(ctx context.Context,id int64,next time.Time,message string,dead bool)error{
 	if len(message)>1000{message=message[:1000]}
+	status:="pending"
+	if dead{status="dead"}
 	_,err:=s.DB.Exec(ctx,`
 		UPDATE incident_notification_outbox
-		SET locked_until=NULL,next_attempt_at=$2,last_error=$3,updated_at=now()
+		SET status=$2,locked_until=NULL,next_attempt_at=$3,last_error=$4,updated_at=now()
 		WHERE id=$1 AND status='pending'
-	`,id,next,message)
+	`,id,status,next,message)
 	return err
 }
 
+type IncidentNotificationStatus struct {
+	Pending int64 `json:"pending"`
+	Dead int64 `json:"dead"`
+	Delivered int64 `json:"delivered"`
+	OldestPendingAt *time.Time `json:"oldest_pending_at,omitempty"`
+	MaxAttempts int `json:"max_attempts"`
+	LastDeliveredAt *time.Time `json:"last_delivered_at,omitempty"`
+}
+
+func (s *Store) IncidentNotificationStatus(ctx context.Context)(IncidentNotificationStatus,error){
+	var out IncidentNotificationStatus
+	err:=s.DB.QueryRow(ctx,`
+		SELECT
+		  count(*) FILTER(WHERE status='pending')::bigint,
+		  count(*) FILTER(WHERE status='dead')::bigint,
+		  count(*) FILTER(WHERE status='delivered')::bigint,
+		  min(created_at) FILTER(WHERE status='pending'),
+		  COALESCE(max(attempts) FILTER(WHERE status='pending'),0)::int,
+		  max(delivered_at) FILTER(WHERE status='delivered')
+		FROM incident_notification_outbox
+	`).Scan(&out.Pending,&out.Dead,&out.Delivered,&out.OldestPendingAt,&out.MaxAttempts,&out.LastDeliveredAt)
+	return out,err
+}
+
 func (s *Store) IncidentNotificationHealth(ctx context.Context)(pending int64,oldest *time.Time,maxAttempts int,err error){
-	err=s.DB.QueryRow(ctx,`
-		SELECT count(*)::bigint,min(created_at),COALESCE(max(attempts),0)::int
-		FROM incident_notification_outbox WHERE status='pending'
-	`).Scan(&pending,&oldest,&maxAttempts)
-	return
+	status,statusErr:=s.IncidentNotificationStatus(ctx)
+	if statusErr!=nil{return 0,nil,0,statusErr}
+	return status.Pending,status.OldestPendingAt,status.MaxAttempts,nil
+}
+
+func (s *Store) RequeueDeadIncidentNotifications(ctx context.Context,limit int)(int64,error){
+	if limit<=0||limit>500{limit=100}
+	tag,err:=s.DB.Exec(ctx,`
+		WITH picked AS (
+		  SELECT id FROM incident_notification_outbox
+		  WHERE status='dead'
+		  ORDER BY id
+		  LIMIT $1
+		  FOR UPDATE SKIP LOCKED
+		)
+		UPDATE incident_notification_outbox o
+		SET status='pending',attempts=0,next_attempt_at=now(),
+		    locked_until=NULL,last_error=NULL,updated_at=now()
+		FROM picked p WHERE o.id=p.id
+	`,limit)
+	if err!=nil{return 0,err}
+	return tag.RowsAffected(),nil
 }
