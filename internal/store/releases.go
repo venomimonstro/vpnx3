@@ -47,27 +47,50 @@ func (s *Store) ReleaseArtifactByID(ctx context.Context,releaseID,artifactID str
 	return a,err
 }
 
-func (s *Store) PublishRelease(ctx context.Context,releaseID string) (Release,error) {
-	tx,err:=s.DB.Begin(ctx);if err!=nil{return Release{},err};defer tx.Rollback(ctx)
+func publishReleaseTx(ctx context.Context,tx pgx.Tx,releaseID string) error {
 	var status string
 	if err:=tx.QueryRow(ctx,"SELECT status FROM releases WHERE id=$1 FOR UPDATE",releaseID).Scan(&status);err!=nil{
-		if errors.Is(err,pgx.ErrNoRows){return Release{},ErrNotFound};return Release{},err
+		if errors.Is(err,pgx.ErrNoRows){return ErrNotFound}
+		return err
 	}
-	if status!="ready"{return Release{},fmt.Errorf("release is not ready")}
+	if status!="ready"{return fmt.Errorf("release is not ready")}
 
 	var jobs,success,artifacts int
 	if err:=tx.QueryRow(ctx,`
 		SELECT count(*)::int,count(*) FILTER(WHERE status='succeeded')::int
 		FROM build_jobs WHERE release_id=$1
-	`,releaseID).Scan(&jobs,&success);err!=nil{return Release{},err}
-	if err:=tx.QueryRow(ctx,"SELECT count(*)::int FROM release_artifacts WHERE release_id=$1",releaseID).Scan(&artifacts);err!=nil{return Release{},err}
-	if jobs==0 || jobs!=success || jobs!=artifacts{
-		return Release{},fmt.Errorf("release artifacts are incomplete")
-	}
+	`,releaseID).Scan(&jobs,&success);err!=nil{return err}
+	if err:=tx.QueryRow(ctx,"SELECT count(*)::int FROM release_artifacts WHERE release_id=$1",releaseID).Scan(&artifacts);err!=nil{return err}
+	if jobs==0||jobs!=success||jobs!=artifacts{return fmt.Errorf("release artifacts are incomplete")}
 
-	if _,err:=tx.Exec(ctx,`
+	_,err:=tx.Exec(ctx,`
 		UPDATE releases SET status='published',published_at=now(),updated_at=now() WHERE id=$1
-	`,releaseID);err!=nil{return Release{},err}
+	`,releaseID)
+	return err
+}
+
+func (s *Store) PublishRelease(ctx context.Context,releaseID string)(Release,error){
+	tx,err:=s.DB.Begin(ctx);if err!=nil{return Release{},err};defer tx.Rollback(ctx)
+	if err:=publishReleaseTx(ctx,tx,releaseID);err!=nil{return Release{},err}
+	if err:=tx.Commit(ctx);err!=nil{return Release{},err}
+	return s.releaseByID(ctx,releaseID)
+}
+
+func (s *Store) PublishReleaseWithAttestation(
+	ctx context.Context,
+	releaseID,adminID,environment,gateStatus string,
+	blockers,warnings,signals []byte,
+	checkedAt time.Time,
+)(Release,error){
+	tx,err:=s.DB.Begin(ctx);if err!=nil{return Release{},err};defer tx.Rollback(ctx)
+	if err:=publishReleaseTx(ctx,tx,releaseID);err!=nil{return Release{},err}
+	if _,err:=tx.Exec(ctx,`
+		INSERT INTO release_publication_attestations(
+		  release_id,admin_user_id,environment,gate_status,blockers,warnings,signals,checked_at
+		) VALUES($1,NULLIF($2,'')::uuid,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,$8)
+	`,releaseID,adminID,environment,gateStatus,string(blockers),string(warnings),string(signals),checkedAt);err!=nil{
+		return Release{},fmt.Errorf("record release attestation: %w",err)
+	}
 	if err:=tx.Commit(ctx);err!=nil{return Release{},err}
 	return s.releaseByID(ctx,releaseID)
 }

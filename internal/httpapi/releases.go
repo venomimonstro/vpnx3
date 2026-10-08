@@ -84,23 +84,20 @@ func (s *Server) handlePublishRelease(w http.ResponseWriter,r *http.Request) {
 		})
 		return
 	}
-	release,err:=s.store.PublishRelease(r.Context(),r.PathValue("id"))
+	admin,_:=adminFromContext(r.Context())
+	blockersRaw,_:=json.Marshal(gate.Blockers)
+	warningsRaw,_:=json.Marshal(gate.Warnings)
+	signalsRaw,_:=json.Marshal(gate.Signals)
+	release,err:=s.store.PublishReleaseWithAttestation(
+		r.Context(),r.PathValue("id"),admin.ID,s.cfg.Environment,gate.Status,
+		blockersRaw,warningsRaw,signalsRaw,gate.CheckedAt,
+	)
 	if err!=nil{
 		if err.Error()=="not found"{writeError(w,http.StatusNotFound,"release_not_found");return}
 		if strings.Contains(err.Error(),"not ready")||strings.Contains(err.Error(),"incomplete"){
 			writeJSON(w,http.StatusConflict,map[string]string{"error":"release_not_publishable","detail":err.Error()});return
 		}
 		s.internalError(w,r,err);return
-	}
-	admin,_:=adminFromContext(r.Context())
-	blockersRaw,_:=json.Marshal(gate.Blockers)
-	warningsRaw,_:=json.Marshal(gate.Warnings)
-	signalsRaw,_:=json.Marshal(gate.Signals)
-	if err:=s.store.RecordReleaseAttestation(
-		r.Context(),release.ID,admin.ID,s.cfg.Environment,gate.Status,
-		blockersRaw,warningsRaw,signalsRaw,gate.CheckedAt,
-	);err!=nil{
-		s.logger.Error("release attestation write failed","release_id",release.ID,"error",err)
 	}
 	_ = s.store.WriteAudit(r.Context(),"admin",admin.ID,"release.publish","release",release.ID,
 		requestIDFromContext(r.Context()),ipString(clientIP(r)),"success")
