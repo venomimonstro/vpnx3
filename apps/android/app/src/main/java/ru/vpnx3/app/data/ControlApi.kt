@@ -49,6 +49,20 @@ data class PairingCode(
     val expiresAt: String
 )
 
+data class ReferralStatus(
+    val code: String?,
+    val claimed30d: Long,
+    val qualified30d: Long,
+    val rewardDaysGranted: Long,
+    val referredBy: String?
+)
+
+data class ReferralClaimResult(
+    val rewardDays: Int,
+    val rewardApplied: Boolean,
+    val referrerRewardPending: Boolean
+)
+
 class ControlApi(
     private val baseUrl: String,
     private val identity: DeviceIdentity
@@ -125,6 +139,40 @@ class ControlApi(
         val path="/api/v1/client/pairing-claim"
         val body=JSONObject().put("sequence",sequence).put("code",code).toString().toByteArray(Charsets.UTF_8)
         return parseAccountStatus(JSONObject(signedRequest("POST",path,body,deviceId)))
+    }
+
+    fun referralCode(deviceId:String,sequence:Long): String {
+        val path="/api/v1/client/referral/code"
+        val body=JSONObject().put("sequence",sequence).toString().toByteArray(Charsets.UTF_8)
+        return JSONObject(signedRequest("POST",path,body,deviceId)).getString("code")
+    }
+
+    fun referralStatus(deviceId:String,sequence:Long): ReferralStatus {
+        val path="/api/v1/client/referral/status"
+        val body=JSONObject().put("sequence",sequence).toString().toByteArray(Charsets.UTF_8)
+        val json=JSONObject(signedRequest("POST",path,body,deviceId))
+        return ReferralStatus(
+            code=json.optString("code").takeIf{it.isNotBlank()},
+            claimed30d=json.optLong("claimed_30d",0),
+            qualified30d=json.optLong("qualified_30d",0),
+            rewardDaysGranted=json.optLong("reward_days_granted",0),
+            referredBy=json.optString("referred_by").takeIf{it.isNotBlank()}
+        )
+    }
+
+    fun claimReferralCode(deviceId:String,sequence:Long,code:String): ReferralClaimResult {
+        val path="/api/v1/client/referral/claim"
+        val body=JSONObject()
+            .put("sequence",sequence)
+            .put("code",code)
+            .toString()
+            .toByteArray(Charsets.UTF_8)
+        val json=JSONObject(signedRequest("POST",path,body,deviceId))
+        return ReferralClaimResult(
+            rewardDays=json.getInt("reward_days"),
+            rewardApplied=json.optBoolean("reward_applied",false),
+            referrerRewardPending=json.optBoolean("referrer_reward_pending",true)
+        )
     }
 
     fun setAutoRenew(deviceId:String,sequence:Long,enabled:Boolean): ClientAccountStatus {

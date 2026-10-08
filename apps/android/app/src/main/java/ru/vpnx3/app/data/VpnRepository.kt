@@ -95,6 +95,24 @@ class VpnRepository(private val context: Context) {
         return api.createPayment(registration.deviceId,sequence,planId,autoRenew)
     }
 
+    fun referralCode(): String {
+        val registration=ensureRegistered()
+        val sequence=state.reserveNextRequestSequence()
+        return api.referralCode(registration.deviceId,sequence)
+    }
+
+    fun referralStatus(): ReferralStatus {
+        val registration=ensureRegistered()
+        val sequence=state.reserveNextRequestSequence()
+        return api.referralStatus(registration.deviceId,sequence)
+    }
+
+    fun claimReferralCode(code:String): ReferralClaimResult {
+        val registration=ensureRegistered()
+        val sequence=state.reserveNextRequestSequence()
+        return api.claimReferralCode(registration.deviceId,sequence,code)
+    }
+
     fun setAutoRenew(enabled:Boolean): ClientAccountStatus {
         val registration=ensureRegistered()
         val sequence=state.reserveNextRequestSequence()
