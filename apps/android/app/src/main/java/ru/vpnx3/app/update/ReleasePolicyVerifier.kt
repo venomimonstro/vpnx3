@@ -22,12 +22,21 @@ class ReleasePolicyVerifier(publicKeyBase64Url:String) {
 
     init { require(publicKey.size==32) }
 
-    fun verify(rawEnvelope:String):ReleasePolicy {
+    fun verify(rawEnvelope:String):ReleasePolicy =
+        verifyWithKeys(rawEnvelope,mapOf(keyId to Base64.getUrlEncoder().withoutPadding().encodeToString(publicKey)))
+
+    companion object {
+    fun verifyWithKeys(rawEnvelope:String,authorizedKeys:Map<String,String>):ReleasePolicy {
+        require(authorizedKeys.isNotEmpty())
         val env=JSONObject(rawEnvelope)
-        require(env.getString("key_id")==keyId)
+        val envelopeKeyId=env.getString("key_id")
+        val authorized=authorizedKeys[envelopeKeyId]
+            ?: throw IllegalArgumentException("Unexpected release signing key")
+        val rawKey=Base64.getUrlDecoder().decode(authorized)
+        require(rawKey.size==32)
         val payload=Base64.getUrlDecoder().decode(env.getString("payload"))
         val signature=Base64.getUrlDecoder().decode(env.getString("signature"))
-        verifier.verify(signature,payload)
+        Ed25519Verify(rawKey).verify(signature,payload)
         val json=JSONObject(payload.toString(Charsets.UTF_8))
         require(json.getInt("schema_version")==1)
         require(json.getString("target")=="android_apk")
@@ -51,5 +60,6 @@ class ReleasePolicyVerifier(publicKeyBase64Url:String) {
             blockedVersions=set,
             message=json.optString("message","")
         )
+    }
     }
 }

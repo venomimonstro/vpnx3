@@ -36,11 +36,15 @@ class VpnRepository(private val context: Context) {
     private var active: PreparedConnection? = null
 
     init {
-        require(BuildConfig.CONFIG_PUBLIC_KEY.isNotBlank()) {
-            "VPNX3_CONFIG_PUBLIC_KEY must be pinned at build time"
+        require(BuildConfig.TRUST_ROOT_PUBLIC_KEY.isNotBlank() || BuildConfig.CONFIG_PUBLIC_KEY.isNotBlank()) {
+            "VPNX3 trust root or legacy config public key must be pinned at build time"
         }
+        val trustRepository=BuildConfig.TRUST_ROOT_PUBLIC_KEY
+            .takeIf{it.isNotBlank()}
+            ?.let{TrustRepository(api,state,it)}
         configRepository = ConfigRepository(
-            api, state, BuildConfig.CONFIG_PUBLIC_KEY, BuildConfig.CONFIG_BOOTSTRAP_URLS
+            api, state, BuildConfig.CONFIG_PUBLIC_KEY, BuildConfig.CONFIG_BOOTSTRAP_URLS,
+            trustRepository
         )
     }
 

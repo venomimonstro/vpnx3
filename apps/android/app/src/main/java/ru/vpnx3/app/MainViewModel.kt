@@ -63,7 +63,7 @@ private data class InitResult(
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = VpnRepository(application)
-    private val updates = UpdateRepository()
+    private val updates = UpdateRepository(application)
     private val mutableState = MutableStateFlow(MainUiState())
     val state: StateFlow<MainUiState> = mutableState.asStateFlow()
 

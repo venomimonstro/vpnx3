@@ -1,6 +1,11 @@
 package ru.vpnx3.app.update
 
+import android.content.Context
 import ru.vpnx3.app.BuildConfig
+import ru.vpnx3.app.data.ControlApi
+import ru.vpnx3.app.data.LocalState
+import ru.vpnx3.app.data.TrustRepository
+import ru.vpnx3.app.security.DeviceIdentity
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
@@ -12,12 +17,32 @@ data class UpdateDecision(
     val message:String?=null
 )
 
-class UpdateRepository {
-    fun evaluate(deviceId:String):UpdateDecision {
-        if(BuildConfig.RELEASE_PUBLIC_KEY.isBlank()) return UpdateDecision()
+class UpdateRepository(context:Context) {
+    private val trustRepository:TrustRepository? =
+        BuildConfig.TRUST_ROOT_PUBLIC_KEY.takeIf{it.isNotBlank()}?.let{
+            TrustRepository(
+                ControlApi(BuildConfig.CONTROL_URL,DeviceIdentity()),
+                LocalState(context.applicationContext),
+                it
+            )
+        }
 
-        val policyRaw=get("/api/v1/releases/policy?target=android_apk") ?: return fallbackLatest()
-        val policy=ReleasePolicyVerifier(BuildConfig.RELEASE_PUBLIC_KEY).verify(policyRaw)
+    private fun releaseKeys():Map<String,String> {
+        val trust=trustRepository?.refreshOrFallback()
+        if(trust!=null) return trust.verificationKeys("release")
+        val legacy=BuildConfig.RELEASE_PUBLIC_KEY
+        if(legacy.isBlank()) return emptyMap()
+        val raw=java.util.Base64.getUrlDecoder().decode(legacy)
+        val id=MessageDigest.getInstance("SHA-256").digest(raw)
+            .take(8).joinToString(""){"%02x".format(it)}
+        return mapOf(id to legacy)
+    }
+    fun evaluate(deviceId:String):UpdateDecision {
+        val keys=runCatching{releaseKeys()}.getOrDefault(emptyMap())
+        if(keys.isEmpty()) return UpdateDecision()
+
+        val policyRaw=get("/api/v1/releases/policy?target=android_apk") ?: return fallbackLatest(keys)
+        val policy=ReleasePolicyVerifier.verifyWithKeys(policyRaw,keys)
         val current=BuildConfig.VERSION_NAME
 
         val blocked=current in policy.blockedVersions
@@ -48,14 +73,15 @@ class UpdateRepository {
         } else UpdateDecision()
     }
 
-    private fun fallbackLatest():UpdateDecision {
-        val info=latest() ?: return UpdateDecision()
+    private fun fallbackLatest(keys:Map<String,String>):UpdateDecision {
+        val info=latest(keys) ?: return UpdateDecision()
         return UpdateDecision(availableVersion=info.version)
     }
 
-    fun latest():ReleaseInfo? {
+    fun latest(keys:Map<String,String> = runCatching{releaseKeys()}.getOrDefault(emptyMap())):ReleaseInfo? {
+        if(keys.isEmpty()) return null
         val raw=get("/api/v1/releases/latest?target=android_apk") ?: return null
-        val info=ReleaseVerifier(BuildConfig.RELEASE_PUBLIC_KEY).verify(raw)
+        val info=ReleaseVerifier.verifyWithKeys(raw,keys)
         if(info.version==BuildConfig.VERSION_NAME) return null
         return info
     }
