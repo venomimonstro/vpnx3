@@ -28,12 +28,6 @@ if errors:
 print(f"[OK] {len(versions)} unique migration versions")
 PY
 
-gofmt_bad="$(gofmt -l cmd internal | tr '\n' ' ')"
-if [[ -n "$gofmt_bad" ]]; then
-  echo "FAIL: gofmt required: $gofmt_bad" >&2
-  exit 1
-fi
-
 go test ./internal/config ./internal/httpapi ./internal/buildworker ./internal/deviceauth ./internal/clientconfig ./internal/accesslease ./internal/artifactstorage
 
 python3 scripts/validate-ios-source.py

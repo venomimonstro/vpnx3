@@ -348,3 +348,89 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 4. физически проверить iOS shared ThisDeviceOnly Keychain между приложением и Packet Tunnel Extension.
 
 Дополнительно реализован iOS device-only WireGuard key: приватная часть хранится в shared ThisDeviceOnly Keychain access group, доступном только подписанным app/PacketTunnel targets; в NETunnelProvider preferences приватный ключ не сериализуется.
+
+
+## Спринт 13 — Backup / Disaster Recovery: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Реализовано:
+
+- PostgreSQL custom-format backup;
+- обязательное шифрование backup bundle через age;
+- SHA-256 manifest и проверка размера;
+- опциональный backup local artifact volume;
+- отдельный verify-backup;
+- restore drill только в явно подтверждённую изолированную БД;
+- защита от случайного restore в основную БД по умолчанию;
+- systemd timer для ежедневного backup;
+- root-only backup environment;
+- health-marker обновляется только после успешного backup;
+- launch readiness контролирует свежесть backup;
+- production release gate блокирует публикацию при отсутствующем/просроченном backup;
+- документирован отдельный secret escrow: signing/payment/storage credentials не кладутся в database backup.
+
+Физическая приёмка:
+
+1. настроить off-provider backup destination;
+2. выполнить первый encrypted backup;
+3. выполнить restore drill на отдельном PostgreSQL;
+4. проверить RPO/RTO по фактическому объёму БД;
+5. повторять restore drill минимум ежемесячно.
+
+## Спринт 14 — Security Hardening: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Реализовано:
+
+- Configuration / Access / Release Ed25519 seeds валидируются и обязаны быть разными;
+- production требует Release Signing Key;
+- production запрещает debug logging;
+- production admin session TTL не может превышать 24 часа;
+- admin session binding: user-agent или усиленный network режим;
+- при session-context mismatch bearer автоматически отзывается и событие попадает в audit;
+- remote production PostgreSQL запрещён без TLS sslmode require/verify-ca/verify-full;
+- audit_log остаётся append-only;
+- поверх append-only добавлена SHA-256 hash chain;
+- verify_audit_chain входит в launch readiness;
+- iOS WireGuard private keys не сериализуются в NETunnelProvider preferences;
+- app и PacketTunnel используют общий ThisDeviceOnly Keychain access group;
+- iOS release validator проверяет entitlement и shared keychain group;
+- migrator fail-closed при duplicate migration versions.
+
+Ограничение: DB-superuser теоретически способен менять сами audit functions/triggers. Для более высокого уровня контроля audit stream следует экспортировать во внешнее WORM/SIEM.
+
+## Спринт 15 — Production Readiness: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Реализовано:
+
+- launch readiness как единый операционный preflight;
+- actionable operational issue queue;
+- production release gate;
+- production publish блокируется при критическом состоянии manifest/worker/probes/data-plane/audit/backup/artifact storage/release signing/payment adapter;
+- browser release требует active ingress;
+- manual production-release-check с машинными exit codes;
+- append-only release publication attestation со snapshot gate signals;
+- local-quality-gate без GitHub Actions/CI;
+- migration-smoke на временном PostgreSQL 16;
+- migration smoke проверяет audit chain/append-only и критические schema invariants;
+- historical duplicate migration 000019 устранён;
+- новая 000027 repair migration гарантирует конечную схему и для ранее развернутых БД, независимо от того, какой старый 000019 был записан;
+- migrator теперь запрещает любые будущие duplicate migration versions.
+
+Физическая production-приёмка, которую нельзя честно объявить выполненной из GitHub-среды:
+
+1. Linux WireGuard e2e на реальных worker-hosts;
+2. минимум 2–3 независимых probe;
+3. Chrome/Firefox smoke на актуальных браузерах;
+4. Android APK/AAB build + real-device test;
+5. iOS macOS build + TestFlight/real-device NetworkExtension test;
+6. YooKassa sandbox + recurring payment e2e;
+7. encrypted backup + restore drill;
+8. failover drill;
+9. bounded load smoke;
+10. длительный soak monitor;
+11. после успешных физических проверок — первый production release через enforced release gate.
+
+## Текущий итог
+
+Кодовый план Sprint 0–15 реализован. Оставшиеся пункты — не «ещё написать код», а физическая приёмка тех частей, которые требуют реальных ОС, сетей, платёжного sandbox, Apple/Android signing infrastructure и нескольких независимых серверов.
+
+Отдельно: никакой документ не должен утверждать «100% стабильность». Цель проекта — отсутствие single-node global outage, fail-closed security boundaries, воспроизводимые релизы, наблюдаемость, controlled degradation и измеряемые SLO.
