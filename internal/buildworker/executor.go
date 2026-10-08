@@ -197,7 +197,7 @@ func writeBrowserRuntimeConfig(dir string) error {
 	releaseKey:=strings.TrimSpace(os.Getenv("VPNX3_RELEASE_PUBLIC_KEY"))
 	rawMirrors:=strings.TrimSpace(os.Getenv("VPNX3_CONFIG_BOOTSTRAP_URLS"))
 	trustRoot:=strings.TrimSpace(os.Getenv("VPNX3_TRUST_ROOT_PUBLIC_KEY"))
-	if !strings.HasPrefix(control,"https://") || (trustRoot==""&&key=="") || releaseKey=="" || rawMirrors=="" {
+	if !strings.HasPrefix(control,"https://") || (trustRoot==""&&key=="") || (trustRoot==""&&releaseKey=="") || rawMirrors=="" {
 		return fmt.Errorf("browser build requires control URL, trust root or legacy config key, release key and VPNX3_CONFIG_BOOTSTRAP_URLS")
 	}
 	mirrors:=make([]string,0)
@@ -257,8 +257,11 @@ func iosBuildEnv(releaseVersion string)([]string,error){
 	out:=make([]string,0,len(keys)+1)
 	for _,k:=range keys{
 		v:=strings.TrimSpace(os.Getenv(k))
-		if v==""{return nil,fmt.Errorf("%s is required for iOS release builds",k)}
-		out=append(out,k+"="+v)
+		required:=k=="VPNX3_IOS_TEAM_ID"||k=="VPNX3_IOS_EXPORT_OPTIONS_PLIST"||
+			k=="VPNX3_CLIENT_CONTROL_URL"||k=="VPNX3_TRUST_ROOT_PUBLIC_KEY"||
+			k=="VPNX3_CONFIG_BOOTSTRAP_URLS"||k=="HOME"
+		if required&&v==""{return nil,fmt.Errorf("%s is required for iOS release builds",k)}
+		if v!=""{out=append(out,k+"="+v)}
 	}
 	out=append(out,"VPNX3_RELEASE_VERSION="+versionName)
 	return out,nil

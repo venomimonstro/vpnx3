@@ -25,7 +25,7 @@ func Preflight(targets []string) error {
 			required:=[]string{
 				"VPNX3_ANDROID_KEYSTORE_PATH","VPNX3_ANDROID_KEYSTORE_PASSWORD",
 				"VPNX3_ANDROID_KEY_ALIAS","VPNX3_ANDROID_KEY_PASSWORD",
-				"VPNX3_CLIENT_CONTROL_URL","VPNX3_CONFIG_PUBLIC_KEY",
+				"VPNX3_CLIENT_CONTROL_URL","VPNX3_TRUST_ROOT_PUBLIC_KEY",
 			}
 			for _,key:=range required {
 				if strings.TrimSpace(os.Getenv(key))=="" { return fmt.Errorf("%s is required for Android release builds",key) }
@@ -37,15 +37,16 @@ func Preflight(targets []string) error {
 			if !strings.HasPrefix(strings.TrimSpace(os.Getenv("VPNX3_CLIENT_CONTROL_URL")),"https://") {
 				return fmt.Errorf("VPNX3_CLIENT_CONTROL_URL=https://... is required for browser extension builds")
 			}
-			if strings.TrimSpace(os.Getenv("VPNX3_CONFIG_PUBLIC_KEY"))=="" {
-				return fmt.Errorf("VPNX3_CONFIG_PUBLIC_KEY is required for browser extension builds")
+			if strings.TrimSpace(os.Getenv("VPNX3_TRUST_ROOT_PUBLIC_KEY"))=="" &&
+				strings.TrimSpace(os.Getenv("VPNX3_CONFIG_PUBLIC_KEY"))=="" {
+				return fmt.Errorf("VPNX3_TRUST_ROOT_PUBLIC_KEY or legacy VPNX3_CONFIG_PUBLIC_KEY is required for browser extension builds")
 			}
 		case "ios_ipa":
 			if runtime.GOOS!="darwin"{return fmt.Errorf("ios_ipa target requires macOS")}
 			for _,tool:=range []string{"xcodebuild","xcodegen","xcrun","go","make","python3","codesign","unzip","plutil"}{
 				if _,err:=exec.LookPath(tool);err!=nil{return fmt.Errorf("%s is required for iOS builds",tool)}
 			}
-			for _,key:=range []string{"VPNX3_IOS_TEAM_ID","VPNX3_IOS_EXPORT_OPTIONS_PLIST","VPNX3_CLIENT_CONTROL_URL","VPNX3_CONFIG_PUBLIC_KEY"}{
+			for _,key:=range []string{"VPNX3_IOS_TEAM_ID","VPNX3_IOS_EXPORT_OPTIONS_PLIST","VPNX3_CLIENT_CONTROL_URL","VPNX3_TRUST_ROOT_PUBLIC_KEY"}{
 				if strings.TrimSpace(os.Getenv(key))==""{return fmt.Errorf("%s is required for iOS builds",key)}
 			}
 			if _,err:=os.Stat(os.Getenv("VPNX3_IOS_EXPORT_OPTIONS_PLIST"));err!=nil{return fmt.Errorf("iOS ExportOptions.plist is unavailable")}
