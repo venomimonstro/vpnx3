@@ -11,7 +11,7 @@ import (
 
 	"github.com/venomimonstro/vpnx3/internal/accesslease"
 	"github.com/venomimonstro/vpnx3/internal/ipam"
-	"github.com/venomimonstro/vpnx3/internal/revocations"
+	"github.com/venomimonstro/vpnx3/internal/revocation"
 	"github.com/venomimonstro/vpnx3/internal/sessions"
 	"github.com/venomimonstro/vpnx3/internal/workerauth"
 	wgadapter "github.com/venomimonstro/vpnx3/network/transport/wireguard"
@@ -60,17 +60,60 @@ func main() {
 	go srv.RunSweeper(runCtx)
 
 	controlURL:=strings.TrimSpace(os.Getenv("VPNX3_CONTROL_URL"))
-	if controlURL!=""{
-		revVerifier,revErr:=revocations.NewVerifier(publicKey)
+	revocationSources:=make([]string,0)
+	if controlURL!=""{revocationSources=append(revocationSources,controlURL)}
+	for _,source:=range strings.FieldsFunc(
+		strings.TrimSpace(os.Getenv("VPNX3_REVOCATION_SOURCES")),
+		func(r rune)bool{return r==','||r==';'},
+	){
+		if value:=strings.TrimSpace(source);value!=""{revocationSources=append(revocationSources,value)}
+	}
+	if len(revocationSources)>0{
+		revVerifier,revErr:=revocation.NewVerifier(publicKey)
 		if revErr!=nil{
 			logger.Error("revocation verifier initialization failed","error",revErr)
 			os.Exit(1)
 		}
-		revClient,revErr:=revocations.NewClient(controlURL,revVerifier)
+		revClient,revErr:=revocation.NewClient(
+			revocationSources,
+			revVerifier,
+			env("VPNX3_REVOCATION_STATE_PATH","/var/lib/vpnx3-worker/revocations.json"),
+		)
 		if revErr!=nil{
 			logger.Error("revocation client initialization failed","error",revErr)
 			os.Exit(1)
 		}
+
+		haveSnapshot:=false
+		if stored,ok,loadErr:=revClient.LoadStored();loadErr!=nil{
+			logger.Error("stored revocation snapshot invalid","error",loadErr)
+			os.Exit(1)
+		}else if ok{
+			if _,applyErr:=manager.ApplyRevokedDeviceHashes(context.Background(),stored.RevokedDeviceHashes);applyErr!=nil{
+				logger.Error("apply stored revocation snapshot failed","error",applyErr)
+				os.Exit(1)
+			}
+			haveSnapshot=true
+			logger.Info("stored revocation snapshot loaded","version",stored.Version,"revoked",len(stored.RevokedDeviceHashes))
+		}
+
+		initialCtx,initialCancel:=context.WithTimeout(context.Background(),10*time.Second)
+		initial,fetchErr:=revClient.Fetch(initialCtx,time.Now().UTC())
+		initialCancel()
+		if fetchErr==nil{
+			if _,applyErr:=manager.ApplyRevokedDeviceHashes(context.Background(),initial.RevokedDeviceHashes);applyErr!=nil{
+				logger.Error("apply initial revocation snapshot failed","error",applyErr)
+				os.Exit(1)
+			}
+			haveSnapshot=true
+			logger.Info("fresh revocation snapshot loaded","version",initial.Version,"revoked",len(initial.RevokedDeviceHashes))
+		}else if !haveSnapshot{
+			logger.Error("no trusted revocation snapshot available","error",fetchErr)
+			os.Exit(1)
+		}else{
+			logger.Warn("fresh revocation snapshot unavailable; using signed LKG","error",fetchErr)
+		}
+
 		interval:=durationEnv("VPNX3_REVOCATION_POLL_INTERVAL",time.Minute)
 		if interval<15*time.Second{interval=15*time.Second}
 		go func(){
@@ -78,19 +121,18 @@ func main() {
 			poll:=func(){
 				ctx,cancel:=context.WithTimeout(runCtx,10*time.Second)
 				defer cancel()
-				feed,err:=revClient.Fetch(ctx,time.Now().UTC())
+				snapshot,err:=revClient.Fetch(ctx,time.Now().UTC())
 				if err!=nil{
-					logger.Warn("revocation feed unavailable","error",err)
+					logger.Warn("revocation snapshot unavailable; keeping LKG deny-list","error",err)
 					return
 				}
-				closed,err:=manager.CloseRevokedDeviceHashes(ctx,feed.RevokedDeviceHashes)
+				closed,err:=manager.ApplyRevokedDeviceHashes(ctx,snapshot.RevokedDeviceHashes)
 				if err!=nil{
-					logger.Warn("revoked session cleanup failed","error",err)
+					logger.Warn("apply revocation snapshot failed","error",err)
 					return
 				}
-				if closed>0{logger.Warn("revoked device sessions closed","count",closed)}
+				if closed>0{logger.Warn("revoked device sessions closed","count",closed,"version",snapshot.Version)}
 			}
-			poll()
 			for{
 				select{
 				case <-runCtx.Done():return
@@ -99,7 +141,7 @@ func main() {
 			}
 		}()
 	}else{
-		logger.Warn("revocation polling disabled because VPNX3_CONTROL_URL is empty")
+		logger.Warn("revocation feed disabled because no sources are configured")
 	}
 
 	errCh:=make(chan error,1)

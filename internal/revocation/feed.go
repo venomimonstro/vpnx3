@@ -73,6 +73,14 @@ func NewVerifier(publicBase64 string)(*Verifier,error){
 }
 
 func (v *Verifier) Verify(env Envelope,minimumVersion int64,now time.Time)(Payload,error){
+	return v.verify(env,minimumVersion,now,true)
+}
+
+func (v *Verifier) VerifyStored(env Envelope,minimumVersion int64)(Payload,error){
+	return v.verify(env,minimumVersion,time.Time{},false)
+}
+
+func (v *Verifier) verify(env Envelope,minimumVersion int64,now time.Time,enforceTime bool)(Payload,error){
 	if env.KeyID!=v.keyID{return Payload{},fmt.Errorf("unexpected revocation signing key")}
 	raw,err:=base64.RawURLEncoding.DecodeString(env.Payload)
 	if err!=nil{return Payload{},fmt.Errorf("invalid revocation payload encoding")}
@@ -84,13 +92,16 @@ func (v *Verifier) Verify(env Envelope,minimumVersion int64,now time.Time)(Paylo
 	if p.SchemaVersion!=1||p.Version<0||p.Version<minimumVersion{
 		return Payload{},fmt.Errorf("revocation snapshot rollback")
 	}
-	if p.GeneratedAt.After(now.Add(2*time.Minute)){return Payload{},fmt.Errorf("revocation snapshot issued in future")}
-	if !p.ExpiresAt.After(now){return Payload{},fmt.Errorf("revocation snapshot expired")}
-	if p.ExpiresAt.Sub(p.GeneratedAt)>time.Hour{return Payload{},fmt.Errorf("revocation snapshot ttl too long")}
+	if p.ExpiresAt.Sub(p.GeneratedAt)<=0||p.ExpiresAt.Sub(p.GeneratedAt)>time.Hour{
+		return Payload{},fmt.Errorf("invalid revocation snapshot validity")
+	}
+	if enforceTime{
+		if p.GeneratedAt.After(now.Add(2*time.Minute)){return Payload{},fmt.Errorf("revocation snapshot issued in future")}
+		if !p.ExpiresAt.After(now){return Payload{},fmt.Errorf("revocation snapshot expired")}
+	}
+	if len(p.RevokedDeviceHashes)>100000{return Payload{},fmt.Errorf("revocation snapshot too large")}
 	for _,h:=range p.RevokedDeviceHashes{
-		if len(h)!=64 {
-			return Payload{},fmt.Errorf("invalid revoked device hash")
-		}
+		if len(h)!=64{return Payload{},fmt.Errorf("invalid revoked device hash")}
 		if _,err:=hex.DecodeString(h);err!=nil{return Payload{},fmt.Errorf("invalid revoked device hash")}
 	}
 	return p,nil

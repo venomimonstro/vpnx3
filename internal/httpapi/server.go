@@ -99,7 +99,6 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/client/referral/status",s.handleReferralStatus)
 	mux.HandleFunc("GET /api/v1/access/signing-key",s.handleAccessSigningKey)
 	mux.HandleFunc("GET /api/v1/access/revocations",s.handleRevocationSnapshot)
-	mux.HandleFunc("GET /api/v1/access/revocations",s.handleAccessRevocations)
 	mux.HandleFunc("GET /api/v1/plans",s.handlePublicPlans)
 	mux.HandleFunc("GET /api/v1/releases/latest",s.handleLatestRelease)
 	mux.HandleFunc("GET /api/v1/releases/policy",s.handleReleasePolicy)
