@@ -16,6 +16,7 @@ NODE_COUNTRY=""
 NODE_PUBLIC_IP=""
 INGRESS_ADDR=":8443"
 REVOCATION_SOURCES=""
+REVOCATION_LKG_GRACE="30m"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -34,6 +35,7 @@ while [[ $# -gt 0 ]]; do
     --public-ip) NODE_PUBLIC_IP="${2:-}"; shift 2;;
     --listen) INGRESS_ADDR="${2:-}"; shift 2;;
     --revocation-sources) REVOCATION_SOURCES="${2:-}"; shift 2;;
+    --revocation-lkg-grace) REVOCATION_LKG_GRACE="${2:-}"; shift 2;;
     *) echo "Unknown argument: $1" >&2; exit 2;;
   esac
 done
@@ -110,6 +112,7 @@ VPNX3_CONTROL_URL=$CONTROL_URL
 VPNX3_REVOCATION_SOURCES=$REVOCATION_SOURCES
 VPNX3_REVOCATION_STATE_PATH=/var/lib/vpnx3/ingress-revocations.json
 VPNX3_REVOCATION_POLL_INTERVAL=1m
+VPNX3_REVOCATION_LKG_GRACE=$REVOCATION_LKG_GRACE
 EOF
 chmod 0600 /etc/vpnx3-ingress.env
 

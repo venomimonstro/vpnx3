@@ -6,6 +6,7 @@ BINARY_SHA256=""
 ACCESS_PUBLIC_KEY=""
 CONTROL_URL=""
 REVOCATION_SOURCES=""
+REVOCATION_LKG_GRACE="30m"
 WG_INTERFACE="wg0"
 WG_ENDPOINT=""
 WG_POOL="10.66.0.0/24"
@@ -25,6 +26,7 @@ usage() {
     --access-public-key BASE64URL_ED25519_PUBLIC_KEY \
     --control-url https://CONTROL-ENDPOINT \
     --wg-endpoint PUBLIC_IP_OR_HOST:51820 \
+    [--revocation-lkg-grace 30m] \
     [--wg-interface wg0] \
     [--wg-pool 10.66.0.0/24] \
     [--wg-address 10.66.0.1/24] \
@@ -54,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --access-public-key) ACCESS_PUBLIC_KEY="${2:-}"; shift 2 ;;
     --control-url) CONTROL_URL="${2:-}"; shift 2 ;;
     --revocation-sources) REVOCATION_SOURCES="${2:-}"; shift 2 ;;
+    --revocation-lkg-grace) REVOCATION_LKG_GRACE="${2:-}"; shift 2 ;;
     --wg-interface) WG_INTERFACE="${2:-}"; shift 2 ;;
     --wg-endpoint) WG_ENDPOINT="${2:-}"; shift 2 ;;
     --wg-pool) WG_POOL="${2:-}"; shift 2 ;;
@@ -193,6 +196,7 @@ cat >/etc/vpnx3-worker.env <<EOF
 VPNX3_ACCESS_PUBLIC_KEY=$ACCESS_PUBLIC_KEY
 VPNX3_CONTROL_URL=$CONTROL_URL
 VPNX3_REVOCATION_POLL_INTERVAL=60s
+VPNX3_REVOCATION_LKG_GRACE=$REVOCATION_LKG_GRACE
 VPNX3_WG_INTERFACE=$WG_INTERFACE
 VPNX3_WG_ENDPOINT=$WG_ENDPOINT
 VPNX3_WG_POOL=$WG_POOL

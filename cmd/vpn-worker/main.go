@@ -94,12 +94,15 @@ func main() {
 		}else if ok{
 			if !revocation.LKGUsable(stored,time.Now().UTC(),revocationGrace){
 				logger.Warn("stored revocation snapshot is outside LKG grace","version",stored.Version,"expires_at",stored.ExpiresAt)
-			}else if _,applyErr:=manager.ApplyRevokedDeviceHashes(context.Background(),stored.RevokedDeviceHashes);applyErr!=nil{
-				logger.Error("apply stored revocation snapshot failed","error",applyErr)
-				os.Exit(1)
+			}else{
+				if _,applyErr:=manager.ApplyRevokedDeviceHashes(context.Background(),stored.RevokedDeviceHashes);applyErr!=nil{
+					logger.Error("apply stored revocation snapshot failed","error",applyErr)
+					os.Exit(1)
+				}
+				haveSnapshot=true
+				srv.SetRevocationSnapshot(stored.Version,stored.ExpiresAt,stored.ExpiresAt.Add(revocationGrace))
+				logger.Info("stored revocation snapshot loaded","version",stored.Version,"revoked",len(stored.RevokedDeviceHashes))
 			}
-			haveSnapshot=true
-			logger.Info("stored revocation snapshot loaded","version",stored.Version,"revoked",len(stored.RevokedDeviceHashes))
 		}
 
 		initialCtx,initialCancel:=context.WithTimeout(context.Background(),10*time.Second)
