@@ -23,7 +23,7 @@ usage() {
     --binary-url https://.../vpn-worker \
     --sha256 EXPECTED_SHA256 \
     --access-public-key BASE64URL_ED25519_PUBLIC_KEY \
-    [--control-url https://CONTROL-ENDPOINT] \
+    --control-url https://CONTROL-ENDPOINT \
     --wg-endpoint PUBLIC_IP_OR_HOST:51820 \
     [--wg-interface wg0] \
     [--wg-pool 10.66.0.0/24] \
@@ -75,6 +75,10 @@ done
 
 if [[ -n "$CONTROL_URL" && "$CONTROL_URL" != https://* ]]; then
   echo "Control URL должен использовать HTTPS." >&2
+  exit 2
+fi
+if [[ -z "$CONTROL_URL" && -z "$REVOCATION_SOURCES" ]]; then
+  echo "Нужен --control-url или --revocation-sources: worker не запускается без signed revocation feed." >&2
   exit 2
 fi
 

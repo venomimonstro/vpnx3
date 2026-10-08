@@ -141,7 +141,8 @@ func main() {
 			}
 		}()
 	}else{
-		logger.Warn("revocation feed disabled because no sources are configured")
+		logger.Error("revocation feed is required; configure VPNX3_CONTROL_URL or VPNX3_REVOCATION_SOURCES")
+		os.Exit(1)
 	}
 
 	errCh:=make(chan error,1)
