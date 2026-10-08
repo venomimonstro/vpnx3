@@ -91,7 +91,15 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 	if s.yooKassa==nil{
 		add("payments","warning","Платежи","ЮKassa не настроена; коммерческие покупки недоступны.")
 	}else{
-		add("payments","ok","Платежи","Платёжный адаптер настроен.")
+		circuit:=s.yooKassa.CircuitSnapshot()
+		switch circuit.State{
+		case "open":
+			add("payments","warning","Платежи","ЮKassa circuit breaker открыт; новые обращения временно завершаются быстро.")
+		case "half_open":
+			add("payments","warning","Платежи","ЮKassa circuit breaker проверяет восстановление провайдера.")
+		default:
+			add("payments","ok","Платежи","Платёжный адаптер настроен; circuit breaker закрыт.")
+		}
 		if data.RenewalFailed24h>0 || data.RenewalDisabledFailures>0 {
 			add("auto_renew","warning","Автопродление","Есть ошибки автопродления за 24 часа или подписки, отключённые после серии ошибок.")
 		}else if data.AutoRenewActive>0 {
@@ -427,6 +435,7 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			"renewal_pending":data.RenewalPending,
 			"renewal_failed_24h":data.RenewalFailed24h,
 			"renewal_disabled_failures":data.RenewalDisabledFailures,
+			"payments_circuit":func() any { if s.yooKassa==nil{return nil}; return s.yooKassa.CircuitSnapshot() }(),
 			"audit_chain_valid":data.AuditChainValid,
 			"security_export_pending":data.SecurityExportPending,
 			"security_export_dead":data.SecurityExportDead,

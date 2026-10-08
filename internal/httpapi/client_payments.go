@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/venomimonstro/vpnx3/internal/deviceauth"
 	"github.com/venomimonstro/vpnx3/internal/store"
+	"github.com/venomimonstro/vpnx3/internal/resilience"
 )
 
 func (s *Server) handleClientCreatePayment(w http.ResponseWriter,r *http.Request) {
@@ -66,7 +68,14 @@ func (s *Server) handleClientCreatePayment(w http.ResponseWriter,r *http.Request
 	idempotenceKey:=hex.EncodeToString(sum[:])
 
 	result,err:=s.yooKassa.CreatePayment(r.Context(),state.UserID,plan,idempotenceKey,req.AutoRenew)
-	if err!=nil { s.internalError(w,r,err); return }
+	if err!=nil {
+		if errors.Is(err,resilience.ErrDependencyUnavailable){
+			w.Header().Set("Retry-After","30")
+			writeError(w,http.StatusServiceUnavailable,"payments_temporarily_unavailable")
+			return
+		}
+		s.internalError(w,r,err); return
+	}
 	if _,err:=s.billing.ApplyVerifiedEvent(r.Context(),result.Event); err!=nil {
 		s.internalError(w,r,err); return
 	}
@@ -89,6 +98,10 @@ func (s *Server) handleYooKassaWebhook(w http.ResponseWriter,r *http.Request) {
 		event,err:=s.yooKassa.VerifyAndNormalizeRefundWebhook(r.Context(),raw)
 		if err!=nil{
 			s.logger.Warn("YooKassa refund webhook verification failed","error",err)
+			if errors.Is(err,resilience.ErrDependencyUnavailable){
+				w.Header().Set("Retry-After","30")
+				writeError(w,http.StatusServiceUnavailable,"provider_verification_unavailable");return
+			}
 			writeError(w,http.StatusBadRequest,"invalid_webhook");return
 		}
 		if _,err:=s.billing.ApplyVerifiedRefund(r.Context(),event);err!=nil{s.internalError(w,r,err);return}
@@ -98,6 +111,11 @@ func (s *Server) handleYooKassaWebhook(w http.ResponseWriter,r *http.Request) {
 	event,err:=s.yooKassa.VerifyAndNormalizeWebhook(r.Context(),r.Header,raw)
 	if err!=nil {
 		s.logger.Warn("YooKassa webhook verification failed","error",err)
+		if errors.Is(err,resilience.ErrDependencyUnavailable){
+			w.Header().Set("Retry-After","30")
+			writeError(w,http.StatusServiceUnavailable,"provider_verification_unavailable")
+			return
+		}
 		writeError(w,http.StatusBadRequest,"invalid_webhook")
 		return
 	}

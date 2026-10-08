@@ -16,6 +16,7 @@ import (
 
 	"github.com/venomimonstro/vpnx3/internal/billing"
 	"github.com/venomimonstro/vpnx3/internal/store"
+	"github.com/venomimonstro/vpnx3/internal/resilience"
 )
 
 const apiBase="https://api.yookassa.ru/v3"
@@ -25,6 +26,7 @@ type Adapter struct {
 	secretKey string
 	returnURL string
 	client *http.Client
+	breaker *resilience.CircuitBreaker
 }
 
 func New(shopID,secretKey,returnURL string) (*Adapter,error) {
@@ -42,10 +44,30 @@ func New(shopID,secretKey,returnURL string) (*Adapter,error) {
 		secretKey:secretKey,
 		returnURL:returnURL,
 		client:&http.Client{Timeout:12*time.Second},
+		breaker:resilience.NewCircuitBreaker(5,30*time.Second),
 	},nil
 }
 
 func (a *Adapter) Name() string { return "yookassa" }
+func (a *Adapter) CircuitSnapshot() resilience.Snapshot { return a.breaker.Snapshot() }
+
+func (a *Adapter) do(req *http.Request)(*http.Response,error){
+	now:=time.Now().UTC()
+	if !a.breaker.Allow(now){
+		return nil,resilience.ErrDependencyUnavailable
+	}
+	resp,err:=a.do(req)
+	if err!=nil{
+		a.breaker.Failure(now)
+		return nil,fmt.Errorf("%w: YooKassa transport: %v",resilience.ErrDependencyUnavailable,err)
+	}
+	if resp.StatusCode==http.StatusTooManyRequests||resp.StatusCode>=500{
+		a.breaker.Failure(now)
+	}else{
+		a.breaker.Success()
+	}
+	return resp,nil
+}
 
 type CreateResult struct {
 	Event billing.NormalizedEvent
@@ -88,12 +110,15 @@ func (a *Adapter) CreatePayment(ctx context.Context,userID string,plan store.Pla
 	req.Header.Set("Accept","application/json")
 	req.Header.Set("Idempotence-Key",idempotence)
 
-	resp,err:=a.client.Do(req)
+	resp,err:=a.do(req)
 	if err!=nil { return CreateResult{},fmt.Errorf("create YooKassa payment: %w",err) }
 	defer resp.Body.Close()
 	responseRaw,err:=io.ReadAll(io.LimitReader(resp.Body,1<<20))
 	if err!=nil { return CreateResult{},err }
 	if resp.StatusCode<200 || resp.StatusCode>=300 {
+		if resp.StatusCode==http.StatusTooManyRequests||resp.StatusCode>=500{
+			return CreateResult{},fmt.Errorf("%w: YooKassa create payment status %d",resilience.ErrDependencyUnavailable,resp.StatusCode)
+		}
 		return CreateResult{},fmt.Errorf("YooKassa create payment status %d",resp.StatusCode)
 	}
 
@@ -149,10 +174,15 @@ func (a *Adapter) CreateRecurringPayment(ctx context.Context,userID string,plan 
 	raw,err:=json.Marshal(payload);if err!=nil{return CreateResult{},err}
 	req,err:=http.NewRequestWithContext(ctx,http.MethodPost,apiBase+"/payments",bytes.NewReader(raw));if err!=nil{return CreateResult{},err}
 	req.SetBasicAuth(a.shopID,a.secretKey);req.Header.Set("Content-Type","application/json");req.Header.Set("Accept","application/json");req.Header.Set("Idempotence-Key",idempotence)
-	resp,err:=a.client.Do(req);if err!=nil{return CreateResult{},fmt.Errorf("create YooKassa recurring payment: %w",err)}
+	resp,err:=a.do(req);if err!=nil{return CreateResult{},fmt.Errorf("create YooKassa recurring payment: %w",err)}
 	defer resp.Body.Close()
 	responseRaw,err:=io.ReadAll(io.LimitReader(resp.Body,1<<20));if err!=nil{return CreateResult{},err}
-	if resp.StatusCode<200||resp.StatusCode>=300{return CreateResult{},fmt.Errorf("YooKassa recurring payment status %d",resp.StatusCode)}
+	if resp.StatusCode<200||resp.StatusCode>=300{
+		if resp.StatusCode==http.StatusTooManyRequests||resp.StatusCode>=500{
+			return CreateResult{},fmt.Errorf("%w: YooKassa recurring payment status %d",resilience.ErrDependencyUnavailable,resp.StatusCode)
+		}
+		return CreateResult{},fmt.Errorf("YooKassa recurring payment status %d",resp.StatusCode)
+	}
 	payment,err:=parsePayment(responseRaw);if err!=nil{return CreateResult{},err}
 	if payment.Metadata.UserID!=userID||payment.Metadata.PlanID!=plan.ID||payment.Metadata.RenewalAttemptID!=attemptID{return CreateResult{},fmt.Errorf("unexpected recurring payment metadata")}
 	amountMinor,err:=decimalToMinor(payment.Amount.Value);if err!=nil{return CreateResult{},err}
@@ -301,11 +331,16 @@ func (a *Adapter) fetchRefund(ctx context.Context,id string)(refundObject,[]byte
 	if err!=nil{return refundObject{},nil,err}
 	req.SetBasicAuth(a.shopID,a.secretKey)
 	req.Header.Set("Accept","application/json")
-	resp,err:=a.client.Do(req)
+	resp,err:=a.do(req)
 	if err!=nil{return refundObject{},nil,fmt.Errorf("verify YooKassa refund: %w",err)}
 	defer resp.Body.Close()
 	raw,err:=io.ReadAll(io.LimitReader(resp.Body,1<<20));if err!=nil{return refundObject{},nil,err}
-	if resp.StatusCode!=http.StatusOK{return refundObject{},nil,fmt.Errorf("verify YooKassa refund status %d",resp.StatusCode)}
+	if resp.StatusCode!=http.StatusOK{
+		if resp.StatusCode==http.StatusTooManyRequests||resp.StatusCode>=500{
+			return refundObject{},nil,fmt.Errorf("%w: YooKassa refund status %d",resilience.ErrDependencyUnavailable,resp.StatusCode)
+		}
+		return refundObject{},nil,fmt.Errorf("verify YooKassa refund status %d",resp.StatusCode)
+	}
 	var refund refundObject
 	if err:=json.Unmarshal(raw,&refund);err!=nil{return refundObject{},nil,err}
 	if refund.ID==""||refund.Status==""||refund.PaymentID==""||refund.Amount.Value==""{
@@ -343,12 +378,15 @@ func (a *Adapter) fetchPayment(ctx context.Context,id string) (paymentObject,[]b
 	if err!=nil { return paymentObject{},nil,err }
 	req.SetBasicAuth(a.shopID,a.secretKey)
 	req.Header.Set("Accept","application/json")
-	resp,err:=a.client.Do(req)
+	resp,err:=a.do(req)
 	if err!=nil { return paymentObject{},nil,fmt.Errorf("verify YooKassa payment: %w",err) }
 	defer resp.Body.Close()
 	raw,err:=io.ReadAll(io.LimitReader(resp.Body,1<<20))
 	if err!=nil { return paymentObject{},nil,err }
 	if resp.StatusCode!=http.StatusOK {
+		if resp.StatusCode==http.StatusTooManyRequests||resp.StatusCode>=500{
+			return paymentObject{},nil,fmt.Errorf("%w: YooKassa payment status %d",resilience.ErrDependencyUnavailable,resp.StatusCode)
+		}
 		return paymentObject{},nil,fmt.Errorf("verify YooKassa payment status %d",resp.StatusCode)
 	}
 	payment,err:=parsePayment(raw)

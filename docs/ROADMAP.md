@@ -1157,3 +1157,32 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 4. сравнить показатели двух Control Plane реплик;
 5. убедиться, что логи не содержат клиентский IP/body/query;
 6. подключить внешний log/metrics collector только при необходимости агрегирования между репликами.
+
+
+## Спринт 36 — circuit breaker внешних платежей: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: деградация внешнего платёжного API не должна каскадно занимать HTTP admission slots и ресурсы Control Plane.
+
+Реализовано:
+
+- общий concurrency-safe circuit breaker с closed/open/half-open;
+- YooKassa открывает circuit после 5 последовательных transport/429/5xx ошибок;
+- open cooldown — 30 секунд;
+- после cooldown допускается один half-open probe;
+- успешный probe полностью закрывает circuit;
+- новые client payment requests при open circuit получают быстрый HTTP 503 + Retry-After;
+- network/429/5xx ошибки provider verification классифицируются как временная недоступность;
+- YooKassa webhook при временной невозможности повторной проверки получает HTTP 503, а не ложный 400;
+- malformed/неподдерживаемый webhook по-прежнему получает 400;
+- circuit state/failure count/opened_at видны в launch readiness;
+- auto-renew использует тот же защищённый provider adapter и также деградирует fail-fast.
+
+Физическая приёмка:
+
+1. имитировать timeout YooKassa API;
+2. подтвердить открытие circuit после порога;
+3. проверить быстрые 503 без ожидания 12-секундного timeout;
+4. проверить half-open single probe после cooldown;
+5. подтвердить закрытие после восстановления;
+6. проверить повтор webhook после provider outage;
+7. убедиться, что malformed webhook не превращается в 503.
