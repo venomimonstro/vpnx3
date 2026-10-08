@@ -57,6 +57,17 @@ class LocalState(context: Context) {
         get() = prefs.getLong("highest_config_version", 0L)
         set(value) { prefs.edit().putLong("highest_config_version", value).apply() }
 
+    var configMirrorUrls: List<String>
+        get() = prefs.getString("config_mirror_urls", "")
+            .orEmpty()
+            .split('\n')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        set(value) {
+            val safe=value.distinct().take(16).joinToString("\n")
+            prefs.edit().putString("config_mirror_urls",safe).apply()
+        }
+
     var personalKeyEnabled: Boolean
         get() = prefs.getBoolean("personal_key_enabled", false)
         set(value) {

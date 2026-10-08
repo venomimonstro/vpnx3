@@ -51,10 +51,22 @@ android {
             .orElse(providers.environmentVariable("VPNX3_RELEASE_PUBLIC_KEY"))
             .orElse("")
             .get()
+        val bootstrapConfigUrls = providers.gradleProperty("VPNX3_CONFIG_BOOTSTRAP_URLS")
+            .orElse(providers.environmentVariable("VPNX3_CONFIG_BOOTSTRAP_URLS"))
+            .orElse("")
+            .get()
+        val bootstrapList = bootstrapConfigUrls.split(',', ';')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
 
         buildConfigField("String", "CONTROL_URL", "\"$controlUrl\"")
         buildConfigField("String", "CONFIG_PUBLIC_KEY", "\"$configPublicKey\"")
         buildConfigField("String", "RELEASE_PUBLIC_KEY", "\"$releasePublicKey\"")
+        buildConfigField(
+            "String",
+            "CONFIG_BOOTSTRAP_URLS",
+            "\"" + bootstrapList.joinToString(",") + "\""
+        )
 
         if (gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }) {
             require(controlUrl.startsWith("https://") && !controlUrl.contains("127.0.0.1")) {
@@ -62,6 +74,13 @@ android {
             }
             require(configPublicKey.isNotBlank()) {
                 "Release build requires VPNX3_CONFIG_PUBLIC_KEY"
+            }
+            require(bootstrapList.all {
+                it.startsWith("https://") &&
+                    !it.contains("localhost", ignoreCase = true) &&
+                    !it.contains("127.0.0.1")
+            }) {
+                "VPNX3_CONFIG_BOOTSTRAP_URLS must contain only public HTTPS URLs"
             }
         }
     }

@@ -39,7 +39,9 @@ class VpnRepository(private val context: Context) {
         require(BuildConfig.CONFIG_PUBLIC_KEY.isNotBlank()) {
             "VPNX3_CONFIG_PUBLIC_KEY must be pinned at build time"
         }
-        configRepository = ConfigRepository(api, state, BuildConfig.CONFIG_PUBLIC_KEY)
+        configRepository = ConfigRepository(
+            api, state, BuildConfig.CONFIG_PUBLIC_KEY, BuildConfig.CONFIG_BOOTSTRAP_URLS
+        )
     }
 
     fun ensureRegistered(): Registration {

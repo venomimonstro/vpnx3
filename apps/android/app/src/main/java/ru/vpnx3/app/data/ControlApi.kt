@@ -113,6 +113,26 @@ class ControlApi(
     fun latestConfig(): String =
         request("GET", "/api/v1/config/latest", null, emptyMap())
 
+    fun latestConfigFrom(absoluteUrl:String):String {
+        val url=URL(absoluteUrl)
+        require(url.protocol=="https" && url.host.isNotBlank() && url.userInfo==null) {
+            "Configuration mirror must use credential-free HTTPS"
+        }
+        require(url.ref==null) { "Configuration mirror URL must not contain fragment" }
+        val connection=url.openConnection() as HttpURLConnection
+        connection.requestMethod="GET"
+        connection.connectTimeout=8_000
+        connection.readTimeout=10_000
+        connection.setRequestProperty("Accept","application/json")
+        connection.setRequestProperty("Cache-Control","no-cache")
+        val code=connection.responseCode
+        val stream=if(code in 200..299) connection.inputStream else connection.errorStream
+        val response=stream?.bufferedReader()?.use{it.readText()}.orEmpty()
+        connection.disconnect()
+        if(code !in 200..299) throw IllegalStateException("Config mirror failed with HTTP $code")
+        return response
+    }
+
     fun plans(): List<ClientPlan> {
         val raw=request("GET","/api/v1/plans",null,emptyMap())
         val arr=JSONObject(raw).getJSONArray("plans")
