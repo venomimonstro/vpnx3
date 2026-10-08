@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -22,37 +23,26 @@ type Exporter struct {
 	client *http.Client
 }
 
-type payload struct {
-	SchemaVersion int `json:"schema_version"`
-	AuditID int64 `json:"audit_id"`
-	ActorType string `json:"actor_type"`
-	ActorID *string `json:"actor_id,omitempty"`
-	Action string `json:"action"`
-	ResourceType string `json:"resource_type"`
-	ResourceID *string `json:"resource_id,omitempty"`
-	RequestID *string `json:"request_id,omitempty"`
-	SourceIP *string `json:"source_ip,omitempty"`
-	BeforeState json.RawMessage `json:"before_state,omitempty"`
-	AfterState json.RawMessage `json:"after_state,omitempty"`
-	Result string `json:"result"`
-	CreatedAt time.Time `json:"created_at"`
-	PrevHash string `json:"prev_hash"`
-	EntryHash string `json:"entry_hash"`
-}
-
-type envelope struct {
+type signedEnvelope struct {
 	KeyID string `json:"key_id"`
 	Payload string `json:"payload"`
 	Signature string `json:"signature"`
 }
 
 func New(s *store.Store,signer *signing.Signer,endpoint string,logger *slog.Logger)*Exporter{
-	return &Exporter{store:s,signer:signer,endpoint:endpoint,logger:logger,client:&http.Client{Timeout:10*time.Second}}
+	client:=&http.Client{
+		Timeout:10*time.Second,
+		CheckRedirect:func(_ *http.Request,_ []*http.Request)error{
+			return http.ErrUseLastResponse
+		},
+	}
+	return &Exporter{store:s,signer:signer,endpoint:endpoint,logger:logger,client:client}
 }
 
 func (e *Exporter) Run(ctx context.Context){
 	if e==nil||e.signer==nil||e.endpoint==""{return}
-	t:=time.NewTicker(15*time.Second);defer t.Stop()
+	t:=time.NewTicker(5*time.Second)
+	defer t.Stop()
 	e.flush(ctx)
 	for{
 		select{
@@ -63,58 +53,76 @@ func (e *Exporter) Run(ctx context.Context){
 }
 
 func (e *Exporter) flush(parent context.Context){
-	ctx,cancel:=context.WithTimeout(parent,30*time.Second);defer cancel()
-	events,err:=e.store.ClaimSecurityExportEvents(ctx,25,time.Now().UTC())
-	if err!=nil{
-		e.logger.Warn("security export claim failed","error",err)
-		return
-	}
-	for _,event:=range events{
+	for i:=0;i<50;i++{
 		if parent.Err()!=nil{return}
-		if err:=e.deliver(parent,event);err!=nil{
-			delay:=backoff(event.Attempts)
-			_ = e.store.MarkSecurityExportFailed(parent,event.AuditID,time.Now().UTC().Add(delay),err.Error())
-			e.logger.Warn("security event export failed","audit_id",event.AuditID,"attempt",event.Attempts,"retry_in",delay.String(),"error",err)
-			continue
+		ctx,cancel:=context.WithTimeout(parent,12*time.Second)
+		event,err:=e.store.ClaimSecurityAuditExport(ctx,time.Now().UTC())
+		if err==store.ErrNotFound{
+			cancel()
+			return
 		}
-		if err:=e.store.MarkSecurityExportDelivered(parent,event.AuditID,time.Now().UTC());err!=nil{
-			e.logger.Warn("security event delivery acknowledgement failed","audit_id",event.AuditID,"error",err)
+		if err!=nil{
+			cancel()
+			e.logger.Error("security audit export claim failed","error",err)
+			return
 		}
+
+		err=e.deliver(ctx,event)
+		if err==nil{
+			err=e.store.MarkSecurityAuditDelivered(ctx,event.AuditID,time.Now().UTC())
+			if err==nil{
+				e.logger.Info("security audit exported","audit_id",event.AuditID,"attempt",event.Attempt)
+			}
+		}else{
+			dead:=event.Attempt>=10
+			next:=time.Now().UTC().Add(retryDelay(event.Attempt))
+			if markErr:=e.store.MarkSecurityAuditFailed(
+				ctx,event.AuditID,err.Error(),next,dead,time.Now().UTC(),
+			);markErr!=nil{
+				e.logger.Error("security audit export failure persistence failed",
+					"audit_id",event.AuditID,"error",markErr)
+			}
+			e.logger.Warn("security audit export failed",
+				"audit_id",event.AuditID,"attempt",event.Attempt,"dead",dead,"error",err)
+		}
+		cancel()
 	}
 }
 
-func (e *Exporter) deliver(ctx context.Context,event store.SecurityExportEvent)error{
-	p:=payload{
-		SchemaVersion:1,AuditID:event.AuditID,ActorType:event.ActorType,ActorID:event.ActorID,
-		Action:event.Action,ResourceType:event.ResourceType,ResourceID:event.ResourceID,
-		RequestID:event.RequestID,SourceIP:event.SourceIP,BeforeState:event.BeforeState,
-		AfterState:event.AfterState,Result:event.Result,CreatedAt:event.CreatedAt.UTC(),
-		PrevHash:base64.RawURLEncoding.EncodeToString(event.PrevHash),
-		EntryHash:base64.RawURLEncoding.EncodeToString(event.EntryHash),
-	}
-	raw,err:=json.Marshal(p);if err!=nil{return err}
-	env:=envelope{
+func (e *Exporter) deliver(ctx context.Context,event store.SecurityAuditExport)error{
+	raw,err:=json.Marshal(event)
+	if err!=nil{return err}
+	env:=signedEnvelope{
 		KeyID:e.signer.KeyID(),
 		Payload:base64.RawURLEncoding.EncodeToString(raw),
 		Signature:base64.RawURLEncoding.EncodeToString(e.signer.Sign(raw)),
 	}
-	body,err:=json.Marshal(env);if err!=nil{return err}
-	req,err:=http.NewRequestWithContext(ctx,http.MethodPost,e.endpoint,bytes.NewReader(body));if err!=nil{return err}
+	body,err:=json.Marshal(env)
+	if err!=nil{return err}
+
+	req,err:=http.NewRequestWithContext(ctx,http.MethodPost,e.endpoint,bytes.NewReader(body))
+	if err!=nil{return err}
 	req.Header.Set("Content-Type","application/json")
 	req.Header.Set("Accept","application/json")
-	req.Header.Set("User-Agent","VPNX3-Security-Export/1")
+	req.Header.Set("User-Agent","VPNX3-Security-Export/2")
 	req.Header.Set("X-VPNX3-Audit-ID",fmt.Sprintf("%d",event.AuditID))
-	resp,err:=e.client.Do(req);if err!=nil{return err}
+
+	resp,err:=e.client.Do(req)
+	if err!=nil{return fmt.Errorf("security export request: %w",err)}
 	defer resp.Body.Close()
-	if resp.StatusCode<200||resp.StatusCode>=300{return fmt.Errorf("security export HTTP %d",resp.StatusCode)}
+	_,_=io.Copy(io.Discard,io.LimitReader(resp.Body,64<<10))
+	if resp.StatusCode<200||resp.StatusCode>=300{
+		return fmt.Errorf("security export status %d",resp.StatusCode)
+	}
 	return nil
 }
 
-func backoff(attempt int)time.Duration{
-	if attempt<1{attempt=1}
-	shift:=attempt-1
-	if shift>8{shift=8}
-	d:=15*time.Second*time.Duration(1<<shift)
-	if d>time.Hour{d=time.Hour}
-	return d
+func retryDelay(attempt int)time.Duration{
+	switch{
+	case attempt<=1:return time.Minute
+	case attempt==2:return 5*time.Minute
+	case attempt==3:return 30*time.Minute
+	case attempt==4:return 2*time.Hour
+	default:return 6*time.Hour
+	}
 }

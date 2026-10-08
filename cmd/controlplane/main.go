@@ -28,7 +28,6 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/billing/yookassa"
 	"github.com/venomimonstro/vpnx3/internal/signing"
 	"github.com/venomimonstro/vpnx3/internal/securityexport"
-	"github.com/venomimonstro/vpnx3/internal/securityexport"
 	"github.com/venomimonstro/vpnx3/internal/store"
 	"github.com/venomimonstro/vpnx3/internal/systemmonitor"
 )
@@ -121,9 +120,6 @@ func main() {
 	go systemmonitor.New(nodeStore,logger,cfg.BackupStatusFile).Run(monitorCtx)
 	if cfg.AlertWebhookURL!="" {
 		go alertnotifier.New(nodeStore,cfg.AlertWebhookURL,cfg.AlertWebhookSecret,logger).Run(monitorCtx)
-	}
-	if cfg.SecurityExportURL!="" {
-		go securityexport.New(nodeStore,cfg.SecurityExportURL,cfg.SecurityExportSecret,logger).Run(monitorCtx)
 	}
 	if cfg.SecurityExportURL!="" {
 		securitySigner,signErr:=signing.FromSeedBase64(cfg.SecurityExportSigningKey)

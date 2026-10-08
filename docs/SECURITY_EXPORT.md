@@ -1,51 +1,52 @@
 # Внешний аудит VPNX3
 
-Control Plane может отправлять каждую новую запись `audit_log` во внешний WORM/SIEM/receiver.
+Каждая новая запись `audit_log` автоматически попадает в transactional outbox и независимо доставляется во внешний WORM/SIEM/receiver.
 
-## Формат
+## Модель доверия
 
-HTTP POST JSON содержит:
+Для внешнего аудита используется отдельный Ed25519 signing key:
 
-- `audit_id`;
-- `prev_hash`;
-- `entry_hash`;
-- actor/action/resource/result;
+- приватный seed хранится только на Control Plane;
+- receiver получает только публичный ключ;
+- ключ обязан отличаться от Configuration, Access и Release signing keys.
+
+Наружу не отправляются `before_state`, `after_state` и source IP. Подписанный payload содержит:
+
+- audit_id;
+- prev_hash / entry_hash;
+- actor type/id;
+- action;
+- resource type/id;
 - request id;
-- время.
+- result;
+- created_at;
+- номер попытки доставки.
 
-Не экспортируются `before_state`, `after_state` и source IP.
+HTTP body — envelope:
 
-Заголовки:
+```json
+{"key_id":"...","payload":"base64url","signature":"base64url"}
+```
 
-- `X-VPNX3-Audit-ID`;
-- `X-VPNX3-Timestamp`;
-- `X-VPNX3-Signature: sha256=<hex>`.
+Подпись считается Ed25519 по exact decoded `payload` bytes.
 
-HMAC считается как:
+Receiver должен:
 
-`HMAC-SHA256(secret, timestamp + "\n" + exact_body_bytes)`.
+1. принимать только HTTPS;
+2. до сохранения проверять Ed25519 signature и key_id;
+3. дедуплицировать по audit_id;
+4. проверять непрерывность prev_hash → entry_hash;
+5. подтверждать 2xx только после устойчивой записи.
 
-Receiver обязан:
+## Retry / dead-letter
 
-1. проверять HTTPS на своей стороне;
-2. проверять HMAC до разбора/сохранения;
-3. ограничивать допустимый возраст timestamp;
-4. дедуплицировать по `audit_id`;
-5. хранить exact body или минимум audit_id/prev_hash/entry_hash;
-6. проверять непрерывность цепочки между последовательными событиями;
-7. отвечать 2xx только после устойчивой записи события.
+Control Plane не блокирует клиентские/admin запросы ожиданием receiver.
 
-## Retry
+После 10 неуспешных доставок запись становится dead-letter. Owner/security-admin может вернуть dead-letter в очередь через админку; requeue сам попадает в audit log.
 
-Control Plane не блокирует основной запрос. Доставка идёт через outbox.
-
-После 10 ошибок событие становится dead-letter. Owner/security-admin может вручную вернуть до 500 записей в очередь через административный интерфейс/API. Requeue сам попадает в audit log.
-
-Локальная проверка webhook:
+Локальная проверка envelope:
 
 ```bash
-cat event.json | python3 scripts/verify-security-export.py \
-  --secret "$VPNX3_SECURITY_EXPORT_SECRET" \
-  --timestamp "$TIMESTAMP" \
-  --signature "$SIGNATURE"
+cat envelope.json | go run ./cmd/security-export-verify \
+  --public-key "$VPNX3_SECURITY_EXPORT_PUBLIC_KEY"
 ```

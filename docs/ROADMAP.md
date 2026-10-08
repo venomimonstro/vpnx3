@@ -526,8 +526,8 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - delivery lease защищает от параллельной повторной отправки;
 - наружу передаются audit_id, prev_hash, entry_hash и минимальные метаданные;
 - before_state/after_state и source IP по умолчанию не экспортируются;
-- webhook подписывается HMAC-SHA256;
-- receiver может дедуплицировать по audit_id и проверять непрерывность hash-chain;
+- payload подписывается отдельным Ed25519 signing key;
+- receiver хранит только публичный ключ, дедуплицирует по audit_id и проверяет непрерывность hash-chain;
 - экспоненциальные retry;
 - после 10 безуспешных попыток событие переходит в dead-letter;
 - launch readiness контролирует backlog, возраст очереди и dead-letter;
@@ -540,7 +540,7 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 Физическая приёмка:
 
 1. подключить независимый WORM/SIEM/receiver вне основного PostgreSQL/Control Plane;
-2. проверить HMAC verification и дедупликацию;
+2. проверить Ed25519 verification и дедупликацию;
 3. искусственно отключить receiver и проверить retry/backlog/dead-letter;
 4. восстановить receiver и проверить непрерывность prev_hash → entry_hash;
 5. хранить receiver credentials отдельно от database backup.
