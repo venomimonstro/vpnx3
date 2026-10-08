@@ -193,8 +193,9 @@ func writeBrowserRuntimeConfig(dir string) error {
 	key:=strings.TrimSpace(os.Getenv("VPNX3_CONFIG_PUBLIC_KEY"))
 	releaseKey:=strings.TrimSpace(os.Getenv("VPNX3_RELEASE_PUBLIC_KEY"))
 	rawMirrors:=strings.TrimSpace(os.Getenv("VPNX3_CONFIG_BOOTSTRAP_URLS"))
-	if !strings.HasPrefix(control,"https://") || key=="" || releaseKey=="" || rawMirrors=="" {
-		return fmt.Errorf("browser build requires control URL, config/release public keys and VPNX3_CONFIG_BOOTSTRAP_URLS")
+	trustRoot:=strings.TrimSpace(os.Getenv("VPNX3_TRUST_ROOT_PUBLIC_KEY"))
+	if !strings.HasPrefix(control,"https://") || (trustRoot==""&&key=="") || releaseKey=="" || rawMirrors=="" {
+		return fmt.Errorf("browser build requires control URL, trust root or legacy config key, release key and VPNX3_CONFIG_BOOTSTRAP_URLS")
 	}
 	mirrors:=make([]string,0)
 	for _,part:=range strings.FieldsFunc(rawMirrors,func(r rune)bool{return r==','||r==';'}){
@@ -209,8 +210,8 @@ func writeBrowserRuntimeConfig(dir string) error {
 	if len(mirrors)==0{return fmt.Errorf("at least one config bootstrap URL is required")}
 	mirrorsJSON,err:=json.Marshal(mirrors);if err!=nil{return err}
 	content:=fmt.Sprintf(
-		"const VPNX3_CONTROL_URL=%q;\nconst VPNX3_CONFIG_PUBLIC_KEY=%q;\nconst VPNX3_RELEASE_PUBLIC_KEY=%q;\nconst VPNX3_CONFIG_BOOTSTRAP_URLS=%s;\n",
-		control,key,releaseKey,string(mirrorsJSON),
+		"const VPNX3_CONTROL_URL=%q;\nconst VPNX3_CONFIG_PUBLIC_KEY=%q;\nconst VPNX3_TRUST_ROOT_PUBLIC_KEY=%q;\nconst VPNX3_RELEASE_PUBLIC_KEY=%q;\nconst VPNX3_CONFIG_BOOTSTRAP_URLS=%s;\n",
+		control,key,strings.TrimSpace(os.Getenv("VPNX3_TRUST_ROOT_PUBLIC_KEY")),releaseKey,string(mirrorsJSON),
 	)
 	return os.WriteFile(filepath.Join(dir,"runtime-config.js"),[]byte(content),0644)
 }

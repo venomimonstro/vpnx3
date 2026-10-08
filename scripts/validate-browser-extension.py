@@ -61,8 +61,8 @@ def main():
     runtime_text=runtime.read_text("utf-8",errors="replace")
     if "VPNX3_CONTROL_URL" not in runtime_text or "https://" not in runtime_text:
         fail("runtime config must contain HTTPS Control URL")
-    if "VPNX3_CONFIG_PUBLIC_KEY" not in runtime_text:
-        fail("runtime config must contain pinned config public key")
+    if "VPNX3_TRUST_ROOT_PUBLIC_KEY" not in runtime_text and "VPNX3_CONFIG_PUBLIC_KEY" not in runtime_text:
+        fail("runtime config must contain pinned trust root or legacy config public key")
     if "VPNX3_RELEASE_PUBLIC_KEY" not in runtime_text:
         fail("runtime config must contain pinned release public key")
     match=re.search(r"VPNX3_CONFIG_BOOTSTRAP_URLS=(\[[^;]*\])",runtime_text)

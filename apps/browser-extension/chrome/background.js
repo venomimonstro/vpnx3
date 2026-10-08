@@ -15,7 +15,9 @@ const STATE_KEYS = {
   configEnvelope: "config_envelope",
   configMirrors: "config_mirrors",
   releasePolicy: "release_policy",
-  releasePolicyUpdatedAt: "release_policy_updated_at"
+  releasePolicyUpdatedAt: "release_policy_updated_at",
+  trustEnvelope: "trust_envelope",
+  trustVersion: "trust_version"
 };
 
 function b64url(bytes) {
@@ -33,6 +35,87 @@ function unb64url(s) {
 }
 function hex(bytes){return [...new Uint8Array(bytes)].map(x=>x.toString(16).padStart(2,"0")).join("")}
 async function sha256(bytes){return crypto.subtle.digest("SHA-256",bytes)}
+
+
+async function verifyTrustBundle(envelope){
+  const root=unb64url(VPNX3_TRUST_ROOT_PUBLIC_KEY||"");
+  if(root.length!==32) throw new Error("Pinned trust root is invalid");
+  const digest=await sha256(root);
+  if(hex(digest).slice(0,16)!==envelope.key_id) throw new Error("Unexpected trust root");
+  const payload=unb64url(envelope.payload),signature=unb64url(envelope.signature);
+  const key=await crypto.subtle.importKey("raw",root,{name:"Ed25519"},false,["verify"]);
+  if(!await crypto.subtle.verify({name:"Ed25519"},key,signature,payload)) throw new Error("Invalid trust bundle signature");
+  const bundle=JSON.parse(new TextDecoder().decode(payload));
+  if(bundle.schema_version!==1) throw new Error("Unsupported trust bundle schema");
+  const stored=await storageGet([STATE_KEYS.trustVersion]);
+  const minimum=Number(stored[STATE_KEYS.trustVersion]||0);
+  if(!Number.isInteger(bundle.version)||bundle.version<1||bundle.version<minimum) throw new Error("Trust bundle rollback detected");
+  const now=Date.now(),issued=Date.parse(bundle.issued_at),expires=Date.parse(bundle.expires_at);
+  if(!Number.isFinite(issued)||!Number.isFinite(expires)||issued>now+5*60*1000||expires<=now||expires-issued>366*24*3600*1000){
+    throw new Error("Trust bundle outside validity window");
+  }
+  if(!Array.isArray(bundle.keys)||bundle.keys.length<2||bundle.keys.length>12) throw new Error("Invalid trust key count");
+  const seen=new Set(),active={};
+  for(const item of bundle.keys){
+    if(!["config","access","release"].includes(item.purpose)||item.algorithm!=="ed25519"||
+       !["active","next","retired"].includes(item.state)) throw new Error("Invalid trust key");
+    const raw=unb64url(item.public_key||"");
+    if(raw.length!==32) throw new Error("Invalid trust public key");
+    const id=hex(await sha256(raw)).slice(0,16);
+    if(id!==item.key_id||seen.has(item.purpose+"\0"+id)) throw new Error("Trust key id mismatch");
+    seen.add(item.purpose+"\0"+id);
+    if(item.state==="active") active[item.purpose]=(active[item.purpose]||0)+1;
+  }
+  if(active.config!==1||active.access!==1||(active.release||0)>1) throw new Error("Invalid active trust key set");
+  await storageSet({
+    [STATE_KEYS.trustVersion]:Math.max(minimum,Number(bundle.version)),
+    [STATE_KEYS.trustEnvelope]:envelope
+  });
+  return bundle;
+}
+
+function trustKeys(bundle,purpose){
+  const out=new Map();
+  for(const item of (bundle.keys||[])){
+    if(item.purpose===purpose&&(item.state==="active"||item.state==="retired")) out.set(item.key_id,item.public_key);
+  }
+  return out;
+}
+
+function trustURLFromConfigURL(raw){
+  const u=new URL(raw);
+  u.pathname="/api/v1/trust/bundle";u.search="";u.hash="";
+  return u.toString();
+}
+
+async function latestTrustBundle(){
+  if(!VPNX3_TRUST_ROOT_PUBLIC_KEY) return null;
+  const state=await storageGet([STATE_KEYS.trustEnvelope,STATE_KEYS.configMirrors]);
+  const bootstrap=Array.isArray(VPNX3_CONFIG_BOOTSTRAP_URLS)?VPNX3_CONFIG_BOOTSTRAP_URLS:[];
+  const configSources=[
+    VPNX3_CONTROL_URL.replace(/\/$/,"")+"/api/v1/config/latest",
+    ...bootstrap,
+    ...(Array.isArray(state[STATE_KEYS.configMirrors])?state[STATE_KEYS.configMirrors]:[])
+  ];
+  const sources=[VPNX3_CONTROL_URL.replace(/\/$/,"")+"/api/v1/trust/bundle"];
+  for(const raw of configSources){
+    try{sources.push(trustURLFromConfigURL(raw))}catch(_){}
+  }
+  const seen=new Set();
+  let last=null;
+  for(const source of sources){
+    if(!source||seen.has(source)) continue;seen.add(source);
+    try{
+      const u=new URL(source);
+      if(u.protocol!=="https:"||!u.hostname||u.username||u.password||u.hash) throw new Error("Unsafe trust source");
+      const res=await fetch(u.toString(),{headers:{"Accept":"application/json","Cache-Control":"no-cache"},cache:"no-store"});
+      if(!res.ok) throw new Error("Trust source HTTP "+res.status);
+      return await verifyTrustBundle(await res.json());
+    }catch(e){last=e}
+  }
+  if(state[STATE_KEYS.trustEnvelope]) return verifyTrustBundle(state[STATE_KEYS.trustEnvelope]);
+  throw last||new Error("No valid trust bundle");
+}
 
 function rawEcdsaToDer(raw) {
   const sig=new Uint8Array(raw);
@@ -147,14 +230,21 @@ async function nextSequence(){
 }
 
 async function verifyConfig(envelope){
-  const pub=unb64url(VPNX3_CONFIG_PUBLIC_KEY);
-  if(pub.length!==32) throw new Error("Pinned config public key is invalid");
+  let authorized=new Map();
+  if(VPNX3_TRUST_ROOT_PUBLIC_KEY){
+    authorized=trustKeys(await latestTrustBundle(),"config");
+  }else{
+    const pub=unb64url(VPNX3_CONFIG_PUBLIC_KEY);
+    if(pub.length!==32) throw new Error("Pinned config public key is invalid");
+    const digest=await sha256(pub);authorized.set(hex(digest).slice(0,16),VPNX3_CONFIG_PUBLIC_KEY);
+  }
+  const encoded=authorized.get(envelope.key_id);
+  if(!encoded) throw new Error("Unexpected configuration signing key");
+  const pub=unb64url(encoded);
   const payload=unb64url(envelope.payload);
   const signature=unb64url(envelope.signature);
   const key=await crypto.subtle.importKey("raw",pub,{name:"Ed25519"},false,["verify"]);
   if(!await crypto.subtle.verify({name:"Ed25519"},key,signature,payload)) throw new Error("Invalid configuration signature");
-  const digest=await sha256(pub);
-  if(hex(digest).slice(0,16)!==envelope.key_id) throw new Error("Unexpected configuration signing key");
   const cfg=JSON.parse(new TextDecoder().decode(payload));
   if(cfg.schema_version!==1) throw new Error("Unsupported configuration schema");
   const now=Date.now();
@@ -168,14 +258,21 @@ async function verifyConfig(envelope){
 }
 
 async function verifyReleasePolicy(envelope,target){
-  const pub=unb64url(VPNX3_RELEASE_PUBLIC_KEY);
-  if(pub.length!==32) throw new Error("Pinned release public key is invalid");
+  let authorized=new Map();
+  if(VPNX3_TRUST_ROOT_PUBLIC_KEY){
+    authorized=trustKeys(await latestTrustBundle(),"release");
+  }else{
+    const pub=unb64url(VPNX3_RELEASE_PUBLIC_KEY);
+    if(pub.length!==32) throw new Error("Pinned release public key is invalid");
+    const digest=await sha256(pub);authorized.set(hex(digest).slice(0,16),VPNX3_RELEASE_PUBLIC_KEY);
+  }
+  const encoded=authorized.get(envelope.key_id);
+  if(!encoded) throw new Error("Unexpected release signing key");
+  const pub=unb64url(encoded);
   const payload=unb64url(envelope.payload);
   const signature=unb64url(envelope.signature);
   const key=await crypto.subtle.importKey("raw",pub,{name:"Ed25519"},false,["verify"]);
   if(!await crypto.subtle.verify({name:"Ed25519"},key,signature,payload)) throw new Error("Invalid release policy signature");
-  const digest=await sha256(pub);
-  if(hex(digest).slice(0,16)!==envelope.key_id) throw new Error("Unexpected release signing key");
   const policy=JSON.parse(new TextDecoder().decode(payload));
   if(policy.schema_version!==1||policy.target!==target) throw new Error("Invalid release policy");
   const now=Date.now();
