@@ -14,6 +14,8 @@ NODE_AGENT_SHA256=""
 WORKER_URL=""
 WORKER_SHA256=""
 ACCESS_PUBLIC_KEY=""
+TRUST_ROOT_PUBLIC_KEY=""
+TRUST_SOURCES=""
 
 WG_INTERFACE="wg0"
 WG_ENDPOINT=""
@@ -29,7 +31,7 @@ usage(){
 cat <<'EOF'
 Единая установка VPNX3 worker-ноды:
 
-  install-worker-node.sh     --control https://CONTROL-ENDPOINT     --token ONE_TIME_WORKER_TOKEN     --name de-01     --country DE     --provider provider-a     --public-ip 203.0.113.10     --node-agent-url https://.../vpnx3-node-agent     --node-agent-sha256 SHA256     --worker-url https://.../vpnx3-vpn-worker     --worker-sha256 SHA256     --access-public-key BASE64URL_ED25519_PUBLIC_KEY     --wg-endpoint 203.0.113.10:51820
+  install-worker-node.sh     --control https://CONTROL-ENDPOINT     --token ONE_TIME_WORKER_TOKEN     --name de-01     --country DE     --provider provider-a     --public-ip 203.0.113.10     --node-agent-url https://.../vpnx3-node-agent     --node-agent-sha256 SHA256     --worker-url https://.../vpnx3-vpn-worker     --worker-sha256 SHA256     --trust-root-public-key BASE64URL_ED25519_PUBLIC_KEY     --wg-endpoint 203.0.113.10:51820
 
 Опционально:
   --capacity 1000
@@ -60,6 +62,8 @@ while [[ $# -gt 0 ]]; do
     --worker-url) WORKER_URL="${2:-}"; shift 2;;
     --worker-sha256) WORKER_SHA256="${2:-}"; shift 2;;
     --access-public-key) ACCESS_PUBLIC_KEY="${2:-}"; shift 2;;
+    --trust-root-public-key) TRUST_ROOT_PUBLIC_KEY="${2:-}"; shift 2;;
+    --trust-sources) TRUST_SOURCES="${2:-}"; shift 2;;
     --wg-interface) WG_INTERFACE="${2:-}"; shift 2;;
     --wg-endpoint) WG_ENDPOINT="${2:-}"; shift 2;;
     --wg-pool) WG_POOL="${2:-}"; shift 2;;
@@ -79,11 +83,16 @@ done
 required=(
   CONTROL_URL ENROLLMENT_TOKEN NODE_NAME COUNTRY PROVIDER
   NODE_AGENT_URL NODE_AGENT_SHA256 WORKER_URL WORKER_SHA256
-  ACCESS_PUBLIC_KEY WG_ENDPOINT
+  WG_ENDPOINT
 )
 for name in "${required[@]}"; do
   [[ -n "${!name}" ]] || { echo "Не задан обязательный параметр: $name" >&2; exit 2; }
 done
+
+if [[ -z "$TRUST_ROOT_PUBLIC_KEY" && -z "$ACCESS_PUBLIC_KEY" ]]; then
+  echo "Не задан trust root или legacy access key" >&2
+  exit 2
+fi
 
 [[ "$CONTROL_URL" == https://* ]] || { echo "Control URL должен использовать HTTPS." >&2; exit 2; }
 
@@ -104,7 +113,6 @@ node_installer="$script_dir/install-node.sh"
 worker_args=(
   --binary-url "$WORKER_URL"
   --sha256 "$WORKER_SHA256"
-  --access-public-key "$ACCESS_PUBLIC_KEY"
   --control-url "$CONTROL_URL"
   --wg-interface "$WG_INTERFACE"
   --wg-endpoint "$WG_ENDPOINT"
@@ -115,6 +123,9 @@ worker_args=(
   --revocation-sources "$REVOCATION_SOURCES"
   --install-deps "$INSTALL_DEPS"
 )
+[[ -n "$ACCESS_PUBLIC_KEY" ]] && worker_args+=(--access-public-key "$ACCESS_PUBLIC_KEY")
+[[ -n "$TRUST_ROOT_PUBLIC_KEY" ]] && worker_args+=(--trust-root-public-key "$TRUST_ROOT_PUBLIC_KEY")
+[[ -n "$TRUST_SOURCES" ]] && worker_args+=(--trust-sources "$TRUST_SOURCES")
 [[ -n "$PUBLIC_INTERFACE" ]] && worker_args+=(--public-interface "$PUBLIC_INTERFACE")
 
 echo "==> Этап 1/2: WireGuard Data Plane"

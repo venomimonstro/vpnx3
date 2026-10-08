@@ -8,6 +8,8 @@ INGRESS_SHA256=""
 CONTROL_URL=""
 ENROLLMENT_TOKEN=""
 ACCESS_PUBLIC_KEY=""
+TRUST_ROOT_PUBLIC_KEY=""
+TRUST_SOURCES=""
 TLS_CERT=""
 TLS_KEY=""
 NODE_NAME="ingress"
@@ -27,6 +29,8 @@ while [[ $# -gt 0 ]]; do
     --control-url) CONTROL_URL="${2:-}"; shift 2;;
     --enrollment-token) ENROLLMENT_TOKEN="${2:-}"; shift 2;;
     --access-public-key) ACCESS_PUBLIC_KEY="${2:-}"; shift 2;;
+    --trust-root-public-key) TRUST_ROOT_PUBLIC_KEY="${2:-}"; shift 2;;
+    --trust-sources) TRUST_SOURCES="${2:-}"; shift 2;;
     --tls-cert) TLS_CERT="${2:-}"; shift 2;;
     --tls-key) TLS_KEY="${2:-}"; shift 2;;
     --node-name) NODE_NAME="${2:-}"; shift 2;;
@@ -44,11 +48,16 @@ done
 
 required=(
   NODE_AGENT_URL NODE_AGENT_SHA256 INGRESS_URL INGRESS_SHA256
-  CONTROL_URL ENROLLMENT_TOKEN ACCESS_PUBLIC_KEY TLS_CERT TLS_KEY
+  CONTROL_URL ENROLLMENT_TOKEN TLS_CERT TLS_KEY
 )
 for name in "${required[@]}"; do
   [[ -n "${!name}" ]] || { echo "$name is required" >&2; exit 2; }
 done
+
+if [[ -z "$TRUST_ROOT_PUBLIC_KEY" && -z "$ACCESS_PUBLIC_KEY" ]]; then
+  echo "trust-root-public-key or legacy access-public-key is required" >&2
+  exit 2
+fi
 
 [[ "$CONTROL_URL" == https://* ]] || { echo "control-url must use https" >&2; exit 2; }
 [[ -f "$TLS_CERT" ]] || { echo "TLS certificate not found: $TLS_CERT" >&2; exit 2; }
@@ -105,6 +114,9 @@ chmod 0600 /etc/vpnx3-node-agent.env
 
 cat >/etc/vpnx3-ingress.env <<EOF
 VPNX3_ACCESS_PUBLIC_KEY=$ACCESS_PUBLIC_KEY
+VPNX3_TRUST_ROOT_PUBLIC_KEY=$TRUST_ROOT_PUBLIC_KEY
+VPNX3_TRUST_SOURCES=$TRUST_SOURCES
+VPNX3_TRUST_STATE_PATH=/var/lib/vpnx3/ingress-trust-bundle.json
 VPNX3_INGRESS_TLS_CERT=$TLS_CERT
 VPNX3_INGRESS_TLS_KEY=$TLS_KEY
 VPNX3_INGRESS_ADDR=$INGRESS_ADDR

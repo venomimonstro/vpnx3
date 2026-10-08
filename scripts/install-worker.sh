@@ -4,6 +4,8 @@ set -euo pipefail
 BINARY_URL=""
 BINARY_SHA256=""
 ACCESS_PUBLIC_KEY=""
+TRUST_ROOT_PUBLIC_KEY=""
+TRUST_SOURCES=""
 CONTROL_URL=""
 REVOCATION_SOURCES=""
 REVOCATION_LKG_GRACE="30m"
@@ -23,7 +25,9 @@ usage() {
   install-worker.sh \
     --binary-url https://.../vpn-worker \
     --sha256 EXPECTED_SHA256 \
-    --access-public-key BASE64URL_ED25519_PUBLIC_KEY \
+    [--access-public-key LEGACY_BASE64URL_ED25519_PUBLIC_KEY] \
+    [--trust-root-public-key BASE64URL_ED25519_PUBLIC_KEY] \
+    [--trust-sources https://mirror-a,https://mirror-b] \
     --control-url https://CONTROL-ENDPOINT \
     --wg-endpoint PUBLIC_IP_OR_HOST:51820 \
     [--revocation-lkg-grace 30m] \
@@ -54,6 +58,8 @@ while [[ $# -gt 0 ]]; do
     --binary-url) BINARY_URL="${2:-}"; shift 2 ;;
     --sha256) BINARY_SHA256="${2:-}"; shift 2 ;;
     --access-public-key) ACCESS_PUBLIC_KEY="${2:-}"; shift 2 ;;
+    --trust-root-public-key) TRUST_ROOT_PUBLIC_KEY="${2:-}"; shift 2 ;;
+    --trust-sources) TRUST_SOURCES="${2:-}"; shift 2 ;;
     --control-url) CONTROL_URL="${2:-}"; shift 2 ;;
     --revocation-sources) REVOCATION_SOURCES="${2:-}"; shift 2 ;;
     --revocation-lkg-grace) REVOCATION_LKG_GRACE="${2:-}"; shift 2 ;;
@@ -72,10 +78,14 @@ done
 
 [[ "${EUID}" -eq 0 ]] || { echo "Установщик должен быть запущен от root." >&2; exit 1; }
 
-for value in BINARY_URL BINARY_SHA256 ACCESS_PUBLIC_KEY WG_INTERFACE WG_ENDPOINT WG_POOL WG_ADDRESS WG_LISTEN_PORT; do
+for value in BINARY_URL BINARY_SHA256 WG_INTERFACE WG_ENDPOINT WG_POOL WG_ADDRESS WG_LISTEN_PORT; do
   [[ -n "${!value}" ]] || { echo "Не задан обязательный параметр: $value" >&2; exit 2; }
 done
 
+if [[ -z "$TRUST_ROOT_PUBLIC_KEY" && -z "$ACCESS_PUBLIC_KEY" ]]; then
+  echo "Нужен --trust-root-public-key или legacy --access-public-key." >&2
+  exit 2
+fi
 if [[ -n "$CONTROL_URL" && "$CONTROL_URL" != https://* ]]; then
   echo "Control URL должен использовать HTTPS." >&2
   exit 2
@@ -194,6 +204,9 @@ install -m 0755 -o root -g root "$tmp" /usr/local/bin/vpnx3-worker
 
 cat >/etc/vpnx3-worker.env <<EOF
 VPNX3_ACCESS_PUBLIC_KEY=$ACCESS_PUBLIC_KEY
+VPNX3_TRUST_ROOT_PUBLIC_KEY=$TRUST_ROOT_PUBLIC_KEY
+VPNX3_TRUST_SOURCES=$TRUST_SOURCES
+VPNX3_TRUST_STATE_PATH=/var/lib/vpnx3-worker/trust-bundle.json
 VPNX3_CONTROL_URL=$CONTROL_URL
 VPNX3_REVOCATION_POLL_INTERVAL=60s
 VPNX3_REVOCATION_LKG_GRACE=$REVOCATION_LKG_GRACE
