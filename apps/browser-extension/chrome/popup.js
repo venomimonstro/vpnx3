@@ -1,6 +1,7 @@
 const api=typeof browser!=="undefined"?browser:chrome;
 const status=document.getElementById("status"),updateEl=document.getElementById("update");
 const button=document.getElementById("toggle"),detail=document.getElementById("detail");
+const devicesEl=document.getElementById("devices");
 const accountEl=document.getElementById("account"),pairCreate=document.getElementById("pairCreate"),pairCode=document.getElementById("pairCode");
 const pairInput=document.getElementById("pairInput"),pairClaim=document.getElementById("pairClaim");
 const referralCode=document.getElementById("referralCode"),referralState=document.getElementById("referralState");
@@ -28,6 +29,27 @@ async function refresh(){
   button.disabled=!!u.required&&!r.enabled;
   button.dataset.enabled=String(r.enabled);
   renderAccount(r.account);
+  devicesEl.replaceChildren();
+  for(const d of (r.devices||[])){
+    const row=document.createElement("div");
+    row.className="device-row";
+    const text=document.createElement("span");
+    text.textContent=d.display_name+(d.current?" · это устройство":"")+" · "+d.platform;
+    row.appendChild(text);
+    if(!d.current&&d.status==="active"){
+      const revoke=document.createElement("button");
+      revoke.className="secondary";
+      revoke.textContent="Отключить";
+      revoke.onclick=async()=>{
+        revoke.disabled=true;
+        const result=await send({type:"device-revoke",deviceId:d.id});
+        if(!result?.ok)alert("Не удалось отключить устройство: "+(result?.error||"ошибка"));
+        await refresh();
+      };
+      row.appendChild(revoke);
+    }
+    devicesEl.appendChild(row);
+  }
   const ref=await send({type:"referral-status"}).catch(()=>null);
   if(ref?.ok){
     referralCode.textContent=ref.code?("Ваш код: "+ref.code):"";

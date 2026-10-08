@@ -274,6 +274,20 @@ async function accountStatus(){
   return request("POST","/api/v1/client/account/status",{sequence},reg[STATE_KEYS.deviceId]);
 }
 
+async function clientDevices(){
+  const reg=await ensureRegistered();
+  const sequence=await nextSequence();
+  return request("POST","/api/v1/client/devices",{sequence},reg[STATE_KEYS.deviceId]);
+}
+
+async function revokeClientDevice(targetId){
+  const reg=await ensureRegistered();
+  const sequence=await nextSequence();
+  return request("POST","/api/v1/client/devices/revoke",{
+    sequence,device_id:String(targetId||"").trim()
+  },reg[STATE_KEYS.deviceId]);
+}
+
 async function createPairingCode(){
   const reg=await ensureRegistered();
   const sequence=await nextSequence();
@@ -464,11 +478,20 @@ api.runtime.onMessage.addListener((message,sender,sendResponse)=>{
     Promise.all([
       storageGet([STATE_KEYS.enabled,STATE_KEYS.ingress,STATE_KEYS.credentialExpires]),
       accountStatus().catch(()=>null),
-      releaseDecision().catch(()=>({required:false,blocked:false,availableVersion:null,message:null}))
-    ]).then(([s,account,update])=>sendResponse({
+      releaseDecision().catch(()=>({required:false,blocked:false,availableVersion:null,message:null})),
+      clientDevices().catch(()=>({devices:[]}))
+    ]).then(([s,account,update,deviceData])=>sendResponse({
       ok:true,enabled:!!s[STATE_KEYS.enabled],ingress:s[STATE_KEYS.ingress]||null,
-      expires:s[STATE_KEYS.credentialExpires]||null,account,update
+      expires:s[STATE_KEYS.credentialExpires]||null,account,update,
+      devices:deviceData?.devices||[]
     }));
+    return true;
+  }
+  if(message?.type==="device-revoke"){
+    revokeClientDevice(message.deviceId||"")
+      .then(()=>clientDevices())
+      .then(data=>sendResponse({ok:true,devices:data.devices||[]}))
+      .catch(e=>sendResponse({ok:false,error:e.message}));
     return true;
   }
   if(message?.type==="pairing-create"){
