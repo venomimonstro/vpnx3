@@ -139,6 +139,19 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 		}
 	}
 	add("artifact_storage",storageStatus,"Хранилище артефактов",storageDetail)
+	artifactCircuitSignals:=any(nil)
+	if reporter,ok:=s.artifacts.(artifactstorage.CircuitReporter);ok{
+		snapshot:=reporter.CircuitSnapshot()
+		artifactCircuitSignals=snapshot
+		switch snapshot.State{
+		case "open":
+			add("artifact_storage_circuit","warning","Circuit хранилища","S3 circuit breaker открыт; новые операции временно завершаются быстро.")
+		case "half_open":
+			add("artifact_storage_circuit","warning","Circuit хранилища","S3 circuit breaker выполняет пробный запрос после деградации.")
+		default:
+			add("artifact_storage_circuit","ok","Circuit хранилища","S3 circuit breaker закрыт.")
+		}
+	}
 
 	if !data.AuditChainValid {
 		add("audit_chain","failed","Целостность аудита","Хеш-цепочка audit_log повреждена или не соответствует данным.")
@@ -456,6 +469,7 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			"control_plane_leadership_transitions":data.LeadershipTransitions,
 			"http_admission":admissionSignals,
 			"database_pool":dbSignals,
+			"artifact_storage_circuit":artifactCircuitSignals,
 		},
 	})
 }

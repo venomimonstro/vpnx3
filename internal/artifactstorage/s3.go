@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/venomimonstro/vpnx3/internal/resilience"
 )
 
 type S3Config struct {
@@ -33,6 +35,7 @@ type S3 struct {
 	secretKey string
 	tempDir string
 	client *http.Client
+	breaker *resilience.CircuitBreaker
 }
 
 func NewS3(cfg S3Config)(*S3,error){
@@ -56,10 +59,36 @@ func NewS3(cfg S3Config)(*S3,error){
 	temp:=strings.TrimSpace(cfg.TempDir)
 	if temp==""{temp=os.TempDir()}
 	if err:=os.MkdirAll(temp,0750);err!=nil{return nil,err}
+	transport:=http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns=50
+	transport.MaxIdleConnsPerHost=20
+	transport.IdleConnTimeout=90*time.Second
+	transport.TLSHandshakeTimeout=5*time.Second
+	transport.ResponseHeaderTimeout=15*time.Second
+	transport.ExpectContinueTimeout=time.Second
 	return &S3{
 		endpoint:endpoint,region:region,bucket:bucket,accessKey:access,secretKey:secret,tempDir:temp,
-		client:&http.Client{},
+		client:&http.Client{Transport:transport},
+		breaker:resilience.NewCircuitBreaker(5,30*time.Second),
 	},nil
+}
+
+func (s *S3) CircuitSnapshot() resilience.Snapshot { return s.breaker.Snapshot() }
+
+func (s *S3) do(req *http.Request)(*http.Response,error){
+	now:=time.Now().UTC()
+	if !s.breaker.Allow(now){return nil,resilience.ErrDependencyUnavailable}
+	resp,err:=s.client.Do(req)
+	if err!=nil{
+		s.breaker.Failure(now)
+		return nil,fmt.Errorf("%w: S3 transport: %v",resilience.ErrDependencyUnavailable,err)
+	}
+	if resp.StatusCode==http.StatusTooManyRequests||resp.StatusCode>=500{
+		s.breaker.Failure(now)
+	}else{
+		s.breaker.Success()
+	}
+	return resp,nil
 }
 
 func cleanObjectKey(key string)(string,error){
@@ -117,7 +146,7 @@ func (s *S3) PutVerified(ctx context.Context,key string,src io.Reader,maxBytes i
 	req.Header.Set("Content-Length",strconv.FormatInt(written,10))
 	if err:=s.sign(req,expectedSHA256,time.Now().UTC());err!=nil{return ObjectInfo{},err}
 
-	resp,err:=s.client.Do(req)
+	resp,err:=s.do(req)
 	if err!=nil{return ObjectInfo{},fmt.Errorf("S3 put: %w",err)}
 	defer resp.Body.Close()
 	if resp.StatusCode<200||resp.StatusCode>=300{
@@ -133,7 +162,7 @@ func (s *S3) Open(ctx context.Context,key string)(io.ReadCloser,ObjectInfo,error
 	if err!=nil{return nil,ObjectInfo{},err}
 	emptyHash:=sha256.Sum256(nil)
 	if err:=s.sign(req,hex.EncodeToString(emptyHash[:]),time.Now().UTC());err!=nil{return nil,ObjectInfo{},err}
-	resp,err:=s.client.Do(req)
+	resp,err:=s.do(req)
 	if err!=nil{return nil,ObjectInfo{},fmt.Errorf("S3 get: %w",err)}
 	if resp.StatusCode==http.StatusNotFound{
 		resp.Body.Close()
@@ -156,7 +185,7 @@ func (s *S3) Delete(ctx context.Context,key string)error{
 	if err!=nil{return err}
 	emptyHash:=sha256.Sum256(nil)
 	if err:=s.sign(req,hex.EncodeToString(emptyHash[:]),time.Now().UTC());err!=nil{return err}
-	resp,err:=s.client.Do(req)
+	resp,err:=s.do(req)
 	if err!=nil{return fmt.Errorf("S3 delete: %w",err)}
 	defer resp.Body.Close()
 	if resp.StatusCode==http.StatusNotFound{return nil}
@@ -222,7 +251,7 @@ func (s *S3) Check(ctx context.Context) error {
 	if err!=nil{return err}
 	emptyHash:=sha256.Sum256(nil)
 	if err:=s.sign(req,hex.EncodeToString(emptyHash[:]),time.Now().UTC());err!=nil{return err}
-	resp,err:=s.client.Do(req)
+	resp,err:=s.do(req)
 	if err!=nil{return fmt.Errorf("S3 readiness request failed: %w",err)}
 	defer resp.Body.Close()
 	switch {

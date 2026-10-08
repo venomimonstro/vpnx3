@@ -1186,3 +1186,32 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 5. подтвердить закрытие после восстановления;
 6. проверить повтор webhook после provider outage;
 7. убедиться, что malformed webhook не превращается в 503.
+
+
+## Спринт 37 — устойчивость S3 artifact storage: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: деградация внешнего object storage не должна подвешивать Build Factory, download и readiness на неопределённое время.
+
+Реализовано:
+
+- отдельный circuit breaker для S3-compatible artifact backend;
+- threshold 5 последовательных transport/429/5xx ошибок;
+- open cooldown 30 секунд и half-open probe;
+- fail-fast при открытом circuit;
+- повторное использование HTTP/TLS соединений;
+- TLS handshake timeout;
+- response-header timeout;
+- expect-continue timeout;
+- bounded idle connection pool;
+- circuit state доступен через optional artifact storage reporter;
+- launch readiness показывает closed/open/half-open;
+- локальный artifact backend не зависит от circuit interface и продолжает работать как раньше.
+
+Физическая приёмка:
+
+1. отключить S3 endpoint и выполнить upload/download/readiness;
+2. подтвердить открытие circuit после порога;
+3. измерить быстрый fail после открытия;
+4. восстановить endpoint и подтвердить half-open → closed;
+5. проверить большую загрузку, чтобы response-header timeout не обрывал нормальный streaming body;
+6. проверить повторное использование keep-alive соединений.

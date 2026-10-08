@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/venomimonstro/vpnx3/internal/resilience"
 )
 
 var ErrNotFound=errors.New("artifact object not found")
@@ -29,6 +31,10 @@ type Storage interface {
 
 type ReadinessChecker interface {
 	Check(context.Context) error
+}
+
+type CircuitReporter interface {
+	CircuitSnapshot() resilience.Snapshot
 }
 
 type Local struct {
