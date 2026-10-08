@@ -130,3 +130,12 @@ func validatePayload(p Payload,now time.Time,enforceTime bool)error{
 	})
 	return nil
 }
+
+
+func DecodeVerifiedEnvelope(env Envelope)(Payload,error){
+	raw,err:=base64.RawURLEncoding.DecodeString(env.Payload)
+	if err!=nil{return Payload{},fmt.Errorf("invalid trust bundle payload encoding")}
+	var p Payload
+	if err:=json.Unmarshal(raw,&p);err!=nil{return Payload{},err}
+	return p,nil
+}

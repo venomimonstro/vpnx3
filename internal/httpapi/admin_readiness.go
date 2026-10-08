@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/venomimonstro/vpnx3/internal/artifactstorage"
+	"github.com/venomimonstro/vpnx3/internal/trustbundle"
 )
 
 type readinessCheck struct {
@@ -95,6 +96,24 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			add("auto_renew","ok","Автопродление","Активные автопродления работают без зафиксированных ошибок за 24 часа.")
 		}else{
 			add("auto_renew","ok","Автопродление","Механизм готов; активных подписок с автопродлением пока нет.")
+		}
+	}
+
+	if s.cfg.Environment=="production" {
+		if s.trustBundle==nil {
+			add("trust_bundle","failed","Корень доверия","Production запущен без root-signed trust bundle.")
+		}else if payload,err:=trustbundle.DecodeVerifiedEnvelope(*s.trustBundle);err!=nil{
+			add("trust_bundle","failed","Корень доверия","Не удалось прочитать уже проверенный trust bundle.")
+		}else{
+			remaining:=time.Until(payload.ExpiresAt)
+			switch{
+			case remaining<=0:
+				add("trust_bundle","failed","Корень доверия","Trust bundle просрочен; безопасная ротация ключей недоступна.")
+			case remaining<7*24*time.Hour:
+				add("trust_bundle","warning","Корень доверия","Trust bundle истекает менее чем через 7 дней.")
+			default:
+				add("trust_bundle","ok","Корень доверия","Root-signed trust bundle действителен.")
+			}
 		}
 	}
 
