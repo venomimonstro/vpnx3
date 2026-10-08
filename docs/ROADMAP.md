@@ -1324,3 +1324,36 @@ bash scripts/predeploy-check.sh
 ```
 
 должен завершиться `PREDEPLOY CHECK: OK` перед production update.
+
+
+## Спринт 42 — синхронизация production release gate: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: серверная кнопка publish не должна обходить защитные инварианты, добавленные после первоначального release gate.
+
+Добавлены production blockers:
+
+- открытый YooKassa circuit;
+- primary PostgreSQL не writer;
+- primary DB pool >=95%;
+- HTTP admission >=95%;
+- strict HA без доступного standby;
+- replica endpoint не standby;
+- standby WAL lag >512 МБ;
+- отсутствие/устаревание off-site backup;
+- отсутствие/устаревание off-site WAL replication.
+
+Добавлены warnings:
+
+- payment circuit half-open;
+- DB/admission 80–95%;
+- standby WAL lag 64–512 МБ.
+
+Документ `PRODUCTION_RELEASE_GATE.md` синхронизирован с реальным серверным поведением.
+
+Физическая приёмка:
+
+1. поочерёдно нарушить каждый blocker в staging/production-like окружении;
+2. проверить warning в staging;
+3. проверить server-side block publish в production;
+4. восстановить инвариант и подтвердить снятие blocker;
+5. проверить сохранённую release publication attestation.

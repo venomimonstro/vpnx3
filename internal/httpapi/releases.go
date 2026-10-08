@@ -176,7 +176,73 @@ func (s *Server) releaseGate(ctx context.Context,releaseID string)(releaseGateRe
 	if data.FreshDataPlaneWorkers<1{add("Нет успешного synthetic WireGuard data-plane observation за 5 минут",true)}
 	if !data.AuditChainValid{add("Нарушена хеш-цепочка audit_log",true)}
 	if s.releaseSigner==nil{add("Release Signing Key не настроен",true)}
-	if s.yooKassa==nil{add("ЮKassa не настроена — коммерческие платежи недоступны",true)}
+	if s.yooKassa==nil{
+		add("ЮKassa не настроена — коммерческие платежи недоступны",true)
+	}else{
+		circuit:=s.yooKassa.CircuitSnapshot()
+		result.Signals["payments_circuit"]=circuit
+		switch circuit.State{
+		case "open":
+			add("ЮKassa circuit breaker открыт",true)
+		case "half_open":
+			add("ЮKassa circuit breaker находится в half-open",false)
+		}
+	}
+
+	dbStats:=s.db.Stat()
+	dbUtil:=float64(0)
+	if dbStats.MaxConns()>0{dbUtil=float64(dbStats.AcquiredConns())/float64(dbStats.MaxConns())*100}
+	result.Signals["database_pool_utilization_percent"]=dbUtil
+	result.Signals["database_pool_acquired"]=dbStats.AcquiredConns()
+	result.Signals["database_pool_max"]=dbStats.MaxConns()
+	if dbUtil>=95{add("Primary PostgreSQL pool занят на 95% или больше",true)}
+	if dbUtil>=80&&dbUtil<95{add("Primary PostgreSQL pool занят на 80% или больше",false)}
+
+	if s.admission!=nil{
+		current,limit,peak,rejected:=s.admission.snapshot()
+		util:=float64(0)
+		if limit>0{util=float64(current)/float64(limit)*100}
+		result.Signals["http_admission"]=map[string]any{
+			"current":current,"limit":limit,"peak":peak,"rejected_total":rejected,
+			"utilization_percent":util,
+		}
+		if util>=95{add("HTTP admission занят на 95% или больше",true)}
+		if util>=80&&util<95{add("HTTP admission занят на 80% или больше",false)}
+	}
+
+	var primaryRecovery bool
+	var primaryLSN string
+	if err:=s.db.QueryRow(ctx,`SELECT pg_is_in_recovery(),pg_current_wal_lsn()::text`).Scan(&primaryRecovery,&primaryLSN);err!=nil{
+		add("Не удалось проверить PostgreSQL writer",true)
+	}else if primaryRecovery{
+		add("Control Plane подключён к PostgreSQL standby вместо writer",true)
+	}
+
+	if s.cfg.DatabaseHARequired{
+		if s.replicaDB==nil{
+			add("Strict PostgreSQL HA включён, но standby pool отсутствует",true)
+		}else{
+			var standbyRecovery bool
+			var replayLSN string
+			err:=s.replicaDB.QueryRow(ctx,`SELECT pg_is_in_recovery(),COALESCE(pg_last_wal_replay_lsn()::text,'')`).Scan(&standbyRecovery,&replayLSN)
+			if err!=nil{
+				add("PostgreSQL standby недоступен",true)
+			}else if !standbyRecovery{
+				add("Replica endpoint не является PostgreSQL standby",true)
+			}else if replayLSN==""||primaryLSN==""{
+				add("Не удалось определить PostgreSQL standby WAL lag",false)
+			}else{
+				var lagBytes float64
+				if err:=s.db.QueryRow(ctx,`SELECT GREATEST(pg_wal_lsn_diff($1::pg_lsn,$2::pg_lsn),0)::float8`,primaryLSN,replayLSN).Scan(&lagBytes);err!=nil{
+					add("Не удалось вычислить PostgreSQL standby WAL lag",false)
+				}else{
+					result.Signals["database_replica_lag_bytes"]=lagBytes
+					if lagBytes>512*1024*1024{add("PostgreSQL standby WAL lag превышает 512 МБ",true)}
+					if lagBytes>64*1024*1024&&lagBytes<=512*1024*1024{add("PostgreSQL standby WAL lag превышает 64 МБ",false)}
+				}
+			}
+		}
+	}
 
 	if s.cfg.BackupStatusFile==""{
 		add("Backup health-marker не настроен",true)
@@ -184,6 +250,22 @@ func (s *Server) releaseGate(ctx context.Context,releaseID string)(releaseGateRe
 		add("Нет подтверждения успешного backup",true)
 	}else if time.Since(stat.ModTime().UTC())>36*time.Hour{
 		add("Последний успешный backup старше 36 часов",true)
+	}
+
+	if s.cfg.OffsiteBackupStatusFile==""{
+		add("Off-site backup health-marker не настроен",true)
+	}else if stat,err:=os.Stat(s.cfg.OffsiteBackupStatusFile);err!=nil{
+		add("Нет подтверждения проверенного off-site backup",true)
+	}else if time.Since(stat.ModTime().UTC())>36*time.Hour{
+		add("Последний проверенный off-site backup старше 36 часов",true)
+	}
+
+	if s.cfg.WalOffsiteStatusFile==""{
+		add("WAL off-site replication marker не настроен",true)
+	}else if stat,err:=os.Stat(s.cfg.WalOffsiteStatusFile);err!=nil{
+		add("Нет подтверждения off-site WAL replication",true)
+	}else if time.Since(stat.ModTime().UTC())>30*time.Minute{
+		add("Off-site WAL replication не подтверждалась больше 30 минут",true)
 	}
 
 	if checker,ok:=s.artifacts.(artifactstorage.ReadinessChecker);ok{
