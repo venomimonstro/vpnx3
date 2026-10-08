@@ -638,3 +638,39 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - уже выданный offline Access Lease действует до expiry, поэтому для быстрого закрытия уже активной worker-сессии нужен отдельный подписанный revocation feed.
 
 Следующий Sprint 20 закрывает именно быстрое распространение revoke на worker-ноды без превращения Control Plane в обязательную зависимость каждой VPN-сессии.
+
+
+## Спринт 20 — быстрое распространение отзыва устройств: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: отзыв устройства должен быстро закрывать уже выданные offline Access/Proxy Lease, но Control Plane не должен становиться обязательной зависимостью каждого пакета или каждой новой VPN-сессии.
+
+Реализовано:
+
+- versioned signed revocation snapshot на Access Signing Key;
+- privacy-minimal device hash вместо raw device id в feed;
+- rollback protection по монотонной версии;
+- несколько revocation sources: Control Plane + config mirrors;
+- локальный подписанный LKG snapshot на worker/ingress;
+- ограниченный LKG grace, максимум 2 часа;
+- сразу после expiry узел становится degraded/unhealthy и исключается из новых маршрутов;
+- до hard-expiry допускается bounded LKG, чтобы краткий outage Control Plane не создавал глобальный обрыв;
+- после hard-expiry новые VPN/proxy сессии fail-closed;
+- после hard-expiry worker закрывает активные VPN sessions;
+- после hard-expiry browser ingress закрывает активные proxy connections;
+- новый snapshot немедленно закрывает сессии отозванных устройств;
+- worker/ingress не запускаются без доверенного revocation source или пригодного signed LKG;
+- config mirror проверяет подпись/версию/expiry и зеркалирует тот же единый revocation format;
+- старый дублирующий internal/revocations feed удалён;
+- installer worker/ingress явно задаёт revocation poll и LKG grace;
+- health endpoint worker/ingress отражает revocation freshness/usable state;
+- unit tests покрывают rollback, LKG boundaries, active-session revoke и CloseAll.
+
+Физическая приёмка:
+
+1. открыть VPN/Proxy сессию;
+2. отозвать устройство из другого активного устройства;
+3. проверить, что worker/ingress получают новую версию snapshot;
+4. измерить фактическое время до закрытия active session;
+5. отключить Control Plane, оставить mirror и проверить продолжение обновлений;
+6. отключить все sources, проверить degraded → hard-expiry → fail-closed;
+7. восстановить source и проверить автоматическое возвращение без ручной очистки state.
