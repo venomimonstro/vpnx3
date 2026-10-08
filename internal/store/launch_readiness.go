@@ -35,6 +35,10 @@ type LaunchReadinessData struct {
 	LocalHealthWarningNodes int64
 	LocalHealthDegradedNodes int64
 	NodesMissingDiskTelemetry int64
+	LeadershipHolder *string
+	LeadershipHeartbeatAt *time.Time
+	LeadershipAcquiredAt *time.Time
+	LeadershipTransitions int64
 }
 
 func (s *Store) LaunchReadiness(ctx context.Context)(LaunchReadinessData,error){
@@ -147,7 +151,11 @@ func (s *Store) LaunchReadiness(ctx context.Context)(LaunchReadinessData,error){
 		        jsonb_typeof(metadata->'disk_total_bytes')='number'
 		        AND jsonb_typeof(metadata->'disk_available_bytes')='number'
 		      )
-		  )
+		  ),
+		  (SELECT holder_id FROM control_plane_leadership WHERE name='singleton-jobs'),
+		  (SELECT heartbeat_at FROM control_plane_leadership WHERE name='singleton-jobs'),
+		  (SELECT acquired_at FROM control_plane_leadership WHERE name='singleton-jobs'),
+		  COALESCE((SELECT transitions FROM control_plane_leadership WHERE name='singleton-jobs'),0)
 	`).Scan(
 		&d.LatestManifestAt,&d.ActiveWorkers,&d.RoutableWorkers,&d.ActiveIngresses,
 		&d.ActiveConfigMirrors,&d.RoutableConfigMirrors,
@@ -159,6 +167,7 @@ func (s *Store) LaunchReadiness(ctx context.Context)(LaunchReadinessData,error){
 		&d.SecurityExportOldestPendingAt,&d.SecurityExportLastDeliveredAt,
 		&d.RuntimeManagedNodes,&d.RuntimeUpdaterReportedNodes,&d.RuntimeUpdaterUnhealthyNodes,
 		&d.LocalHealthWarningNodes,&d.LocalHealthDegradedNodes,&d.NodesMissingDiskTelemetry,
+		&d.LeadershipHolder,&d.LeadershipHeartbeatAt,&d.LeadershipAcquiredAt,&d.LeadershipTransitions,
 	)
 	if err!=nil{return LaunchReadinessData{},fmt.Errorf("launch readiness: %w",err)}
 	return d,nil

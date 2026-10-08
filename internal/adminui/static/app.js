@@ -206,7 +206,10 @@ async function readiness(){
     ["Published releases",s.published_releases??0],
     ["Runtime-ноды",s.runtime_managed_nodes??0],
     ["Updater telemetry",s.runtime_updater_reported_nodes??0],
-    ["Updater с ошибкой",s.runtime_updater_unhealthy_nodes??0]
+    ["Updater с ошибкой",s.runtime_updater_unhealthy_nodes??0],
+    ["HA лидер",s.control_plane_leader||"—"],
+    ["Heartbeat HA лидера",dt(s.control_plane_leader_heartbeat_at)],
+    ["Смен лидерства",s.control_plane_leadership_transitions??0]
   ]);
   return sectionFrame("Готовность запуска",$("div",{class:"stack"},
     header,

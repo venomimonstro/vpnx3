@@ -789,3 +789,33 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 3. остановить локальный VPN worker, оставив Node Agent живым, и проверить исключение ноды;
 4. подтвердить, что manual maintenance/quarantine не снимаются автоматикой;
 5. проверить refresh manifest и отсутствие новой маршрутизации на degraded ноду.
+
+
+## Спринт 24 — HA Control Plane и распределённое лидерство: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: несколько экземпляров Control Plane должны одновременно обслуживать API, но конфликтующие singleton-фоновые задачи не должны выполняться параллельно.
+
+Реализовано:
+
+- PostgreSQL advisory lock для singleton leadership;
+- лидерство привязано к отдельному DB connection и автоматически снимается PostgreSQL при потере соединения;
+- follower проверяет lock каждые 5 секунд и автоматически становится лидером после отказа текущего;
+- лидер подтверждает DB-соединение/lease каждые 10 секунд;
+- nodemonitor, login cleanup, probe monitor, artifact cleanup, account cleanup, build watchdog и system monitor выполняются только у лидера;
+- billing renewal, incident notification и security export остаются distributed work queues на всех репликах;
+- config publisher остаётся доступен на каждой HTTP-реплике, чтобы trigger после node mutation не терялся;
+- каждый config publish отдельно сериализуется PostgreSQL advisory lock;
+- устранён дублирующий trust-bundle startup block в Control Plane;
+- состояние singleton leadership сохраняется в PostgreSQL;
+- holder id, acquired time, heartbeat и число переходов доступны readiness;
+- readiness становится failed при heartbeat лидера старше 30 секунд;
+- смена лидера не требует ручного вмешательства.
+
+Физическая приёмка:
+
+1. запустить минимум два Control Plane экземпляра на общей PostgreSQL;
+2. подтвердить один singleton leader и два работающих HTTP API;
+3. остановить лидера и измерить takeover follower;
+4. во время failover выполнить node mutation и подтвердить немедленный signed manifest;
+5. разорвать DB connection лидера и подтвердить снятие advisory lock;
+6. восстановить экземпляр и убедиться, что он возвращается follower без двойных singleton jobs.

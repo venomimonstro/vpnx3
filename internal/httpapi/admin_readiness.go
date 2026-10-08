@@ -230,6 +230,17 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 		}
 	}
 
+	if data.LeadershipHolder==nil||data.LeadershipHeartbeatAt==nil{
+		add("control_plane_leader","warning","Лидер фоновых задач","Ни один экземпляр Control Plane не подтверждает лидерство singleton-задач.")
+	}else{
+		age:=time.Since(data.LeadershipHeartbeatAt.UTC())
+		if age>30*time.Second{
+			add("control_plane_leader","failed","Лидер фоновых задач","Heartbeat лидера старше 30 секунд; singleton-мониторы могут не выполняться.")
+		}else{
+			add("control_plane_leader","ok","Лидер фоновых задач","Singleton-задачи имеют активного HA-лидера с живым PostgreSQL advisory lease.")
+		}
+	}
+
 	if data.RuntimeManagedNodes>0 {
 		switch {
 		case data.RuntimeUpdaterUnhealthyNodes>0:
@@ -301,6 +312,10 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			"local_health_warning_nodes":data.LocalHealthWarningNodes,
 			"local_health_degraded_nodes":data.LocalHealthDegradedNodes,
 			"nodes_missing_disk_telemetry":data.NodesMissingDiskTelemetry,
+			"control_plane_leader":data.LeadershipHolder,
+			"control_plane_leader_heartbeat_at":data.LeadershipHeartbeatAt,
+			"control_plane_leader_acquired_at":data.LeadershipAcquiredAt,
+			"control_plane_leadership_transitions":data.LeadershipTransitions,
 		},
 	})
 }
