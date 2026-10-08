@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/venomimonstro/vpnx3/internal/signing"
@@ -61,15 +62,37 @@ func Issue(signer *signing.Signer,version int64,deviceIDs []string,now time.Time
 }
 
 type Verifier struct {
-	public ed25519.PublicKey
-	keyID string
+	mu sync.RWMutex
+	keys map[string]ed25519.PublicKey
 }
 
 func NewVerifier(publicBase64 string)(*Verifier,error){
 	raw,err:=base64.RawURLEncoding.DecodeString(publicBase64)
 	if err!=nil||len(raw)!=ed25519.PublicKeySize{return nil,fmt.Errorf("invalid access public key")}
 	sum:=sha256.Sum256(raw)
-	return &Verifier{public:ed25519.PublicKey(raw),keyID:hex.EncodeToString(sum[:8])},nil
+	return &Verifier{keys:map[string]ed25519.PublicKey{
+		hex.EncodeToString(sum[:8]):ed25519.PublicKey(raw),
+	}},nil
+}
+
+func NewVerifierSet(keys map[string]string)(*Verifier,error){
+	v:=&Verifier{}
+	if err:=v.ReplaceKeys(keys);err!=nil{return nil,err}
+	return v,nil
+}
+
+func (v *Verifier) ReplaceKeys(keys map[string]string)error{
+	if len(keys)<1||len(keys)>8{return fmt.Errorf("revocation verifier key count outside safe bounds")}
+	next:=make(map[string]ed25519.PublicKey,len(keys))
+	for keyID,encoded:=range keys{
+		raw,err:=base64.RawURLEncoding.DecodeString(encoded)
+		if err!=nil||len(raw)!=ed25519.PublicKeySize{return fmt.Errorf("invalid access public key")}
+		sum:=sha256.Sum256(raw)
+		if keyID!=hex.EncodeToString(sum[:8]){return fmt.Errorf("revocation key id mismatch")}
+		next[keyID]=ed25519.PublicKey(append([]byte(nil),raw...))
+	}
+	v.mu.Lock();v.keys=next;v.mu.Unlock()
+	return nil
 }
 
 func (v *Verifier) Verify(env Envelope,minimumVersion int64,now time.Time)(Payload,error){
@@ -81,12 +104,13 @@ func (v *Verifier) VerifyStored(env Envelope,minimumVersion int64)(Payload,error
 }
 
 func (v *Verifier) verify(env Envelope,minimumVersion int64,now time.Time,enforceTime bool)(Payload,error){
-	if env.KeyID!=v.keyID{return Payload{},fmt.Errorf("unexpected revocation signing key")}
+	v.mu.RLock();public,ok:=v.keys[env.KeyID];v.mu.RUnlock()
+	if !ok{return Payload{},fmt.Errorf("unexpected revocation signing key")}
 	raw,err:=base64.RawURLEncoding.DecodeString(env.Payload)
 	if err!=nil{return Payload{},fmt.Errorf("invalid revocation payload encoding")}
 	sig,err:=base64.RawURLEncoding.DecodeString(env.Signature)
 	if err!=nil||len(sig)!=ed25519.SignatureSize{return Payload{},fmt.Errorf("invalid revocation signature encoding")}
-	if !ed25519.Verify(v.public,raw,sig){return Payload{},fmt.Errorf("invalid revocation signature")}
+	if !ed25519.Verify(public,raw,sig){return Payload{},fmt.Errorf("invalid revocation signature")}
 	var p Payload
 	if err:=json.Unmarshal(raw,&p);err!=nil{return Payload{},err}
 	if p.SchemaVersion!=1||p.Version<0||p.Version<minimumVersion{

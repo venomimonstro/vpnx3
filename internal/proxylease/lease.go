@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/venomimonstro/vpnx3/internal/signing"
@@ -42,20 +43,46 @@ func Issue(signer *signing.Signer,claims Claims)(Envelope,error){
 	},nil
 }
 
-type Verifier struct{ public ed25519.PublicKey; keyID string }
+type Verifier struct{
+	mu sync.RWMutex
+	keys map[string]ed25519.PublicKey
+}
 
 func NewVerifier(publicKeyBase64 string)(*Verifier,error){
 	raw,err:=base64.RawURLEncoding.DecodeString(publicKeyBase64)
 	if err!=nil||len(raw)!=ed25519.PublicKeySize{return nil,fmt.Errorf("invalid proxy lease public key")}
 	sum:=sha256.Sum256(raw)
-	return &Verifier{public:ed25519.PublicKey(raw),keyID:hex.EncodeToString(sum[:8])},nil
+	return &Verifier{keys:map[string]ed25519.PublicKey{
+		hex.EncodeToString(sum[:8]):ed25519.PublicKey(raw),
+	}},nil
+}
+
+func NewVerifierSet(keys map[string]string)(*Verifier,error){
+	v:=&Verifier{}
+	if err:=v.ReplaceKeys(keys);err!=nil{return nil,err}
+	return v,nil
+}
+
+func (v *Verifier) ReplaceKeys(keys map[string]string)error{
+	if len(keys)<1||len(keys)>8{return fmt.Errorf("proxy verifier key count outside safe bounds")}
+	next:=make(map[string]ed25519.PublicKey,len(keys))
+	for keyID,encoded:=range keys{
+		raw,err:=base64.RawURLEncoding.DecodeString(encoded)
+		if err!=nil||len(raw)!=ed25519.PublicKeySize{return fmt.Errorf("invalid proxy lease public key")}
+		sum:=sha256.Sum256(raw)
+		if keyID!=hex.EncodeToString(sum[:8]){return fmt.Errorf("proxy key id mismatch")}
+		next[keyID]=ed25519.PublicKey(append([]byte(nil),raw...))
+	}
+	v.mu.Lock();v.keys=next;v.mu.Unlock()
+	return nil
 }
 
 func (v *Verifier) Verify(env Envelope,now time.Time)(Claims,error){
-	if env.KeyID!=v.keyID{return Claims{},fmt.Errorf("unexpected proxy lease signing key")}
+	v.mu.RLock();public,ok:=v.keys[env.KeyID];v.mu.RUnlock()
+	if !ok{return Claims{},fmt.Errorf("unexpected proxy lease signing key")}
 	payload,err:=base64.RawURLEncoding.DecodeString(env.Payload);if err!=nil{return Claims{},fmt.Errorf("invalid payload")}
 	sig,err:=base64.RawURLEncoding.DecodeString(env.Signature);if err!=nil{return Claims{},fmt.Errorf("invalid signature")}
-	if !ed25519.Verify(v.public,payload,sig){return Claims{},fmt.Errorf("invalid proxy lease signature")}
+	if !ed25519.Verify(public,payload,sig){return Claims{},fmt.Errorf("invalid proxy lease signature")}
 	var claims Claims
 	if err:=json.Unmarshal(payload,&claims);err!=nil{return Claims{},err}
 	if claims.SchemaVersion!=1||claims.Scope!=Scope||claims.LeaseID==""||claims.UserID==""||claims.DeviceID==""{
