@@ -2,10 +2,13 @@ package agent
 
 import (
 	"bufio"
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func LocalMetadata() map[string]any {
@@ -36,6 +39,33 @@ func LocalMetadata() map[string]any {
 				}
 			}
 		}
+	}
+	if updates:=RuntimeUpdateMetadata("/run/vpnx3-updater");len(updates)>0{
+		out["runtime_updates"]=updates
+	}
+	return out
+}
+
+type RuntimeUpdateStatus struct {
+	Target string `json:"target"`
+	Version string `json:"version,omitempty"`
+	LastCheckAt time.Time `json:"last_check_at"`
+	LastSuccessAt *time.Time `json:"last_success_at,omitempty"`
+	Updated bool `json:"updated"`
+	Healthy bool `json:"healthy"`
+	Error string `json:"error,omitempty"`
+}
+
+func RuntimeUpdateMetadata(dir string)[]RuntimeUpdateStatus{
+	entries,err:=os.ReadDir(dir);if err!=nil{return nil}
+	out:=make([]RuntimeUpdateStatus,0,len(entries))
+	for _,entry:=range entries{
+		if entry.IsDir()||filepath.Ext(entry.Name())!=".json"{continue}
+		raw,err:=os.ReadFile(filepath.Join(dir,entry.Name()));if err!=nil||len(raw)>64<<10{continue}
+		var status RuntimeUpdateStatus
+		if json.Unmarshal(raw,&status)!=nil||strings.TrimSpace(status.Target)==""{continue}
+		if len(status.Error)>300{status.Error=status.Error[:300]}
+		out=append(out,status)
 	}
 	return out
 }

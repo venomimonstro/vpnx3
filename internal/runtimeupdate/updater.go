@@ -40,6 +40,7 @@ type Config struct {
 	ReleaseSources []string
 	TargetName string
 	StatePath string
+	StatusPath string
 	HealthURL string
 }
 
@@ -47,6 +48,17 @@ type state struct {
 	Version string `json:"version"`
 	SHA256 string `json:"sha256"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type runtimeStatus struct {
+	Target string `json:"target"`
+	Version string `json:"version,omitempty"`
+	SHA256 string `json:"sha256,omitempty"`
+	LastCheckAt time.Time `json:"last_check_at"`
+	LastSuccessAt *time.Time `json:"last_success_at,omitempty"`
+	Updated bool `json:"updated"`
+	Healthy bool `json:"healthy"`
+	Error string `json:"error,omitempty"`
 }
 
 type Updater struct {
@@ -69,6 +81,7 @@ func New(cfg Config)(*Updater,error){
 	target,ok:=targets[cfg.TargetName]
 	if !ok{return nil,fmt.Errorf("unsupported runtime update target")}
 	if cfg.StatePath==""{cfg.StatePath="/var/lib/vpnx3-updater/"+cfg.TargetName+".json"}
+	if cfg.StatusPath==""{cfg.StatusPath="/run/vpnx3-updater/"+cfg.TargetName+".json"}
 	if cfg.HealthURL!=""{
 		h,err:=url.Parse(cfg.HealthURL)
 		if err!=nil||!(h.Scheme=="http"||h.Scheme=="https")||h.Hostname()==""||h.User!=nil{
@@ -88,7 +101,25 @@ func New(cfg Config)(*Updater,error){
 	},nil
 }
 
-func (u *Updater) Run(ctx context.Context)(bool,error){
+func (u *Updater) Run(ctx context.Context)(changed bool,runErr error){
+	started:=time.Now().UTC()
+	current,_:=u.loadState()
+	defer func(){
+		finished:=time.Now().UTC()
+		latest,_:=u.loadState()
+		if latest.Version==""{latest=current}
+		status:=runtimeStatus{
+			Target:u.target.Name,Version:latest.Version,SHA256:latest.SHA256,
+			LastCheckAt:finished,Updated:changed,Healthy:runErr==nil,
+		}
+		if previous,err:=u.loadRuntimeStatus();err==nil{status.LastSuccessAt=previous.LastSuccessAt}
+		if runErr==nil{status.LastSuccessAt=&finished}else{
+			msg:=runErr.Error();if len(msg)>300{msg=msg[:300]};status.Error=msg
+		}
+		_ = u.saveRuntimeStatus(status)
+		_ = started
+	}()
+
 	sources:=append([]string{u.cfg.ControlURL},u.cfg.ReleaseSources...)
 	_,trustPayload,err:=trustbundle.Bootstrap(
 		ctx,sources,u.cfg.TrustRootPublicKey,u.cfg.StatePath+".trust",time.Now().UTC(),
@@ -102,7 +133,7 @@ func (u *Updater) Run(ctx context.Context)(bool,error){
 	info,err:=VerifyRelease(env,releaseKeys,u.target.Name,time.Now().UTC())
 	if err!=nil{return false,err}
 
-	current,_:=u.loadState()
+	current,_=u.loadState()
 	if current.Version!=""{
 		cmp,err:=CompareVersions(info.Version,current.Version)
 		if err!=nil{return false,err}
@@ -119,6 +150,7 @@ func (u *Updater) Run(ctx context.Context)(bool,error){
 	if err!=nil{return false,err}
 	defer os.Remove(tmp)
 	if err:=u.installAndRestart(ctx,tmp);err!=nil{return false,err}
+	changed=true
 	if err:=u.saveState(state{Version:info.Version,SHA256:info.SHA256,UpdatedAt:time.Now().UTC()});err!=nil{
 		return true,err
 	}
@@ -328,4 +360,25 @@ func CompareVersions(a,b string)(int,error){
 		if av>bv{return 1,nil}
 	}
 	return 0,nil
+}
+
+
+func (u *Updater) loadRuntimeStatus()(runtimeStatus,error){
+	raw,err:=os.ReadFile(u.cfg.StatusPath)
+	if err!=nil{return runtimeStatus{},err}
+	var s runtimeStatus
+	if err:=json.Unmarshal(raw,&s);err!=nil{return runtimeStatus{},err}
+	return s,nil
+}
+
+func (u *Updater) saveRuntimeStatus(s runtimeStatus)error{
+	raw,err:=json.Marshal(s);if err!=nil{return err}
+	dir:=filepath.Dir(u.cfg.StatusPath)
+	if err:=os.MkdirAll(dir,0755);err!=nil{return err}
+	tmp:=u.cfg.StatusPath+".tmp"
+	if err:=os.WriteFile(tmp,raw,0644);err!=nil{return err}
+	f,err:=os.Open(tmp);if err==nil{_ = f.Sync();_ = f.Close()}
+	if err:=os.Rename(tmp,u.cfg.StatusPath);err!=nil{return err}
+	_ = os.Chmod(u.cfg.StatusPath,0644)
+	return syncDir(dir)
 }

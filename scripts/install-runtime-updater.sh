@@ -43,6 +43,7 @@ actual="$(sha256sum "$tmp" | awk '{print $1}')"
 }
 install -m 0755 -o root -g root "$tmp" /usr/local/bin/vpnx3-runtime-updater
 install -d -m 0700 -o root -g root /var/lib/vpnx3-updater
+install -d -m 0755 -o root -g root /run/vpnx3-updater
 
 STATE="/var/lib/vpnx3-updater/$TARGET.json"
 MANAGED_SHA="$(sha256sum "$MANAGED"|awk '{print $1}')"
@@ -64,6 +65,7 @@ VPNX3_TRUST_ROOT_PUBLIC_KEY=$TRUST_ROOT
 VPNX3_RELEASE_SOURCES=$RELEASE_SOURCES
 VPNX3_UPDATE_TARGET=$TARGET
 VPNX3_UPDATE_STATE_PATH=$STATE
+VPNX3_UPDATE_STATUS_PATH=/run/vpnx3-updater/$TARGET.json
 VPNX3_UPDATE_HEALTH_URL=$HEALTH_URL
 EOF
 chmod 0600 "/etc/vpnx3-runtime-updater/$TARGET.env"
@@ -90,7 +92,7 @@ ProtectKernelLogs=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
-ReadWritePaths=/usr/local/bin /var/lib/vpnx3-updater
+ReadWritePaths=/usr/local/bin /var/lib/vpnx3-updater /run/vpnx3-updater
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 EOF
 

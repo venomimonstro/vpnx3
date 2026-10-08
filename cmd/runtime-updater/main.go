@@ -18,6 +18,7 @@ func main(){
 		ReleaseSources:split(os.Getenv("VPNX3_RELEASE_SOURCES")),
 		TargetName:strings.TrimSpace(os.Getenv("VPNX3_UPDATE_TARGET")),
 		StatePath:strings.TrimSpace(os.Getenv("VPNX3_UPDATE_STATE_PATH")),
+		StatusPath:strings.TrimSpace(os.Getenv("VPNX3_UPDATE_STATUS_PATH")),
 		HealthURL:strings.TrimSpace(os.Getenv("VPNX3_UPDATE_HEALTH_URL")),
 	}
 	updater,err:=runtimeupdate.New(cfg)
