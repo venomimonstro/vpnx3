@@ -25,6 +25,8 @@ type Config struct {
 	ReadTimeout            time.Duration
 	WriteTimeout           time.Duration
 	IdleTimeout            time.Duration
+	DrainDelay             time.Duration
+	ShutdownTimeout        time.Duration
 	AdminSessionTTL        time.Duration
 	AdminSessionBinding    string
 	BootstrapOwnerEmail    string
@@ -76,6 +78,8 @@ func Load() (Config, error) {
 		ReadTimeout:            duration("VPNX3_HTTP_READ_TIMEOUT", 10*time.Second),
 		WriteTimeout:           duration("VPNX3_HTTP_WRITE_TIMEOUT", 15*time.Second),
 		IdleTimeout:            duration("VPNX3_HTTP_IDLE_TIMEOUT", 60*time.Second),
+		DrainDelay:             duration("VPNX3_DRAIN_DELAY", 5*time.Second),
+		ShutdownTimeout:        duration("VPNX3_SHUTDOWN_TIMEOUT", 20*time.Second),
 		AdminSessionTTL:        duration("VPNX3_ADMIN_SESSION_TTL", 12*time.Hour),
 		AdminSessionBinding:    strings.ToLower(env("VPNX3_ADMIN_SESSION_BINDING","user-agent")),
 		BootstrapOwnerEmail:    strings.TrimSpace(os.Getenv("VPNX3_BOOTSTRAP_OWNER_EMAIL")),
@@ -153,6 +157,12 @@ func Load() (Config, error) {
 	}
 	if cfg.TrialDays < 0 || cfg.TrialDays > 30 {
 		return Config{}, fmt.Errorf("VPNX3_TRIAL_DAYS must be between 0 and 30")
+	}
+	if cfg.DrainDelay < 0 || cfg.DrainDelay > 60*time.Second {
+		return Config{}, fmt.Errorf("VPNX3_DRAIN_DELAY must be between 0s and 60s")
+	}
+	if cfg.ShutdownTimeout < 5*time.Second || cfg.ShutdownTimeout > 2*time.Minute {
+		return Config{}, fmt.Errorf("VPNX3_SHUTDOWN_TIMEOUT must be between 5s and 2m")
 	}
 	if cfg.AdminSessionTTL < 15*time.Minute || cfg.AdminSessionTTL > 7*24*time.Hour {
 		return Config{}, fmt.Errorf("VPNX3_ADMIN_SESSION_TTL must be between 15m and 168h")

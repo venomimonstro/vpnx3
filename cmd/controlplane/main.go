@@ -214,7 +214,25 @@ func main() {
 		return
 	}
 
-	ctx,cancel := context.WithTimeout(context.Background(),10*time.Second)
+	logger.Info("control plane entering drain mode","delay",cfg.DrainDelay,"shutdown_timeout",cfg.ShutdownTimeout)
+	srv.BeginDrain()
+
+	// Stop singleton/distributed background workers before HTTP shutdown. This
+	// releases PostgreSQL leadership quickly so a healthy replica can take over
+	// while this instance is already removed from load-balancer readiness.
+	monitorCancel()
+
+	if cfg.DrainDelay>0 {
+		timer:=time.NewTimer(cfg.DrainDelay)
+		select{
+		case <-timer.C:
+		case err:=<-serverErr:
+			if !timer.Stop(){select{case <-timer.C:default:}}
+			if err!=nil{logger.Warn("http server stopped during drain","error",err)}
+		}
+	}
+
+	ctx,cancel := context.WithTimeout(context.Background(),cfg.ShutdownTimeout)
 	defer cancel()
 	logger.Info("control plane shutting down")
 	if err := srv.Shutdown(ctx); err != nil {

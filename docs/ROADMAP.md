@@ -1017,3 +1017,32 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 4. остановить standby и подтвердить failed readiness;
 5. выполнить контролируемый switchover средствами DB HA-системы;
 6. проверить переподключение Control Plane, advisory leadership и очереди после смены writer.
+
+
+## Спринт 31 — безопасный rolling deploy Control Plane: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: обновление нескольких Control Plane реплик не должно обрывать запросы, удерживать singleton leadership или оставлять terminating-инстанс в балансировщике.
+
+Реализовано:
+
+- явный drain-state внутри HTTP Server;
+- при drain `/health/ready` немедленно возвращает HTTP 503 со статусом `draining`;
+- `/health/live` остаётся живым до фактической остановки процесса;
+- SIGTERM/SIGINT сначала переводит экземпляр в drain;
+- фоновые singleton/distributed workers останавливаются до HTTP shutdown;
+- PostgreSQL advisory leadership освобождается до завершения процесса;
+- configurable `VPNX3_DRAIN_DELAY` даёт балансировщику время убрать экземпляр из новых запросов;
+- configurable `VPNX3_SHUTDOWN_TIMEOUT` ограничивает ожидание уже начатых запросов;
+- допустимые диапазоны drain/shutdown проверяются при старте;
+- параметры задокументированы в `.env.example`.
+
+Физическая приёмка:
+
+1. поднять минимум две Control Plane реплики за балансировщиком;
+2. запустить непрерывный поток клиентских запросов;
+3. послать SIGTERM текущему leader;
+4. подтвердить немедленный readiness=503 только на terminating replica;
+5. подтвердить takeover singleton leadership healthy-репликой;
+6. убедиться, что новые запросы не идут на draining instance;
+7. проверить завершение уже начатых запросов в пределах shutdown timeout;
+8. повторить rolling deploy по одной реплике без клиентских 5xx.

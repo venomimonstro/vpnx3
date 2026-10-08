@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -35,6 +36,7 @@ type Server struct {
 	yooKassa *yookassa.Adapter
 	artifacts artifactstorage.Storage
 	onConfigChange func()
+	draining atomic.Bool
 }
 
 func NewServer(
@@ -176,6 +178,10 @@ func NewServer(
 
 func (s *Server) handleLive(w http.ResponseWriter,r *http.Request){ writeJSON(w,http.StatusOK,map[string]any{"status":"ok","service":"control-plane"}) }
 func (s *Server) handleReady(w http.ResponseWriter,r *http.Request){
+	if s.draining.Load(){
+		writeJSON(w,http.StatusServiceUnavailable,map[string]any{"status":"draining","database":"unknown","artifacts":"unknown"})
+		return
+	}
 	ctx,cancel:=context.WithTimeout(r.Context(),3*time.Second); defer cancel()
 	if err:=s.db.Ping(ctx); err!=nil {
 		s.logger.Warn("readiness database check failed","request_id",requestIDFromContext(r.Context()),"error",err)
@@ -195,6 +201,8 @@ func (s *Server) internalError(w http.ResponseWriter,r *http.Request,err error){
 }
 func (s *Server) SetReplicaDB(pool *pgxpool.Pool){s.replicaDB=pool}
 
+func (s *Server) BeginDrain(){ s.draining.Store(true) }
+func (s *Server) IsDraining() bool { return s.draining.Load() }
 func (s *Server) ListenAndServe() error { err:=s.http.ListenAndServe(); if err==http.ErrServerClosed{return nil}; return err }
 func (s *Server) Shutdown(ctx context.Context) error { return s.http.Shutdown(ctx) }
 func writeJSON(w http.ResponseWriter,status int,payload any){
