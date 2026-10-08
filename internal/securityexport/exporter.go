@@ -30,7 +30,14 @@ type signedEnvelope struct {
 }
 
 func New(s *store.Store,signer *signing.Signer,endpoint string,logger *slog.Logger)*Exporter{
+	transport:=http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns=10
+	transport.MaxIdleConnsPerHost=2
+	transport.IdleConnTimeout=60*time.Second
+	transport.TLSHandshakeTimeout=5*time.Second
+	transport.ResponseHeaderTimeout=5*time.Second
 	client:=&http.Client{
+		Transport:transport,
 		Timeout:10*time.Second,
 		CheckRedirect:func(_ *http.Request,_ []*http.Request)error{
 			return http.ErrUseLastResponse
@@ -84,6 +91,11 @@ func (e *Exporter) flush(parent context.Context){
 			}
 			e.logger.Warn("security audit export failed",
 				"audit_id",event.AuditID,"attempt",event.Attempt,"dead",dead,"error",err)
+			cancel()
+			// Do not consume retry-attempts for the entire queue while the
+			// external sink is unavailable. The next ticker cycle retries after
+			// persisted per-event backoff.
+			return
 		}
 		cancel()
 	}

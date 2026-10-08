@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -33,9 +34,16 @@ type envelope struct {
 }
 
 func New(s *store.Store,endpoint,secret string,logger *slog.Logger)*Notifier{
+	transport:=http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns=10
+	transport.MaxIdleConnsPerHost=2
+	transport.IdleConnTimeout=60*time.Second
+	transport.TLSHandshakeTimeout=5*time.Second
+	transport.ResponseHeaderTimeout=5*time.Second
 	return &Notifier{
 		store:s,endpoint:endpoint,secret:[]byte(secret),logger:logger,
 		client:&http.Client{
+			Transport:transport,
 			Timeout:10*time.Second,
 			CheckRedirect:func(_ *http.Request,_ []*http.Request)error{return http.ErrUseLastResponse},
 		},
@@ -65,7 +73,10 @@ func (n *Notifier) flush(parent context.Context){
 			dead:=item.Attempts>=10
 			_ = n.store.MarkIncidentNotificationFailed(parent,item.ID,time.Now().UTC().Add(delay),err.Error(),dead)
 			n.logger.Warn("incident notification delivery failed","notification_id",item.ID,"retry_in",delay.String(),"dead",dead,"error",err)
-			continue
+			// Stop this batch after the first external delivery failure. During a
+			// provider outage this prevents burning one retry attempt on every
+			// queued notification in the same cycle.
+			return
 		}
 		_ = n.store.MarkIncidentNotificationDelivered(parent,item.ID,time.Now().UTC())
 	}
@@ -87,6 +98,7 @@ func (n *Notifier) deliver(ctx context.Context,item store.IncidentNotification)e
 	req.Header.Set("X-VPNX3-Notification-ID",fmt.Sprintf("%d",item.ID))
 	resp,err:=n.client.Do(req);if err!=nil{return err}
 	defer resp.Body.Close()
+	_,_=io.Copy(io.Discard,io.LimitReader(resp.Body,64<<10))
 	if resp.StatusCode<200||resp.StatusCode>=300{return fmt.Errorf("notification HTTP %d",resp.StatusCode)}
 	return nil
 }

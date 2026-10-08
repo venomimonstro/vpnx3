@@ -1241,3 +1241,33 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 4. загрузить artifact около configured max;
 5. проверить отказ artifact выше max;
 6. выполнить нагрузочный тест большими body и наблюдать стабильность RAM.
+
+
+## Спринт 39 — backpressure внешних служебных очередей: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: отказ внешнего webhook/SIEM не должен за один цикл расходовать retry-budget всей очереди и создавать лишние сетевые подключения.
+
+Реализовано:
+
+- alert notifier использует отдельный hardened HTTP transport;
+- security export использует отдельный hardened HTTP transport;
+- TLS handshake timeout 5 секунд;
+- response-header timeout 5 секунд;
+- idle keep-alive timeout 60 секунд;
+- ограничено число idle connections к одному внешнему host;
+- redirect по-прежнему запрещён;
+- response body alert webhook ограниченно вычитывается для корректного keep-alive reuse;
+- после первой внешней delivery-ошибки notifier прекращает текущий batch;
+- после первой внешней delivery-ошибки security exporter прекращает текущий batch;
+- retry/backoff сохраняется в PostgreSQL и продолжает работать между репликами/рестартами;
+- массовый outage больше не увеличивает attempt одновременно у десятков ожидающих событий.
+
+Физическая приёмка:
+
+1. накопить очередь alert/security событий;
+2. сделать внешний endpoint недоступным;
+3. подтвердить, что за цикл attempt увеличивается только у одного claimed item;
+4. восстановить endpoint и проверить последовательный drain очереди;
+5. проверить keep-alive reuse;
+6. проверить timeout на TLS/header stall;
+7. убедиться, что dead-letter возникает только после реальных повторных попыток конкретного события.
