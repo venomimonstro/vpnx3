@@ -12,6 +12,8 @@ const STATE_KEYS = {
   credentialExpires: "proxy_credential_expires",
   ingress: "ingress",
   configVersion: "config_version",
+  configEnvelope: "config_envelope",
+  configMirrors: "config_mirrors",
   releasePolicy: "release_policy",
   releasePolicyUpdatedAt: "release_policy_updated_at"
 };
@@ -248,9 +250,67 @@ async function releaseDecision(){
     :{required:false,blocked:false,availableVersion:null,message:null};
 }
 
+function mirrorUrlsFromConfig(cfg){
+  const weighted=[];
+  for(const node of (cfg.config_mirrors||[])){
+    for(const ep of (node.endpoints||[])){
+      if(ep.kind!=="config_mirror"||ep.scheme!=="https"||ep.transport!=="https") continue;
+      const host=String(ep.host||"").trim();
+      const port=Number(ep.port||0);
+      if(!host||!Number.isInteger(port)||port<1||port>65535) continue;
+      const path=String(ep.path||"/api/v1/config/latest").trim()||"/api/v1/config/latest";
+      if(!path.startsWith("/")) continue;
+      weighted.push({priority:Number(ep.priority||100),url:"https://"+host+":"+port+path});
+    }
+  }
+  weighted.sort((a,b)=>a.priority-b.priority);
+  return [...new Set(weighted.map(x=>x.url))].slice(0,16);
+}
+
+async function fetchConfigURL(url){
+  const parsed=new URL(url);
+  if(parsed.protocol!=="https:"||!parsed.hostname||parsed.username||parsed.password||parsed.hash){
+    throw new Error("Unsafe config source URL");
+  }
+  const res=await fetch(parsed.toString(),{
+    method:"GET",
+    headers:{"Accept":"application/json","Cache-Control":"no-cache"},
+    cache:"no-store"
+  });
+  const text=await res.text();
+  if(!res.ok) throw new Error("Config source HTTP "+res.status);
+  return JSON.parse(text);
+}
+
+async function latestVerifiedConfig(){
+  const stored=await storageGet([STATE_KEYS.configEnvelope,STATE_KEYS.configMirrors]);
+  const bootstrap=Array.isArray(VPNX3_CONFIG_BOOTSTRAP_URLS)?VPNX3_CONFIG_BOOTSTRAP_URLS:[];
+  const sources=[
+    VPNX3_CONTROL_URL.replace(/\/$/,"")+"/api/v1/config/latest",
+    ...bootstrap,
+    ...(Array.isArray(stored[STATE_KEYS.configMirrors])?stored[STATE_KEYS.configMirrors]:[])
+  ];
+  let lastError=null;
+  const seen=new Set();
+  for(const source of sources){
+    if(!source||seen.has(source)) continue;
+    seen.add(source);
+    try{
+      const env=await fetchConfigURL(source);
+      const cfg=await verifyConfig(env);
+      await storageSet({
+        [STATE_KEYS.configEnvelope]:env,
+        [STATE_KEYS.configMirrors]:mirrorUrlsFromConfig(cfg)
+      });
+      return cfg;
+    }catch(e){lastError=e}
+  }
+  if(stored[STATE_KEYS.configEnvelope]) return verifyConfig(stored[STATE_KEYS.configEnvelope]);
+  throw lastError||new Error("No valid signed configuration");
+}
+
 async function latestIngress(){
-  const env=await request("GET","/api/v1/config/latest",null,null);
-  const cfg=await verifyConfig(env);
+  const cfg=await latestVerifiedConfig();
   const candidates=[];
   for(const node of (cfg.ingresses||[])){
     for(const ep of (node.endpoints||[])){

@@ -11,6 +11,8 @@ type LaunchReadinessData struct {
 	ActiveWorkers int64
 	RoutableWorkers int64
 	ActiveIngresses int64
+	ActiveConfigMirrors int64
+	RoutableConfigMirrors int64
 	ActiveProbes int64
 	FreshProbeNodes int64
 	FreshDataPlaneWorkers int64
@@ -57,6 +59,17 @@ func (s *Store) LaunchReadiness(ctx context.Context)(LaunchReadinessData,error){
 		        WHERE e.node_id=n.id AND e.enabled=true AND e.kind='ingress' AND e.scheme='https'
 		      )
 		  ),
+		  (SELECT count(*)::bigint FROM nodes WHERE role='config_mirror' AND status='active'),
+		  (
+		    SELECT count(*)::bigint
+		    FROM nodes n
+		    WHERE n.role='config_mirror' AND n.status='active'
+		      AND EXISTS (
+		        SELECT 1 FROM node_endpoints e
+		        WHERE e.node_id=n.id AND e.enabled=true
+		          AND e.kind='config_mirror' AND e.scheme='https' AND e.transport='https'
+		      )
+		  ),
 		  (SELECT count(*)::bigint FROM nodes WHERE role='probe' AND status='active'),
 		  (
 		    SELECT count(DISTINCT probe_node_id)::bigint
@@ -85,6 +98,7 @@ func (s *Store) LaunchReadiness(ctx context.Context)(LaunchReadinessData,error){
 		  (SELECT max(delivered_at) FROM security_event_outbox WHERE status='delivered')
 	`).Scan(
 		&d.LatestManifestAt,&d.ActiveWorkers,&d.RoutableWorkers,&d.ActiveIngresses,
+		&d.ActiveConfigMirrors,&d.RoutableConfigMirrors,
 		&d.ActiveProbes,&d.FreshProbeNodes,&d.FreshDataPlaneWorkers,
 		&d.QueuedBuildJobs,&d.RunningBuildJobs,&d.ActiveBuildWorkers,&d.PublishedReleases,
 		&d.AutoRenewActive,&d.RenewalPending,&d.RenewalFailed24h,&d.RenewalDisabledFailures,

@@ -47,6 +47,16 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 		add("worker_pool","ok","VPN worker pool","Есть маршрутизируемые active worker-ноды.")
 	}
 
+	if data.RoutableConfigMirrors==0{
+		add("config_mirrors","failed","Зеркала конфигурации","Нет active HTTPS config mirror; клиенты зависят от единственной точки Control Plane.")
+	}else if data.RoutableConfigMirrors==1{
+		add("config_mirrors","warning","Зеркала конфигурации","Доступно только одно config mirror; для устойчивости нужно минимум два независимых зеркала.")
+	}else if data.RoutableConfigMirrors<data.ActiveConfigMirrors{
+		add("config_mirrors","warning","Зеркала конфигурации","Не все active config mirror имеют корректный HTTPS endpoint.")
+	}else{
+		add("config_mirrors","ok","Зеркала конфигурации","Доступно минимум два маршрутизируемых config mirror.")
+	}
+
 	if data.ActiveProbes<1||data.FreshProbeNodes<1{
 		add("probes","failed","Независимые probes","Нет свежих наблюдений от active probe-ноды.")
 	}else{
@@ -221,6 +231,8 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			"active_workers":data.ActiveWorkers,
 			"routable_workers":data.RoutableWorkers,
 			"active_ingresses":data.ActiveIngresses,
+			"active_config_mirrors":data.ActiveConfigMirrors,
+			"routable_config_mirrors":data.RoutableConfigMirrors,
 			"active_probes":data.ActiveProbes,
 			"fresh_probe_nodes":data.FreshProbeNodes,
 			"fresh_data_plane_workers":data.FreshDataPlaneWorkers,

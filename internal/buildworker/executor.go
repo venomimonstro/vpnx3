@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -191,12 +192,25 @@ func writeBrowserRuntimeConfig(dir string) error {
 	control:=strings.TrimSpace(os.Getenv("VPNX3_CLIENT_CONTROL_URL"))
 	key:=strings.TrimSpace(os.Getenv("VPNX3_CONFIG_PUBLIC_KEY"))
 	releaseKey:=strings.TrimSpace(os.Getenv("VPNX3_RELEASE_PUBLIC_KEY"))
-	if !strings.HasPrefix(control,"https://") || key=="" || releaseKey=="" {
-		return fmt.Errorf("browser build requires VPNX3_CLIENT_CONTROL_URL, VPNX3_CONFIG_PUBLIC_KEY and VPNX3_RELEASE_PUBLIC_KEY")
+	rawMirrors:=strings.TrimSpace(os.Getenv("VPNX3_CONFIG_BOOTSTRAP_URLS"))
+	if !strings.HasPrefix(control,"https://") || key=="" || releaseKey=="" || rawMirrors=="" {
+		return fmt.Errorf("browser build requires control URL, config/release public keys and VPNX3_CONFIG_BOOTSTRAP_URLS")
 	}
+	mirrors:=make([]string,0)
+	for _,part:=range strings.FieldsFunc(rawMirrors,func(r rune)bool{return r==','||r==';'}){
+		v:=strings.TrimSpace(part)
+		if v==""{continue}
+		u,err:=url.Parse(v)
+		if err!=nil||u.Scheme!="https"||u.Hostname()==""||u.User!=nil||u.Fragment!="" {
+			return fmt.Errorf("invalid config bootstrap URL %q",v)
+		}
+		mirrors=append(mirrors,v)
+	}
+	if len(mirrors)==0{return fmt.Errorf("at least one config bootstrap URL is required")}
+	mirrorsJSON,err:=json.Marshal(mirrors);if err!=nil{return err}
 	content:=fmt.Sprintf(
-		"const VPNX3_CONTROL_URL=%q;\nconst VPNX3_CONFIG_PUBLIC_KEY=%q;\nconst VPNX3_RELEASE_PUBLIC_KEY=%q;\n",
-		control,key,releaseKey,
+		"const VPNX3_CONTROL_URL=%q;\nconst VPNX3_CONFIG_PUBLIC_KEY=%q;\nconst VPNX3_RELEASE_PUBLIC_KEY=%q;\nconst VPNX3_CONFIG_BOOTSTRAP_URLS=%s;\n",
+		control,key,releaseKey,string(mirrorsJSON),
 	)
 	return os.WriteFile(filepath.Join(dir,"runtime-config.js"),[]byte(content),0644)
 }

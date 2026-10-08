@@ -65,6 +65,18 @@ def main():
         fail("runtime config must contain pinned config public key")
     if "VPNX3_RELEASE_PUBLIC_KEY" not in runtime_text:
         fail("runtime config must contain pinned release public key")
+    match=re.search(r"VPNX3_CONFIG_BOOTSTRAP_URLS=(\[[^;]*\])",runtime_text)
+    if not match:
+        fail("runtime config must contain bootstrap config URLs")
+    try:
+        bootstrap=json.loads(match.group(1))
+    except Exception:
+        fail("bootstrap config URLs must be a JSON array")
+    if not bootstrap:
+        fail("at least one bootstrap config URL is required")
+    for value in bootstrap:
+        if not isinstance(value,str) or not value.startswith("https://"):
+            fail("bootstrap config URLs must use HTTPS")
 
     checked=0
     for path in root.rglob("*"):
