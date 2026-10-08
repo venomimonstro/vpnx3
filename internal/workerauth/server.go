@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"strings"
 	"time"
 
 	"github.com/venomimonstro/vpnx3/internal/accesslease"
@@ -111,6 +112,11 @@ func (s *Server) handleCreateSession(w http.ResponseWriter,r *http.Request) {
 	session,err:=s.sessions.Start(ctx,req.Lease,req.ClientPublicKey,time.Now().UTC())
 	if err!=nil {
 		s.logger.Warn("vpn session rejected","error",err)
+		if strings.Contains(err.Error(),"session start rate exceeded"){
+			w.Header().Set("Retry-After","60")
+			writeJSON(w,http.StatusTooManyRequests,map[string]string{"error":"session_rate_limited"})
+			return
+		}
 		writeJSON(w,http.StatusUnauthorized,map[string]string{"error":"session_rejected"})
 		return
 	}

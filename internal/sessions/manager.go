@@ -43,12 +43,18 @@ type Manager struct {
 	sessions  map[string]Session
 	byDevice  map[string]string
 	revokedDeviceHashes map[string]struct{}
+	startRate map[string]startRateState
+}
+
+type startRateState struct{
+	WindowStart time.Time
+	Count int
 }
 
 func New(verifier *accesslease.Verifier,pool *ipam.Pool,adapter transport.Adapter,statePath string) *Manager {
 	return &Manager{
 		verifier:verifier,ipam:pool,adapter:adapter,statePath:statePath,
-		sessions:map[string]Session{},byDevice:map[string]string{},revokedDeviceHashes:map[string]struct{}{},
+		sessions:map[string]Session{},byDevice:map[string]string{},revokedDeviceHashes:map[string]struct{}{},startRate:map[string]startRateState{},
 	}
 }
 
@@ -116,6 +122,9 @@ func (m *Manager) Start(ctx context.Context,env accesslease.Envelope,clientPubli
 
 	if hasExisting && existing.ExpiresAt.After(now) && existing.ClientPublicKey==clientPublicKey {
 		return existing,nil
+	}
+	if !m.allowSessionStart(claims.DeviceID,now){
+		return Session{},fmt.Errorf("session start rate exceeded")
 	}
 	if hasExisting {
 		if err:=m.closeLocked(ctx,existingID); err!=nil {
@@ -266,4 +275,18 @@ func (m *Manager) persist() error {
 	if err:=os.WriteFile(tmp,raw,0600); err!=nil { return err }
 	if err:=os.Rename(tmp,m.statePath); err!=nil { return err }
 	return nil
+}
+
+
+func (m *Manager) allowSessionStart(deviceID string,now time.Time)bool{
+	const window=time.Minute
+	const limit=8
+	state:=m.startRate[deviceID]
+	if state.WindowStart.IsZero()||now.Sub(state.WindowStart)>=window||now.Before(state.WindowStart){
+		m.startRate[deviceID]=startRateState{WindowStart:now,Count:1}
+		return true
+	}
+	state.Count++
+	m.startRate[deviceID]=state
+	return state.Count<=limit
 }

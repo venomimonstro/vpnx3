@@ -34,6 +34,14 @@ func (s *Server) handleClientProxyLease(w http.ResponseWriter,r *http.Request){
 		writeError(w,http.StatusConflict,"stale_request");return
 	}
 	now:=time.Now().UTC().Truncate(time.Second)
+	allowed,_,rateErr:=s.store.AllowClientLease(r.Context(),deviceID,"proxy",now,30)
+	if rateErr!=nil{s.internalError(w,r,rateErr);return}
+	if !allowed{
+		_ = s.store.IncrementSecurityCounter(r.Context(),"proxy_lease_rate_limited")
+		w.Header().Set("Retry-After","60")
+		writeError(w,http.StatusTooManyRequests,"proxy_lease_rate_limited")
+		return
+	}
 	ent,err:=s.store.DeviceEntitlement(r.Context(),deviceID,now)
 	if err!=nil{writeError(w,http.StatusPaymentRequired,"no_active_entitlement");return}
 	expires:=now.Add(s.cfg.AccessLeaseTTL)

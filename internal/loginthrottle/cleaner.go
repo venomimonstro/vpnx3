@@ -24,8 +24,11 @@ func (c *Cleaner) Run(ctx context.Context){
 				WHERE updated_at < now()-interval '24 hours'
 				  AND (blocked_until IS NULL OR blocked_until < now())
 			`)
+			if err==nil{
+				_,err=c.store.CleanupClientLeaseRate(cctx)
+			}
 			cancel()
-			if err!=nil{c.logger.Warn("login throttle cleanup failed","error",err)}
+			if err!=nil{c.logger.Warn("rate-limit cleanup failed","error",err)}
 		}
 	}
 }

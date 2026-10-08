@@ -137,6 +137,14 @@ func (s *Server) handleClientLease(w http.ResponseWriter,r *http.Request) {
 	}
 
 	now:=time.Now().UTC().Truncate(time.Second)
+	allowed,_,rateErr:=s.store.AllowClientLease(r.Context(),deviceID,"access",now,12)
+	if rateErr!=nil{s.internalError(w,r,rateErr);return}
+	if !allowed{
+		_ = s.store.IncrementSecurityCounter(r.Context(),"access_lease_rate_limited")
+		w.Header().Set("Retry-After","60")
+		writeError(w,http.StatusTooManyRequests,"access_lease_rate_limited")
+		return
+	}
 	entitlement,err:=s.store.DeviceEntitlement(r.Context(),deviceID,now)
 	if err!=nil {
 		writeError(w,http.StatusPaymentRequired,"no_active_entitlement")

@@ -819,3 +819,33 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 4. во время failover выполнить node mutation и подтвердить немедленный signed manifest;
 5. разорвать DB connection лидера и подтвердить снятие advisory lock;
 6. восстановить экземпляр и убедиться, что он возвращается follower без двойных singleton jobs.
+
+
+## Спринт 25 — защита Lease и VPN-сессий от злоупотребления: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: валидное устройство не должно иметь возможность бесконтрольно выпускать lease и создавать/пересоздавать worker-сессии, расходуя IPAM, CPU и криптографические операции.
+
+Реализовано:
+
+- persistent rate-limit Access Lease по device ID;
+- отдельный persistent rate-limit Proxy Lease;
+- лимит считается в минутных bucket и работает одинаково на нескольких Control Plane репликах;
+- Access Lease: до 12 выдач в минуту на устройство;
+- Proxy Lease: до 30 выдач в минуту, чтобы не ломать browser reconnect/407 recovery;
+- превышение возвращает HTTP 429 + Retry-After;
+- события учитываются в privacy-preserving security counters;
+- старые rate buckets очищаются автоматически;
+- worker сохраняет идемпотентность: тот же active device + тот же tunnel public key получает существующую сессию;
+- только создание новой/смена ключа учитывается worker burst-limiter;
+- worker допускает до 8 новых session starts в минуту на device;
+- превышение worker burst-limit возвращает 429, а не маскируется под invalid lease;
+- session manager по-прежнему допускает только одну активную VPN-сессию на device на конкретном worker.
+
+Физическая приёмка:
+
+1. выполнить обычные reconnect Android/iOS и убедиться, что лимит не срабатывает;
+2. сгенерировать более 12 Access Lease за минуту и подтвердить 429;
+3. проверить browser maintenance/407 recovery при Proxy Lease лимите;
+4. быстро менять tunnel key более 8 раз в минуту и подтвердить worker 429;
+5. проверить очистку rate buckets и восстановление после следующей минуты;
+6. прогнать нагрузочный тест на нескольких Control Plane репликах.
