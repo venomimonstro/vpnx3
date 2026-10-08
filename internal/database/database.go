@@ -15,6 +15,10 @@ type PoolOptions struct {
 	MaxConnLifetimeJitter time.Duration
 	MaxConnIdleTime time.Duration
 	HealthCheckPeriod time.Duration
+	StatementTimeout time.Duration
+	LockTimeout time.Duration
+	IdleInTransactionTimeout time.Duration
+	ApplicationName string
 }
 
 func DefaultPoolOptions()PoolOptions{
@@ -24,6 +28,10 @@ func DefaultPoolOptions()PoolOptions{
 		MaxConnLifetimeJitter:5*time.Minute,
 		MaxConnIdleTime:5*time.Minute,
 		HealthCheckPeriod:30*time.Second,
+		StatementTimeout:8*time.Second,
+		LockTimeout:3*time.Second,
+		IdleInTransactionTimeout:15*time.Second,
+		ApplicationName:"vpnx3-control-plane",
 	}
 }
 
@@ -44,6 +52,10 @@ func OpenWithOptions(ctx context.Context,databaseURL string,opts PoolOptions)(*p
 	if opts.MaxConnLifetimeJitter<0{opts.MaxConnLifetimeJitter=0}
 	if opts.MaxConnIdleTime<=0{opts.MaxConnIdleTime=defaults.MaxConnIdleTime}
 	if opts.HealthCheckPeriod<=0{opts.HealthCheckPeriod=defaults.HealthCheckPeriod}
+	if opts.StatementTimeout<=0{opts.StatementTimeout=defaults.StatementTimeout}
+	if opts.LockTimeout<=0{opts.LockTimeout=defaults.LockTimeout}
+	if opts.IdleInTransactionTimeout<=0{opts.IdleInTransactionTimeout=defaults.IdleInTransactionTimeout}
+	if opts.ApplicationName==""{opts.ApplicationName=defaults.ApplicationName}
 
 	cfg.MaxConns=opts.MaxConns
 	cfg.MinConns=opts.MinConns
@@ -51,6 +63,11 @@ func OpenWithOptions(ctx context.Context,databaseURL string,opts PoolOptions)(*p
 	cfg.MaxConnLifetimeJitter=opts.MaxConnLifetimeJitter
 	cfg.MaxConnIdleTime=opts.MaxConnIdleTime
 	cfg.HealthCheckPeriod=opts.HealthCheckPeriod
+	if cfg.ConnConfig.RuntimeParams==nil{cfg.ConnConfig.RuntimeParams=map[string]string{}}
+	cfg.ConnConfig.RuntimeParams["application_name"]=opts.ApplicationName
+	cfg.ConnConfig.RuntimeParams["statement_timeout"]=postgresDuration(opts.StatementTimeout)
+	cfg.ConnConfig.RuntimeParams["lock_timeout"]=postgresDuration(opts.LockTimeout)
+	cfg.ConnConfig.RuntimeParams["idle_in_transaction_session_timeout"]=postgresDuration(opts.IdleInTransactionTimeout)
 
 	pool,err:=pgxpool.NewWithConfig(ctx,cfg)
 	if err!=nil{return nil,fmt.Errorf("create database pool: %w",err)}
@@ -74,9 +91,21 @@ func OpenHealth(ctx context.Context,databaseURL string)(*pgxpool.Pool,error){
 	cfg.MaxConnLifetimeJitter=2*time.Minute
 	cfg.MaxConnIdleTime=2*time.Minute
 	cfg.HealthCheckPeriod=30*time.Second
+	if cfg.ConnConfig.RuntimeParams==nil{cfg.ConnConfig.RuntimeParams=map[string]string{}}
+	cfg.ConnConfig.RuntimeParams["application_name"]="vpnx3-control-plane-replica-health"
+	cfg.ConnConfig.RuntimeParams["statement_timeout"]="3000ms"
+	cfg.ConnConfig.RuntimeParams["lock_timeout"]="1000ms"
+	cfg.ConnConfig.RuntimeParams["idle_in_transaction_session_timeout"]="5000ms"
 	pool,err:=pgxpool.NewWithConfig(ctx,cfg)
 	if err!=nil{return nil,fmt.Errorf("create health database pool: %w",err)}
 	pingCtx,cancel:=context.WithTimeout(ctx,5*time.Second);defer cancel()
 	if err:=pool.Ping(pingCtx);err!=nil{return pool,fmt.Errorf("health database ping: %w",err)}
 	return pool,nil
+}
+
+
+func postgresDuration(d time.Duration)string{
+	ms:=d.Milliseconds()
+	if ms<1{ms=1}
+	return fmt.Sprintf("%dms",ms)
 }

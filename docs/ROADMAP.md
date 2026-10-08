@@ -1101,3 +1101,31 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 4. подтвердить, что DB pool не достигает 100% раньше admission controller;
 5. проверить connection churn с lifetime jitter;
 6. проверить rolling deploy двух реплик без connection storm.
+
+
+## Спринт 34 — SQL timeout и защита пула от зависших запросов: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: медленный SQL, ожидание блокировки или забытая транзакция не должны удерживать connection pool неопределённо долго.
+
+Реализовано:
+
+- PostgreSQL `statement_timeout` для всех primary pool connections;
+- отдельный `lock_timeout`;
+- `idle_in_transaction_session_timeout`;
+- параметры задаются через pgx RuntimeParams на каждое соединение;
+- configurable `VPNX3_DATABASE_STATEMENT_TIMEOUT`;
+- configurable `VPNX3_DATABASE_LOCK_TIMEOUT`;
+- configurable `VPNX3_DATABASE_IDLE_TX_TIMEOUT`;
+- lock timeout обязан быть меньше statement timeout;
+- отдельный health pool standby имеет более строгие короткие timeout;
+- application_name различает business pool и replica-health pool;
+- параметры валидируются до старта.
+
+Физическая приёмка:
+
+1. создать искусственный PostgreSQL lock и подтвердить быстрый lock timeout;
+2. выполнить заведомо долгий statement и подтвердить server-side cancel;
+3. оставить транзакцию idle и проверить принудительное завершение;
+4. убедиться, что connection возвращается в pool после ошибки;
+5. прогнать обычные billing/config/admin flows и проверить отсутствие ложных timeout;
+6. подобрать production thresholds по slow-query telemetry.

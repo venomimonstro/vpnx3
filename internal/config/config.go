@@ -26,6 +26,9 @@ type Config struct {
 	DatabaseConnLifetime   time.Duration
 	DatabaseConnJitter     time.Duration
 	DatabaseConnIdleTime   time.Duration
+	DatabaseStatementTimeout time.Duration
+	DatabaseLockTimeout      time.Duration
+	DatabaseIdleTxTimeout    time.Duration
 	LogLevel               slog.Level
 	ReadTimeout            time.Duration
 	WriteTimeout           time.Duration
@@ -86,6 +89,9 @@ func Load() (Config, error) {
 		DatabaseConnLifetime:   duration("VPNX3_DATABASE_CONN_LIFETIME",30*time.Minute),
 		DatabaseConnJitter:     duration("VPNX3_DATABASE_CONN_JITTER",5*time.Minute),
 		DatabaseConnIdleTime:   duration("VPNX3_DATABASE_CONN_IDLE_TIME",5*time.Minute),
+		DatabaseStatementTimeout: duration("VPNX3_DATABASE_STATEMENT_TIMEOUT",8*time.Second),
+		DatabaseLockTimeout:      duration("VPNX3_DATABASE_LOCK_TIMEOUT",3*time.Second),
+		DatabaseIdleTxTimeout:    duration("VPNX3_DATABASE_IDLE_TX_TIMEOUT",15*time.Second),
 		LogLevel:               parseLogLevel(env("VPNX3_LOG_LEVEL", "info")),
 		ReadTimeout:            duration("VPNX3_HTTP_READ_TIMEOUT", 10*time.Second),
 		WriteTimeout:           duration("VPNX3_HTTP_WRITE_TIMEOUT", 15*time.Second),
@@ -151,6 +157,18 @@ func Load() (Config, error) {
 	}
 	if cfg.DatabaseConnIdleTime < time.Minute || cfg.DatabaseConnIdleTime > time.Hour {
 		return Config{},fmt.Errorf("VPNX3_DATABASE_CONN_IDLE_TIME must be between 1m and 1h")
+	}
+	if cfg.DatabaseStatementTimeout < time.Second || cfg.DatabaseStatementTimeout > 2*time.Minute {
+		return Config{},fmt.Errorf("VPNX3_DATABASE_STATEMENT_TIMEOUT must be between 1s and 2m")
+	}
+	if cfg.DatabaseLockTimeout < 100*time.Millisecond || cfg.DatabaseLockTimeout > 30*time.Second {
+		return Config{},fmt.Errorf("VPNX3_DATABASE_LOCK_TIMEOUT must be between 100ms and 30s")
+	}
+	if cfg.DatabaseLockTimeout >= cfg.DatabaseStatementTimeout {
+		return Config{},fmt.Errorf("VPNX3_DATABASE_LOCK_TIMEOUT must be lower than statement timeout")
+	}
+	if cfg.DatabaseIdleTxTimeout < 5*time.Second || cfg.DatabaseIdleTxTimeout > 10*time.Minute {
+		return Config{},fmt.Errorf("VPNX3_DATABASE_IDLE_TX_TIMEOUT must be between 5s and 10m")
 	}
 	if cfg.ConfigSigningKey == "" {
 		return Config{}, fmt.Errorf("VPNX3_CONFIG_SIGNING_KEY must be set")
