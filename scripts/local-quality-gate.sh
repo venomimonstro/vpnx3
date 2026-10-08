@@ -31,8 +31,19 @@ PY
 go test ./internal/config ./internal/httpapi ./internal/buildworker ./internal/deviceauth ./internal/clientconfig ./internal/accesslease ./internal/artifactstorage
 
 python3 scripts/validate-ios-source.py
-python3 scripts/validate-browser-extension.py --browser chrome --dir apps/browser-extension/chrome
-python3 scripts/validate-browser-extension.py --browser firefox --dir apps/browser-extension/firefox
+
+browser_tmp="$(mktemp -d)"
+trap 'rm -rf "$browser_tmp"' EXIT
+cp -R apps/browser-extension/chrome "$browser_tmp/chrome"
+cp -R apps/browser-extension/firefox "$browser_tmp/firefox"
+for dir in "$browser_tmp/chrome" "$browser_tmp/firefox"; do
+  cat >"$dir/runtime-config.js" <<'EOF'
+const VPNX3_CONTROL_URL="https://control.example.invalid";
+const VPNX3_CONFIG_PUBLIC_KEY="AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE";
+EOF
+done
+python3 scripts/validate-browser-extension.py --browser chrome --dir "$browser_tmp/chrome"
+python3 scripts/validate-browser-extension.py --browser firefox --dir "$browser_tmp/firefox"
 
 # Reject obvious secret material accidentally committed to source directories.
 if grep -R -n -E --exclude-dir=.git --exclude='*.md'   'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AKIA[0-9A-Z]{16}'   cmd internal apps scripts deploy migrations >/tmp/vpnx3-secret-scan.txt; then
