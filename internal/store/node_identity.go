@@ -101,6 +101,7 @@ type HeartbeatInput struct {
 	AgentVersion    string
 	HealthScore     *float64
 	Metadata        []byte
+	LocalHealthBad  bool
 }
 
 func (s *Store) NodePublicKey(ctx context.Context, nodeID string) ([]byte, int64, error) {
@@ -125,10 +126,12 @@ func (s *Store) RecordHeartbeat(ctx context.Context, in HeartbeatInput) error {
 		    agent_version=CASE WHEN $5 <> '' THEN $5 ELSE agent_version END,
 		    health_score=COALESCE($6,health_score),
 		    metadata=CASE WHEN $7 <> '' THEN $7::jsonb ELSE metadata END,
+		    local_health_bad_streak=CASE WHEN $8 THEN local_health_bad_streak+1 ELSE 0 END,
+		    local_health_good_streak=CASE WHEN $8 THEN 0 ELSE local_health_good_streak+1 END,
 		    last_heartbeat_at=now(),
 		    updated_at=now()
 		WHERE id=$1 AND heartbeat_sequence < $2
-	`, in.NodeID,in.Sequence,in.CurrentSessions,in.Capacity,in.AgentVersion,in.HealthScore,string(in.Metadata))
+	`, in.NodeID,in.Sequence,in.CurrentSessions,in.Capacity,in.AgentVersion,in.HealthScore,string(in.Metadata),in.LocalHealthBad)
 	if err != nil { return fmt.Errorf("record heartbeat: %w",err) }
 	if tag.RowsAffected() != 1 { return fmt.Errorf("stale heartbeat sequence") }
 	return nil

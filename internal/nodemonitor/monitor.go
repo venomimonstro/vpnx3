@@ -46,15 +46,34 @@ func (m *Monitor) Run(ctx context.Context) {
 func (m *Monitor) check(parent context.Context) {
 	ctx,cancel:=context.WithTimeout(parent,5*time.Second)
 	defer cancel()
-	ids,err:=m.store.DegradeStaleNodes(ctx,m.staleAfter)
+	staleIDs,err:=m.store.DegradeStaleNodes(ctx,m.staleAfter)
 	if err!=nil {
 		m.logger.Error("node stale check failed","error",err)
 		return
 	}
-	for _,id:=range ids {
+	for _,id:=range staleIDs {
 		m.logger.Warn("node marked degraded after heartbeat timeout","node_id",id)
 	}
-	if len(ids)>0 && m.onRoutingChange!=nil {
+
+	localBad,err:=m.store.DegradeLocallyUnhealthyNodes(ctx)
+	if err!=nil{
+		m.logger.Error("node local health check failed","error",err)
+		return
+	}
+	for _,id:=range localBad{
+		m.logger.Warn("node marked degraded after sustained local health failure","node_id",id)
+	}
+
+	recovered,err:=m.store.RecoverLocallyHealthyNodes(ctx)
+	if err!=nil{
+		m.logger.Error("node local health recovery failed","error",err)
+		return
+	}
+	for _,id:=range recovered{
+		m.logger.Info("node recovered after sustained local health observations","node_id",id)
+	}
+
+	if (len(staleIDs)>0||len(localBad)>0||len(recovered)>0) && m.onRoutingChange!=nil {
 		m.onRoutingChange()
 	}
 }

@@ -109,10 +109,11 @@ func (s *Server) handleNodeHeartbeat(w http.ResponseWriter, r *http.Request) {
 		writeError(w,http.StatusBadRequest,"invalid_metadata")
 		return
 	}
+	localHealthBad:=heartbeatLocalHealthBad(req.Metadata)
 	if err := s.store.RecordHeartbeat(r.Context(),store.HeartbeatInput{
 		NodeID:nodeID,Sequence:req.Sequence,CurrentSessions:req.CurrentSessions,
 		Capacity:req.Capacity,AgentVersion:req.AgentVersion,
-		HealthScore:req.HealthScore,Metadata:req.Metadata,
+		HealthScore:req.HealthScore,Metadata:req.Metadata,LocalHealthBad:localHealthBad,
 	}); err != nil {
 		if strings.Contains(err.Error(),"stale heartbeat") {
 			writeError(w,http.StatusConflict,"stale_heartbeat")
@@ -135,4 +136,29 @@ func (s *Server) handleNodeHeartbeat(w http.ResponseWriter, r *http.Request) {
 		"status":"ok",
 		"server_time":time.Now().UTC(),
 	})
+}
+
+
+func heartbeatLocalHealthBad(raw json.RawMessage)bool{
+	var meta map[string]any
+	if json.Unmarshal(raw,&meta)!=nil{return false}
+	if healthy,ok:=meta["worker_healthy"].(bool);ok&&!healthy{return true}
+
+	total,totalOK:=jsonNumber(meta["disk_total_bytes"])
+	available,availableOK:=jsonNumber(meta["disk_available_bytes"])
+	if totalOK&&availableOK&&total>0{
+		if available/total < 0.05{return true}
+	}
+	return false
+}
+
+func jsonNumber(v any)(float64,bool){
+	switch n:=v.(type){
+	case float64:
+		return n,true
+	case json.Number:
+		f,err:=n.Float64();return f,err==nil
+	default:
+		return 0,false
+	}
 }

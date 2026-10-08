@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"syscall"
 )
 
 func LocalMetadata() map[string]any {
@@ -16,6 +17,26 @@ func LocalMetadata() map[string]any {
 		"goos":runtime.GOOS,
 		"goarch":runtime.GOARCH,
 		"cpu_count":runtime.NumCPU(),
+	}
+	if raw,err:=os.ReadFile("/proc/uptime");err==nil{
+		fields:=strings.Fields(string(raw))
+		if len(fields)>0{
+			if seconds,err:=strconv.ParseFloat(fields[0],64);err==nil&&seconds>=0{
+				out["uptime_seconds"]=int64(seconds)
+			}
+		}
+	}
+	if raw,err:=os.ReadFile("/proc/sys/kernel/osrelease");err==nil{
+		if value:=strings.TrimSpace(string(raw));value!=""&&len(value)<=128{
+			out["kernel_release"]=value
+		}
+	}
+	var fs syscall.Statfs_t
+	if err:=syscall.Statfs("/",&fs);err==nil{
+		total:=uint64(fs.Blocks)*uint64(fs.Bsize)
+		available:=uint64(fs.Bavail)*uint64(fs.Bsize)
+		out["disk_total_bytes"]=total
+		out["disk_available_bytes"]=available
 	}
 	if raw,err := os.ReadFile("/proc/loadavg"); err == nil {
 		fields := strings.Fields(string(raw))

@@ -117,3 +117,81 @@ func (s *Store) RecoverHeartbeatDegradedNode(ctx context.Context,nodeID string)(
 	if err:=tx.Commit(ctx);err!=nil{return false,err}
 	return true,nil
 }
+
+
+func (s *Store) DegradeLocallyUnhealthyNodes(ctx context.Context)([]string,error){
+	tx,err:=s.DB.Begin(ctx);if err!=nil{return nil,err};defer tx.Rollback(ctx)
+	rows,err:=tx.Query(ctx,`
+		SELECT id::text,status::text
+		FROM nodes
+		WHERE status='active'
+		  AND local_health_bad_streak>=3
+		FOR UPDATE
+	`)
+	if err!=nil{return nil,err}
+	type item struct{id,status string}
+	items:=make([]item,0)
+	for rows.Next(){
+		var it item
+		if err:=rows.Scan(&it.id,&it.status);err!=nil{rows.Close();return nil,err}
+		items=append(items,it)
+	}
+	rows.Close()
+	if err:=rows.Err();err!=nil{return nil,err}
+
+	ids:=make([]string,0,len(items))
+	for _,it:=range items{
+		if _,err:=tx.Exec(ctx,`
+			UPDATE nodes SET status='degraded',updated_at=now() WHERE id=$1
+		`,it.id);err!=nil{return nil,err}
+		if _,err:=tx.Exec(ctx,`
+			INSERT INTO node_state_events(node_id,previous_status,next_status,reason,actor_type)
+			VALUES($1,$2,'degraded','local health failure','system')
+		`,it.id,it.status);err!=nil{return nil,err}
+		ids=append(ids,it.id)
+	}
+	if err:=tx.Commit(ctx);err!=nil{return nil,err}
+	return ids,nil
+}
+
+func (s *Store) RecoverLocallyHealthyNodes(ctx context.Context)([]string,error){
+	tx,err:=s.DB.Begin(ctx);if err!=nil{return nil,err};defer tx.Rollback(ctx)
+	rows,err:=tx.Query(ctx,`
+		SELECT n.id::text
+		FROM nodes n
+		WHERE n.status='degraded'
+		  AND n.local_health_good_streak>=2
+		  AND n.circuit_breaker_open=false
+		  AND EXISTS (
+		    SELECT 1 FROM node_state_events e
+		    WHERE e.node_id=n.id
+		      AND e.next_status='degraded'
+		      AND e.reason='local health failure'
+		      AND e.actor_type='system'
+		      AND NOT EXISTS (
+		        SELECT 1 FROM node_state_events newer
+		        WHERE newer.node_id=e.node_id AND newer.id>e.id
+		      )
+		  )
+		FOR UPDATE
+	`)
+	if err!=nil{return nil,err}
+	ids:=make([]string,0)
+	for rows.Next(){
+		var id string
+		if err:=rows.Scan(&id);err!=nil{rows.Close();return nil,err}
+		ids=append(ids,id)
+	}
+	rows.Close()
+	if err:=rows.Err();err!=nil{return nil,err}
+
+	for _,id:=range ids{
+		if _,err:=tx.Exec(ctx,`UPDATE nodes SET status='active',updated_at=now() WHERE id=$1`,id);err!=nil{return nil,err}
+		if _,err:=tx.Exec(ctx,`
+			INSERT INTO node_state_events(node_id,previous_status,next_status,reason,actor_type)
+			VALUES($1,'degraded','active','local health recovered','system')
+		`,id);err!=nil{return nil,err}
+	}
+	if err:=tx.Commit(ctx);err!=nil{return nil,err}
+	return ids,nil
+}
