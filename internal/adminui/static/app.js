@@ -1145,7 +1145,7 @@ async function renderSection(){
   const target=document.getElementById("section");if(!target)return;
   target.replaceChildren($("div",{class:"card"},"Загрузка…"));
   try{
-    const fn={dashboard,referrals,networkrisk,fleet,readiness,issues,nodes,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
+    const fn={dashboard,referrals,networkrisk,fleet,readiness,httpmetrics:httpMetrics,issues,nodes,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
     target.replaceChildren(await fn());
   }catch(e){target.replaceChildren(sectionError("VPNX3",e))}
 }
