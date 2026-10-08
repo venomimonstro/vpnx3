@@ -23,6 +23,10 @@ type LaunchReadinessData struct {
 	RenewalFailed24h int64
 	RenewalDisabledFailures int64
 	AuditChainValid bool
+	SecurityExportPending int64
+	SecurityExportDead int64
+	SecurityExportOldestPendingAt *time.Time
+	SecurityExportLastDeliveredAt *time.Time
 }
 
 func (s *Store) LaunchReadiness(ctx context.Context)(LaunchReadinessData,error){
@@ -74,13 +78,19 @@ func (s *Store) LaunchReadiness(ctx context.Context)(LaunchReadinessData,error){
 		  (SELECT count(*)::bigint FROM subscription_renewal_attempts WHERE status IN ('claimed','pending')),
 		  (SELECT count(*)::bigint FROM subscription_renewal_attempts WHERE status='failed' AND updated_at>=now()-interval '24 hours'),
 		  (SELECT count(*)::bigint FROM subscriptions WHERE auto_renew=false AND renewal_failures>=3),
-		  verify_audit_chain()
+		  verify_audit_chain(),
+		  (SELECT count(*)::bigint FROM security_event_outbox WHERE status='pending'),
+		  (SELECT count(*)::bigint FROM security_event_outbox WHERE status='dead'),
+		  (SELECT min(created_at) FROM security_event_outbox WHERE status='pending'),
+		  (SELECT max(delivered_at) FROM security_event_outbox WHERE status='delivered')
 	`).Scan(
 		&d.LatestManifestAt,&d.ActiveWorkers,&d.RoutableWorkers,&d.ActiveIngresses,
 		&d.ActiveProbes,&d.FreshProbeNodes,&d.FreshDataPlaneWorkers,
 		&d.QueuedBuildJobs,&d.RunningBuildJobs,&d.ActiveBuildWorkers,&d.PublishedReleases,
 		&d.AutoRenewActive,&d.RenewalPending,&d.RenewalFailed24h,&d.RenewalDisabledFailures,
 		&d.AuditChainValid,
+		&d.SecurityExportPending,&d.SecurityExportDead,
+		&d.SecurityExportOldestPendingAt,&d.SecurityExportLastDeliveredAt,
 	)
 	if err!=nil{return LaunchReadinessData{},fmt.Errorf("launch readiness: %w",err)}
 	return d,nil

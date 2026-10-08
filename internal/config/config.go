@@ -97,6 +97,8 @@ func Load() (Config, error) {
 		RegistrationRateKey:    strings.TrimSpace(os.Getenv("VPNX3_REGISTRATION_RATE_KEY")),
 		BackupStatusFile:       strings.TrimSpace(os.Getenv("VPNX3_BACKUP_STATUS_FILE")),
 		SecurityExportURL:      strings.TrimSpace(os.Getenv("VPNX3_SECURITY_EXPORT_URL")),
+		SecurityExportSecret:   strings.TrimSpace(os.Getenv("VPNX3_SECURITY_EXPORT_SECRET")),
+		SecurityExportURL:      strings.TrimSpace(os.Getenv("VPNX3_SECURITY_EXPORT_URL")),
 		SecurityExportSigningKey: strings.TrimSpace(os.Getenv("VPNX3_SECURITY_EXPORT_SIGNING_KEY")),
 	}
 
@@ -180,6 +182,19 @@ func Load() (Config, error) {
 	}
 	if cfg.BackupStatusFile!="" && !strings.HasPrefix(cfg.BackupStatusFile,"/") {
 		return Config{}, fmt.Errorf("VPNX3_BACKUP_STATUS_FILE must be an absolute path")
+	}
+	securityExportConfigured:=cfg.SecurityExportURL!=""||cfg.SecurityExportSecret!=""
+	if securityExportConfigured {
+		if cfg.SecurityExportURL==""||cfg.SecurityExportSecret=="" {
+			return Config{},fmt.Errorf("security export requires URL and secret together")
+		}
+		u,err:=url.Parse(cfg.SecurityExportURL)
+		if err!=nil||u.Scheme!="https"||u.Hostname()==""||u.User!=nil||u.Fragment!="" {
+			return Config{},fmt.Errorf("VPNX3_SECURITY_EXPORT_URL must be an https URL without credentials or fragment")
+		}
+		if len(cfg.SecurityExportSecret)<32 {
+			return Config{},fmt.Errorf("VPNX3_SECURITY_EXPORT_SECRET must be at least 32 characters")
+		}
 	}
 	securityExportConfigured:=cfg.SecurityExportURL!=""||cfg.SecurityExportSigningKey!=""
 	if securityExportConfigured {

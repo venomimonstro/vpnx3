@@ -497,3 +497,31 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 Следующие задачи:
 1. добавить операционные уведомления по критическим readiness/incidents без внешних SDK;
 2. физически подключить независимый WORM/SIEM endpoint.
+
+
+## Спринт 18 — внешний аудит и независимый след безопасности: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: локальная audit hash-chain не должна быть единственной копией критического журнала.
+
+Реализовано:
+
+- PostgreSQL trigger автоматически ставит каждую новую audit-запись в security outbox;
+- доставка не блокирует основной HTTP-запрос;
+- несколько Control Plane экземпляров делят очередь через FOR UPDATE SKIP LOCKED;
+- delivery lease защищает от параллельной повторной отправки;
+- наружу передаются audit_id, prev_hash, entry_hash и минимальные метаданные;
+- before_state/after_state и source IP по умолчанию не экспортируются;
+- webhook подписывается HMAC-SHA256;
+- receiver может дедуплицировать по audit_id и проверять непрерывность hash-chain;
+- экспоненциальные retry;
+- после 10 безуспешных попыток событие переходит в dead-letter;
+- launch readiness контролирует backlog, возраст очереди и dead-letter;
+- configuration fail-closed: URL только HTTPS, URL/secret задаются парой, secret минимум 32 символа.
+
+Физическая приёмка:
+
+1. подключить независимый WORM/SIEM/receiver вне основного PostgreSQL/Control Plane;
+2. проверить HMAC verification и дедупликацию;
+3. искусственно отключить receiver и проверить retry/backlog/dead-letter;
+4. восстановить receiver и проверить непрерывность prev_hash → entry_hash;
+5. хранить receiver credentials отдельно от database backup.

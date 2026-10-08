@@ -107,6 +107,24 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 		add("audit_chain","ok","Целостность аудита","Append-only журнал и хеш-цепочка согласованы.")
 	}
 
+	if s.cfg.SecurityExportURL=="" {
+		add("external_audit","warning","Внешний журнал безопасности","Внешний независимый экспорт audit chain не настроен.")
+	}else if data.SecurityExportDead>0 {
+		add("external_audit","failed","Внешний журнал безопасности","Есть dead-letter события, которые не удалось доставить после всех повторов.")
+	}else if data.SecurityExportOldestPendingAt!=nil {
+		age:=time.Since(data.SecurityExportOldestPendingAt.UTC())
+		switch {
+		case age>time.Hour:
+			add("external_audit","failed","Внешний журнал безопасности","Очередь внешнего аудита отстаёт более чем на час.")
+		case age>15*time.Minute:
+			add("external_audit","warning","Внешний журнал безопасности","Очередь внешнего аудита отстаёт более чем на 15 минут.")
+		default:
+			add("external_audit","ok","Внешний журнал безопасности","Внешний экспорт настроен; очередь находится в допустимом окне.")
+		}
+	}else{
+		add("external_audit","ok","Внешний журнал безопасности","Внешний экспорт настроен; недоставленных событий нет.")
+	}
+
 	securityExportSignals:=map[string]any{"configured":s.cfg.SecurityExportURL!=""}
 	if s.cfg.SecurityExportURL=="" {
 		add("security_export","warning","Внешний журнал безопасности","Внешний HTTPS/WORM/SIEM экспорт не настроен.")
@@ -182,6 +200,10 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			"renewal_failed_24h":data.RenewalFailed24h,
 			"renewal_disabled_failures":data.RenewalDisabledFailures,
 			"audit_chain_valid":data.AuditChainValid,
+			"security_export_pending":data.SecurityExportPending,
+			"security_export_dead":data.SecurityExportDead,
+			"security_export_oldest_pending_at":data.SecurityExportOldestPendingAt,
+			"security_export_last_delivered_at":data.SecurityExportLastDeliveredAt,
 			"security_export":securityExportSignals,
 		},
 	})
