@@ -53,7 +53,16 @@ func Run(ctx context.Context, db *pgxpool.Pool, dir string) error {
 			path: filepath.Join(dir, entry.Name()),
 		})
 	}
-	sort.Slice(migrations, func(i, j int) bool { return migrations[i].version < migrations[j].version })
+	sort.Slice(migrations, func(i, j int) bool {
+		if migrations[i].version==migrations[j].version { return migrations[i].name<migrations[j].name }
+		return migrations[i].version<migrations[j].version
+	})
+	for i:=1;i<len(migrations);i++{
+		if migrations[i-1].version==migrations[i].version{
+			return fmt.Errorf("duplicate migration version %d: %s and %s",
+				migrations[i].version,migrations[i-1].name,migrations[i].name)
+		}
+	}
 
 	for _, migration := range migrations {
 		var exists bool
