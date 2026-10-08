@@ -90,6 +90,7 @@ function logout(callApi=true){
 const sections=[
   ["dashboard","Обзор","analytics.read"],
   ["referrals","Рефералы","analytics.read"],
+  ["networkrisk","Риск сети","analytics.read"],
   ["readiness","Готовность запуска","analytics.read"],
   ["issues","Требует внимания","analytics.read"],
   ["nodes","Сеть","nodes.read"],
@@ -235,6 +236,38 @@ async function referrals(){
       $("h2",{},"Воронка и последние применения"),
       rows.length?table(["Claim","Код","Пригласил","Приглашённый","Статус","Дней","Квалификация","Отзыв"],rows):
         $("div",{class:"empty"},"Применений пока нет")
+    )
+  ));
+}
+
+
+async function networkrisk(){
+  const d=await api("/api/v1/admin/network-risk");
+  const cards=$("div",{class:"kpi-grid"},
+    kpi("Active worker",d.active_workers||0),
+    kpi("Ёмкость",d.configured_capacity||0),
+    kpi("Текущие сессии",d.current_sessions||0),
+    kpi("Загрузка",Number(d.utilization_percent||0).toFixed(1)+"%"),
+    kpi("Запас",Number(d.headroom_percent||0).toFixed(1)+"%"),
+    kpi("Без capacity",d.workers_without_capacity||0),
+    kpi("Макс. доля провайдера",Number(d.max_provider_share||0).toFixed(1)+"%"),
+    kpi("Макс. доля страны",Number(d.max_country_share||0).toFixed(1)+"%")
+  );
+  const p=(d.providers||[]).map(x=>[
+    x.name,x.nodes,x.capacity,x.sessions,Number(x.capacity_share||0).toFixed(1)+"%"
+  ]);
+  const c=(d.countries||[]).map(x=>[
+    x.name,x.nodes,x.capacity,x.sessions,Number(x.capacity_share||0).toFixed(1)+"%"
+  ]);
+  return sectionFrame("Риск и ёмкость сети",$("div",{class:"stack"},
+    cards,
+    $("div",{class:"card"},
+      $("h2",{},"По провайдерам"),
+      p.length?table(["Провайдер","Нод","Ёмкость","Сессии","Доля"],p):$("div",{class:"empty"},"Нет active worker")
+    ),
+    $("div",{class:"card"},
+      $("h2",{},"По странам"),
+      c.length?table(["Страна","Нод","Ёмкость","Сессии","Доля"],c):$("div",{class:"empty"},"Нет active worker")
     )
   ));
 }
@@ -1026,7 +1059,7 @@ async function renderSection(){
   const target=document.getElementById("section");if(!target)return;
   target.replaceChildren($("div",{class:"card"},"Загрузка…"));
   try{
-    const fn={dashboard,referrals,readiness,issues,nodes,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
+    const fn={dashboard,referrals,networkrisk,readiness,issues,nodes,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
     target.replaceChildren(await fn());
   }catch(e){target.replaceChildren(sectionError("VPNX3",e))}
 }

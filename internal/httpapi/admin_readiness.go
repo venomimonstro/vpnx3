@@ -194,6 +194,28 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 		}
 	}
 
+	risk,riskErr:=s.store.NetworkRisk(r.Context())
+	if riskErr!=nil{
+		add("network_capacity","failed","Ёмкость и распределение сети","Не удалось рассчитать ёмкость active worker.")
+	}else{
+		if risk.ActiveWorkers>0 && risk.ConfiguredCapacity<=0{
+			add("network_capacity","warning","Ёмкость и распределение сети","Для active worker не настроена capacity_sessions.")
+		}else if risk.UtilizationPercent>=85{
+			add("network_capacity","failed","Ёмкость и распределение сети","Используется 85% или больше настроенной ёмкости.")
+		}else if risk.UtilizationPercent>=70||risk.WorkersWithoutCapacity>0{
+			add("network_capacity","warning","Ёмкость и распределение сети","Запас сети сокращён или часть worker не имеет capacity.")
+		}else{
+			add("network_capacity","ok","Ёмкость и распределение сети","Запас worker pool находится в рабочем диапазоне.")
+		}
+		if risk.MaxProviderShare>=70{
+			add("provider_concentration","failed","Концентрация провайдера","70% или больше worker capacity зависит от одного провайдера.")
+		}else if risk.MaxProviderShare>=50{
+			add("provider_concentration","warning","Концентрация провайдера","50% или больше worker capacity зависит от одного провайдера.")
+		}else{
+			add("provider_concentration","ok","Концентрация провайдера","Нет критической зависимости от одного провайдера по настроенной capacity.")
+		}
+	}
+
 	if data.ActiveIngresses<1{
 		add("browser_ingress","warning","Browser ingress","Нет active ingress; браузерные расширения не смогут подключаться.")
 	}else{
@@ -232,6 +254,7 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			"security_export_last_delivered_at":data.SecurityExportLastDeliveredAt,
 			"security_export":securityExportSignals,
 			"incident_notifications":alertSignals,
+			"network_risk":risk,
 		},
 	})
 }

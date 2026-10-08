@@ -63,6 +63,17 @@ func (m *Monitor) run(parent context.Context){
 			failed:!data.AuditChainValid},
 	}
 
+	if risk,riskErr:=m.store.NetworkRisk(ctx);riskErr==nil{
+		checks=append(checks,
+			check{code:"network_capacity_critical",severity:"critical",title:"Критическая загрузка VPN worker",
+				summary:"Используется 85% или больше настроенной worker capacity.",
+				failed:risk.ConfiguredCapacity>0&&risk.UtilizationPercent>=85},
+			check{code:"provider_concentration_critical",severity:"warning",title:"Высокая зависимость от одного VPS-провайдера",
+				summary:"70% или больше настроенной worker capacity находится у одного провайдера.",
+				failed:risk.MaxProviderShare>=70},
+		)
+	}
+
 	if m.backupStatusFile!=""{
 		failed:=true
 		if stat,statErr:=os.Stat(m.backupStatusFile);statErr==nil{

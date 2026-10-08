@@ -584,3 +584,31 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - проверить сохранение активной сессии при появлении blocked policy;
 - проверить staged cohort между перезапусками;
 - проверить обновление через реальные store/direct distribution каналы.
+
+
+## Спринт 19 — ёмкость и концентрационный риск сети: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: сеть должна быть не только доступной, но и иметь измеряемый запас ресурсов и отсутствие опасной зависимости от одного инфраструктурного сегмента.
+
+Реализовано:
+
+- агрегированная configured worker capacity;
+- текущие active sessions и utilization/headroom;
+- обнаружение active worker без capacity_sessions;
+- breakdown capacity/sessions по VPS-провайдеру;
+- breakdown capacity/sessions по стране;
+- доля крупнейшего провайдера и крупнейшей страны;
+- отдельный admin endpoint и экран «Риск сети»;
+- readiness warning при >=70% utilization;
+- readiness failed при >=85% utilization;
+- provider concentration warning при >=50% capacity;
+- provider concentration failed при >=70% capacity;
+- debounced system incident при критической загрузке;
+- debounced system incident при критической зависимости от одного провайдера.
+
+Физическая приёмка:
+
+1. заполнить capacity_sessions и provider/country для production worker;
+2. сверить capacity с реальными нагрузочными измерениями;
+3. добиться распределения, при котором один провайдер не несёт критическую долю;
+4. проверить incident при искусственном снижении доступной capacity.
