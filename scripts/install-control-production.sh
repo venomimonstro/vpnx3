@@ -85,7 +85,9 @@ fi
 [[ -f "$SECRETS_FILE" ]] || fail "Сначала выполните prepare."
 [[ -f "$TRUST_DIR/trust-bundle.json" ]] || fail "Отсутствует автономно подписанный trust bundle."
 [[ -f "$TRUST_DIR/root-public-key.txt" ]] || fail "Отсутствует открытый корневой ключ."
-chmod 600 "$SECRETS_FILE" "$TRUST_DIR/trust-bundle.json" "$TRUST_DIR/root-public-key.txt"
+chmod 600 "$SECRETS_FILE"
+# The signed trust envelope and root PUBLIC key must be readable by distroless nonroot.
+chmod 644 "$TRUST_DIR/trust-bundle.json" "$TRUST_DIR/root-public-key.txt"
 ROOT_PUB="$(tr -d '\r\n' <"$TRUST_DIR/root-public-key.txt")"
 [[ "$ROOT_PUB" =~ ^[A-Za-z0-9_-]{43}$ ]] || fail "Неверный формат Ed25519 root public key."
 export ROOT_PUB SECRETS_FILE
