@@ -28,6 +28,7 @@ type SecurityAuditExport struct {
 type SecurityExportHealth struct {
 	Pending int64
 	Dead int64
+	MaxAttempts int
 	OldestPendingAt *time.Time
 	LastDeliveredAt *time.Time
 }
@@ -108,10 +109,11 @@ func (s *Store) SecurityExportHealth(ctx context.Context)(SecurityExportHealth,e
 		SELECT
 		  count(*) FILTER(WHERE status='pending')::bigint,
 		  count(*) FILTER(WHERE status='dead')::bigint,
+		  COALESCE(max(attempts) FILTER(WHERE status='pending'),0)::int,
 		  min(created_at) FILTER(WHERE status='pending'),
 		  max(delivered_at) FILTER(WHERE status='delivered')
 		FROM security_event_outbox
-	`).Scan(&h.Pending,&h.Dead,&h.OldestPendingAt,&h.LastDeliveredAt)
+	`).Scan(&h.Pending,&h.Dead,&h.MaxAttempts,&h.OldestPendingAt,&h.LastDeliveredAt)
 	if err!=nil{return SecurityExportHealth{},err}
 	return h,nil
 }

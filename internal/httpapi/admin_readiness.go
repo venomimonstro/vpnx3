@@ -107,24 +107,6 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 		add("audit_chain","ok","Целостность аудита","Append-only журнал и хеш-цепочка согласованы.")
 	}
 
-	if s.cfg.SecurityExportURL=="" {
-		add("external_audit","warning","Внешний журнал безопасности","Внешний независимый экспорт audit chain не настроен.")
-	}else if data.SecurityExportDead>0 {
-		add("external_audit","failed","Внешний журнал безопасности","Есть dead-letter события, которые не удалось доставить после всех повторов.")
-	}else if data.SecurityExportOldestPendingAt!=nil {
-		age:=time.Since(data.SecurityExportOldestPendingAt.UTC())
-		switch {
-		case age>time.Hour:
-			add("external_audit","failed","Внешний журнал безопасности","Очередь внешнего аудита отстаёт более чем на час.")
-		case age>15*time.Minute:
-			add("external_audit","warning","Внешний журнал безопасности","Очередь внешнего аудита отстаёт более чем на 15 минут.")
-		default:
-			add("external_audit","ok","Внешний журнал безопасности","Внешний экспорт настроен; очередь находится в допустимом окне.")
-		}
-	}else{
-		add("external_audit","ok","Внешний журнал безопасности","Внешний экспорт настроен; недоставленных событий нет.")
-	}
-
 	securityExportSignals:=map[string]any{"configured":s.cfg.SecurityExportURL!=""}
 	if s.cfg.SecurityExportURL=="" {
 		add("security_export","warning","Внешний журнал безопасности","Внешний HTTPS/WORM/SIEM экспорт не настроен.")
@@ -134,9 +116,12 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			add("security_export","failed","Внешний журнал безопасности","Не удалось проверить очередь внешнего аудита.")
 		}else{
 			securityExportSignals["pending"]=health.Pending
+			securityExportSignals["dead"]=health.Dead
 			securityExportSignals["max_attempts"]=health.MaxAttempts
 			securityExportSignals["oldest_pending_at"]=health.OldestPendingAt
-			if health.OldestPendingAt==nil{
+			if health.Dead>0{
+				add("security_export","failed","Внешний журнал безопасности","Есть dead-letter события внешнего аудита.")
+			}else if health.OldestPendingAt==nil{
 				add("security_export","ok","Внешний журнал безопасности","Очередь внешнего аудита пуста.")
 			}else{
 				age:=time.Since(health.OldestPendingAt.UTC())
