@@ -723,3 +723,39 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 4. удалить retired key и подтвердить отказ старой подписи;
 5. искусственно просрочить test bundle и подтвердить fail-closed;
 6. отключить Control Plane и проверить получение trust bundle через Config Mirror.
+
+
+## Спринт 22 — безопасное обновление серверных компонентов: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: worker, ingress, probe, config mirror и node agent должны обновляться без ручной замены бинарника и без превращения канала обновления в цепочку поставки произвольного кода.
+
+Реализовано:
+
+- отдельный runtime updater binary;
+- только заранее разрешённые server targets;
+- release metadata подписана operational Release Signing Key, разрешённым offline-root trust bundle;
+- несколько release sources: Control Plane + независимые зеркала;
+- SHA-256 и точный размер артефакта проверяются до установки;
+- downgrade запрещён;
+- одинаковая версия с другим hash запрещена;
+- metadata имеет короткое окно действия;
+- новый бинарник ставится атомарно;
+- предыдущий binary сохраняется до health-check;
+- systemd restart + loopback health-check;
+- автоматический rollback при неуспешном старте/health-check;
+- отдельный hardened oneshot service + systemd timer;
+- независимые timers для нескольких компонентов одного хоста;
+- state updater хранится отдельно от runtime component;
+- privacy-safe status-файл в /run не содержит секретов;
+- Node Agent включает updater status в подписанный heartbeat;
+- readiness показывает покрытие runtime updater и ошибки обновлений;
+- admin readiness показывает число runtime-нод, updater telemetry и unhealthy updater.
+
+Физическая приёмка:
+
+1. опубликовать staging release server binary версии N+1;
+2. проверить автоматическую установку и успешный health-check;
+3. опубликовать заведомо нерабочий test binary и подтвердить rollback;
+4. проверить отказ downgrade N+1 → N;
+5. отключить Control Plane и подтвердить получение release metadata через mirror;
+6. выполнить trust-key rotation и подтвердить продолжение обновлений через новый root-authorized release key.

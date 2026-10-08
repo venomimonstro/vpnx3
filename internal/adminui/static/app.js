@@ -202,7 +202,10 @@ async function readiness(){
     ["Queued build jobs",s.queued_build_jobs??0],
     ["Running build jobs",s.running_build_jobs??0],
     ["Active build workers",s.active_build_workers??0],
-    ["Published releases",s.published_releases??0]
+    ["Published releases",s.published_releases??0],
+    ["Runtime-ноды",s.runtime_managed_nodes??0],
+    ["Updater telemetry",s.runtime_updater_reported_nodes??0],
+    ["Updater с ошибкой",s.runtime_updater_unhealthy_nodes??0]
   ]);
   return sectionFrame("Готовность запуска",$("div",{class:"stack"},
     header,

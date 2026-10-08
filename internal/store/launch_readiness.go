@@ -29,6 +29,9 @@ type LaunchReadinessData struct {
 	SecurityExportDead int64
 	SecurityExportOldestPendingAt *time.Time
 	SecurityExportLastDeliveredAt *time.Time
+	RuntimeManagedNodes int64
+	RuntimeUpdaterReportedNodes int64
+	RuntimeUpdaterUnhealthyNodes int64
 }
 
 func (s *Store) LaunchReadiness(ctx context.Context)(LaunchReadinessData,error){
@@ -95,7 +98,31 @@ func (s *Store) LaunchReadiness(ctx context.Context)(LaunchReadinessData,error){
 		  (SELECT count(*)::bigint FROM security_event_outbox WHERE status='pending'),
 		  (SELECT count(*)::bigint FROM security_event_outbox WHERE status='dead'),
 		  (SELECT min(created_at) FROM security_event_outbox WHERE status='pending'),
-		  (SELECT max(delivered_at) FROM security_event_outbox WHERE status='delivered')
+		  (SELECT max(delivered_at) FROM security_event_outbox WHERE status='delivered'),
+		  (
+		    SELECT count(*)::bigint FROM nodes
+		    WHERE status='active' AND role IN ('worker','ingress','probe','config_mirror')
+		  ),
+		  (
+		    SELECT count(*)::bigint FROM nodes
+		    WHERE status='active' AND role IN ('worker','ingress','probe','config_mirror')
+		      AND jsonb_typeof(metadata->'runtime_updates')='array'
+		      AND jsonb_array_length(metadata->'runtime_updates')>0
+		  ),
+		  (
+		    SELECT count(DISTINCT n.id)::bigint
+		    FROM nodes n
+		    CROSS JOIN LATERAL jsonb_array_elements(
+		      CASE
+		        WHEN jsonb_typeof(n.metadata->'runtime_updates')='array'
+		        THEN n.metadata->'runtime_updates'
+		        ELSE '[]'::jsonb
+		      END
+		    ) e
+		    WHERE n.status='active'
+		      AND n.role IN ('worker','ingress','probe','config_mirror')
+		      AND COALESCE((e->>'healthy')::boolean,false)=false
+		  )
 	`).Scan(
 		&d.LatestManifestAt,&d.ActiveWorkers,&d.RoutableWorkers,&d.ActiveIngresses,
 		&d.ActiveConfigMirrors,&d.RoutableConfigMirrors,
@@ -105,6 +132,7 @@ func (s *Store) LaunchReadiness(ctx context.Context)(LaunchReadinessData,error){
 		&d.AuditChainValid,
 		&d.SecurityExportPending,&d.SecurityExportDead,
 		&d.SecurityExportOldestPendingAt,&d.SecurityExportLastDeliveredAt,
+		&d.RuntimeManagedNodes,&d.RuntimeUpdaterReportedNodes,&d.RuntimeUpdaterUnhealthyNodes,
 	)
 	if err!=nil{return LaunchReadinessData{},fmt.Errorf("launch readiness: %w",err)}
 	return d,nil

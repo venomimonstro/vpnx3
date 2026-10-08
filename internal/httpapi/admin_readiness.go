@@ -230,6 +230,17 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 		}
 	}
 
+	if data.RuntimeManagedNodes>0 {
+		switch {
+		case data.RuntimeUpdaterUnhealthyNodes>0:
+			add("runtime_updater","warning","Обновление серверных компонентов","Есть active-ноды, где последняя подписанная проверка обновлений завершилась ошибкой.")
+		case data.RuntimeUpdaterReportedNodes<data.RuntimeManagedNodes:
+			add("runtime_updater","warning","Обновление серверных компонентов","Не все active runtime-ноды публикуют состояние защищённого updater.")
+		default:
+			add("runtime_updater","ok","Обновление серверных компонентов","Все active runtime-ноды публикуют успешное состояние подписанного updater.")
+		}
+	}
+
 	if data.ActiveIngresses<1{
 		add("browser_ingress","warning","Browser ingress","Нет active ingress; браузерные расширения не смогут подключаться.")
 	}else{
@@ -271,6 +282,9 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			"security_export":securityExportSignals,
 			"incident_notifications":alertSignals,
 			"network_risk":risk,
+			"runtime_managed_nodes":data.RuntimeManagedNodes,
+			"runtime_updater_reported_nodes":data.RuntimeUpdaterReportedNodes,
+			"runtime_updater_unhealthy_nodes":data.RuntimeUpdaterUnhealthyNodes,
 		},
 	})
 }
