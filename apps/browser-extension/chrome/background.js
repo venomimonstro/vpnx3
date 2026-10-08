@@ -11,7 +11,9 @@ const STATE_KEYS = {
   credential: "proxy_credential",
   credentialExpires: "proxy_credential_expires",
   ingress: "ingress",
-  configVersion: "config_version"
+  configVersion: "config_version",
+  releasePolicy: "release_policy",
+  releasePolicyUpdatedAt: "release_policy_updated_at"
 };
 
 function b64url(bytes) {
@@ -163,6 +165,89 @@ async function verifyConfig(envelope){
   return cfg;
 }
 
+async function verifyReleasePolicy(envelope,target){
+  const pub=unb64url(VPNX3_RELEASE_PUBLIC_KEY);
+  if(pub.length!==32) throw new Error("Pinned release public key is invalid");
+  const payload=unb64url(envelope.payload);
+  const signature=unb64url(envelope.signature);
+  const key=await crypto.subtle.importKey("raw",pub,{name:"Ed25519"},false,["verify"]);
+  if(!await crypto.subtle.verify({name:"Ed25519"},key,signature,payload)) throw new Error("Invalid release policy signature");
+  const digest=await sha256(pub);
+  if(hex(digest).slice(0,16)!==envelope.key_id) throw new Error("Unexpected release signing key");
+  const policy=JSON.parse(new TextDecoder().decode(payload));
+  if(policy.schema_version!==1||policy.target!==target) throw new Error("Invalid release policy");
+  const now=Date.now();
+  if(Date.parse(policy.issued_at)>now+5*60*1000) throw new Error("Release policy is from the future");
+  if(Date.parse(policy.expires_at)<=now) throw new Error("Release policy expired");
+  if(!Number.isInteger(policy.rollout_percent)||policy.rollout_percent<0||policy.rollout_percent>100) throw new Error("Invalid rollout percentage");
+  return policy;
+}
+
+function compareVersions(a,b){
+  const parse=v=>String(v||"").trim().replace(/^v/,"").split("-",1)[0].split(".").map(x=>Number.parseInt(x,10)||0);
+  const aa=parse(a),bb=parse(b),n=Math.max(aa.length,bb.length);
+  for(let i=0;i<n;i++){
+    const av=aa[i]||0,bv=bb[i]||0;
+    if(av!==bv) return av<bv?-1:1;
+  }
+  return 0;
+}
+
+async function stableCohort(deviceId,target,version){
+  const digest=new Uint8Array(await sha256(new TextEncoder().encode(deviceId+"\0"+target+"\0"+version)));
+  return (((digest[0]<<8)|digest[1])%100);
+}
+
+async function releaseDecision(){
+  const target=isFirefox?"firefox_zip":"chrome_zip";
+  const reg=await ensureRegistered();
+  const current=api.runtime.getManifest().version;
+  let policy=null;
+  try{
+    const env=await request("GET","/api/v1/releases/policy?target="+encodeURIComponent(target),null,null);
+    const verified=await verifyReleasePolicy(env,target);
+    const updated=Date.parse(verified.policy_updated_at||0);
+    const saved=await storageGet([STATE_KEYS.releasePolicyUpdatedAt]);
+    const highest=Number(saved[STATE_KEYS.releasePolicyUpdatedAt]||0);
+    if(updated<highest) throw new Error("Release policy rollback detected");
+    await storageSet({
+      [STATE_KEYS.releasePolicy]:env,
+      [STATE_KEYS.releasePolicyUpdatedAt]:Math.max(highest,updated)
+    });
+    policy=verified;
+  }catch(e){
+    const cached=await storageGet([STATE_KEYS.releasePolicy]);
+    if(cached[STATE_KEYS.releasePolicy]){
+      policy=await verifyReleasePolicy(cached[STATE_KEYS.releasePolicy],target);
+    }else{
+      return {required:false,blocked:false,availableVersion:null,message:null};
+    }
+  }
+
+  const blocked=(policy.blocked_versions||[]).includes(current);
+  const below=policy.minimum_supported_version &&
+    compareVersions(current,policy.minimum_supported_version)<0;
+  if(blocked||below){
+    return {
+      required:true,blocked,
+      availableVersion:policy.recommended_version||null,
+      message:policy.message||(
+        blocked
+          ?"Эта версия расширения отключена. Установите обновление."
+          :"Для продолжения работы требуется обновить VPNX3."
+      )
+    };
+  }
+  const recommended=policy.recommended_version||"";
+  if(!recommended||compareVersions(current,recommended)>=0){
+    return {required:false,blocked:false,availableVersion:null,message:null};
+  }
+  const cohort=await stableCohort(reg[STATE_KEYS.deviceId],target,recommended);
+  return cohort<policy.rollout_percent
+    ?{required:false,blocked:false,availableVersion:recommended,message:policy.message||null}
+    :{required:false,blocked:false,availableVersion:null,message:null};
+}
+
 async function latestIngress(){
   const env=await request("GET","/api/v1/config/latest",null,null);
   const cfg=await verifyConfig(env);
@@ -306,6 +391,8 @@ async function maintainConnection(){
 
 async function connect(){
   await ensureRegistered();
+  const update=await releaseDecision();
+  if(update.required) throw new Error(update.message||"Требуется обновить расширение");
   await ensureCredential();
   const ingress=await latestIngress();
   await storageSet({[STATE_KEYS.enabled]:true,[STATE_KEYS.ingress]:ingress});
@@ -376,10 +463,11 @@ api.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(message?.type==="status"){
     Promise.all([
       storageGet([STATE_KEYS.enabled,STATE_KEYS.ingress,STATE_KEYS.credentialExpires]),
-      accountStatus().catch(()=>null)
-    ]).then(([s,account])=>sendResponse({
+      accountStatus().catch(()=>null),
+      releaseDecision().catch(()=>({required:false,blocked:false,availableVersion:null,message:null}))
+    ]).then(([s,account,update])=>sendResponse({
       ok:true,enabled:!!s[STATE_KEYS.enabled],ingress:s[STATE_KEYS.ingress]||null,
-      expires:s[STATE_KEYS.credentialExpires]||null,account
+      expires:s[STATE_KEYS.credentialExpires]||null,account,update
     }));
     return true;
   }

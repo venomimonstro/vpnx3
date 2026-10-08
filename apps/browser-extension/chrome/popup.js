@@ -1,5 +1,6 @@
 const api=typeof browser!=="undefined"?browser:chrome;
-const status=document.getElementById("status"),button=document.getElementById("toggle"),detail=document.getElementById("detail");
+const status=document.getElementById("status"),updateEl=document.getElementById("update");
+const button=document.getElementById("toggle"),detail=document.getElementById("detail");
 const accountEl=document.getElementById("account"),pairCreate=document.getElementById("pairCreate"),pairCode=document.getElementById("pairCode");
 const pairInput=document.getElementById("pairInput"),pairClaim=document.getElementById("pairClaim");
 const referralCode=document.getElementById("referralCode"),referralState=document.getElementById("referralState");
@@ -19,7 +20,13 @@ async function refresh(){
   if(!r?.ok){status.textContent="Ошибка";button.disabled=true;return}
   status.textContent=r.enabled?"Подключено":"Отключено";
   detail.textContent=r.ingress?("Ingress: "+r.ingress.host+":"+r.ingress.port):"";
-  button.textContent=r.enabled?"Отключить":"Подключить";button.disabled=false;button.dataset.enabled=String(r.enabled);
+  const u=r.update||{};
+  updateEl.textContent=u.required
+    ?(u.message||"Требуется обновить расширение")
+    :(u.availableVersion?("Доступно обновление "+u.availableVersion):"");
+  button.textContent=r.enabled?"Отключить":(u.required?"Требуется обновление":"Подключить");
+  button.disabled=!!u.required&&!r.enabled;
+  button.dataset.enabled=String(r.enabled);
   renderAccount(r.account);
   const ref=await send({type:"referral-status"}).catch(()=>null);
   if(ref?.ok){
@@ -35,9 +42,29 @@ button.onclick=async()=>{
   const enabled=button.dataset.enabled==="true";
   const r=await send({type:enabled?"disconnect":"connect"});
   if(!r?.ok)alert(r?.error||"Ошибка подключения");
-  await referralClaim.onclick=async()=>{
-  const code=referralInput.value.trim();
-  if(!code)return;
+  await refresh();
+};
+
+pairCreate.onclick=async()=>{
+  pairCreate.disabled=true;
+  const r=await send({type:"pairing-create"});
+  if(!r?.ok){alert("Не удалось создать код: "+(r?.error||"ошибка"));await refresh();return}
+  pairCode.textContent=r.code+" · до "+r.expires;
+  await refresh();
+};
+
+pairClaim.onclick=async()=>{
+  const code=pairInput.value.trim();if(!code)return;
+  pairClaim.disabled=true;
+  const r=await send({type:"pairing-claim",code});
+  pairClaim.disabled=false;
+  if(!r?.ok){alert("Не удалось привязать устройство: "+(r?.error||"ошибка"));return}
+  pairInput.value="";pairCode.textContent="";
+  await refresh();
+};
+
+referralClaim.onclick=async()=>{
+  const code=referralInput.value.trim();if(!code)return;
   referralClaim.disabled=true;
   const r=await send({type:"referral-claim",code});
   referralClaim.disabled=false;
@@ -46,26 +73,4 @@ button.onclick=async()=>{
   await refresh();
 };
 
-refresh();
-};
-
-pairCreate.onclick=async()=>{
-  pairCreate.disabled=true;
-  const r=await send({type:"create-pairing-code"});
-  if(!r?.ok){alert("Не удалось создать код: "+(r?.error||"ошибка"));await refresh();return}
-  pairCode.textContent=r.code+" · до "+r.expires_at;
-  await refresh();
-};
-
-pairClaim.onclick=async()=>{
-  const code=pairInput.value.trim();
-  if(!code)return;
-  pairClaim.disabled=true;
-  const r=await send({type:"claim-pairing-code",code});
-  pairClaim.disabled=false;
-  if(!r?.ok){alert("Не удалось привязать устройство: "+(r?.error||"ошибка"));return}
-  pairInput.value="";pairCode.textContent="";
-  await refresh();
-};
-
-refresh();
+refresh().catch(()=>{status.textContent="Ошибка";button.disabled=true});
