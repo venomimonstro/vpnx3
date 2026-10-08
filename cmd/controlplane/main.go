@@ -53,6 +53,10 @@ func main() {
 		MaxConnLifetimeJitter:cfg.DatabaseConnJitter,
 		MaxConnIdleTime:cfg.DatabaseConnIdleTime,
 		HealthCheckPeriod:30*time.Second,
+		StatementTimeout:cfg.DatabaseStatementTimeout,
+		LockTimeout:cfg.DatabaseLockTimeout,
+		IdleInTransactionTimeout:cfg.DatabaseIdleTxTimeout,
+		ApplicationName:"vpnx3-control-plane",
 	})
 	if err != nil {
 		logger.Error("database initialization failed","error",err)
