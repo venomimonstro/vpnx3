@@ -22,6 +22,7 @@ WG_ADDRESS="10.66.0.1/24"
 WG_LISTEN_PORT="51820"
 PUBLIC_INTERFACE=""
 AUTH_ADDR="127.0.0.1:9090"
+REVOCATION_SOURCES=""
 INSTALL_DEPS="auto"
 
 usage(){
@@ -66,6 +67,7 @@ while [[ $# -gt 0 ]]; do
     --wg-listen-port) WG_LISTEN_PORT="${2:-}"; shift 2;;
     --public-interface) PUBLIC_INTERFACE="${2:-}"; shift 2;;
     --auth-addr) AUTH_ADDR="${2:-}"; shift 2;;
+    --revocation-sources) REVOCATION_SOURCES="${2:-}"; shift 2;;
     --install-deps) INSTALL_DEPS="${2:-}"; shift 2;;
     -h|--help) usage; exit 0;;
     *) echo "Неизвестный аргумент: $1" >&2; usage; exit 2;;
@@ -110,6 +112,7 @@ worker_args=(
   --wg-address "$WG_ADDRESS"
   --wg-listen-port "$WG_LISTEN_PORT"
   --auth-addr "$AUTH_ADDR"
+  --revocation-sources "$REVOCATION_SOURCES"
   --install-deps "$INSTALL_DEPS"
 )
 [[ -n "$PUBLIC_INTERFACE" ]] && worker_args+=(--public-interface "$PUBLIC_INTERFACE")

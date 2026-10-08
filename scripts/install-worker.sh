@@ -5,6 +5,7 @@ BINARY_URL=""
 BINARY_SHA256=""
 ACCESS_PUBLIC_KEY=""
 CONTROL_URL=""
+REVOCATION_SOURCES=""
 WG_INTERFACE="wg0"
 WG_ENDPOINT=""
 WG_POOL="10.66.0.0/24"
@@ -52,6 +53,7 @@ while [[ $# -gt 0 ]]; do
     --sha256) BINARY_SHA256="${2:-}"; shift 2 ;;
     --access-public-key) ACCESS_PUBLIC_KEY="${2:-}"; shift 2 ;;
     --control-url) CONTROL_URL="${2:-}"; shift 2 ;;
+    --revocation-sources) REVOCATION_SOURCES="${2:-}"; shift 2 ;;
     --wg-interface) WG_INTERFACE="${2:-}"; shift 2 ;;
     --wg-endpoint) WG_ENDPOINT="${2:-}"; shift 2 ;;
     --wg-pool) WG_POOL="${2:-}"; shift 2 ;;
@@ -192,6 +194,8 @@ VPNX3_WG_ENDPOINT=$WG_ENDPOINT
 VPNX3_WG_POOL=$WG_POOL
 VPNX3_WORKER_AUTH_ADDR=$AUTH_ADDR
 VPNX3_WORKER_STATE_PATH=/var/lib/vpnx3-worker/sessions.json
+VPNX3_REVOCATION_STATE_PATH=/var/lib/vpnx3-worker/revocations.json
+VPNX3_REVOCATION_SOURCES=$REVOCATION_SOURCES
 EOF
 chmod 0600 /etc/vpnx3-worker.env
 chown root:root /etc/vpnx3-worker.env
