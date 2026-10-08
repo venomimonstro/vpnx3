@@ -63,6 +63,8 @@ def main():
         fail("runtime config must contain HTTPS Control URL")
     if "VPNX3_CONFIG_PUBLIC_KEY" not in runtime_text:
         fail("runtime config must contain pinned config public key")
+    if "VPNX3_RELEASE_PUBLIC_KEY" not in runtime_text:
+        fail("runtime config must contain pinned release public key")
 
     checked=0
     for path in root.rglob("*"):

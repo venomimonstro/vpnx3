@@ -186,10 +186,14 @@ func inspectArtifact(path string)(Result,error){
 func writeBrowserRuntimeConfig(dir string) error {
 	control:=strings.TrimSpace(os.Getenv("VPNX3_CLIENT_CONTROL_URL"))
 	key:=strings.TrimSpace(os.Getenv("VPNX3_CONFIG_PUBLIC_KEY"))
-	if !strings.HasPrefix(control,"https://") || key=="" {
-		return fmt.Errorf("browser build requires VPNX3_CLIENT_CONTROL_URL and VPNX3_CONFIG_PUBLIC_KEY")
+	releaseKey:=strings.TrimSpace(os.Getenv("VPNX3_RELEASE_PUBLIC_KEY"))
+	if !strings.HasPrefix(control,"https://") || key=="" || releaseKey=="" {
+		return fmt.Errorf("browser build requires VPNX3_CLIENT_CONTROL_URL, VPNX3_CONFIG_PUBLIC_KEY and VPNX3_RELEASE_PUBLIC_KEY")
 	}
-	content:=fmt.Sprintf("const VPNX3_CONTROL_URL=%q;\nconst VPNX3_CONFIG_PUBLIC_KEY=%q;\n",control,key)
+	content:=fmt.Sprintf(
+		"const VPNX3_CONTROL_URL=%q;\nconst VPNX3_CONFIG_PUBLIC_KEY=%q;\nconst VPNX3_RELEASE_PUBLIC_KEY=%q;\n",
+		control,key,releaseKey,
+	)
 	return os.WriteFile(filepath.Join(dir,"runtime-config.js"),[]byte(content),0644)
 }
 

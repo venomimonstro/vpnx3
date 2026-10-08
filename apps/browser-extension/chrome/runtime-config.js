@@ -1,2 +1,1 @@
-const VPNX3_CONTROL_URL="https://127.0.0.1";
-const VPNX3_CONFIG_PUBLIC_KEY="";
+const VPNX3_CONTROL_URL="https://127.0.0.1";\nconst VPNX3_CONFIG_PUBLIC_KEY="";\nconst VPNX3_RELEASE_PUBLIC_KEY="";\n
