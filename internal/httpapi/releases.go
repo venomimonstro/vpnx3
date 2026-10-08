@@ -2,7 +2,10 @@ package httpapi
 
 import (
 	"errors"
+	"context"
 	"net/http"
+	"os"
+	"time"
 	"strconv"
 	"strings"
 
@@ -69,6 +72,17 @@ func (s *Server) handleReleaseArtifacts(w http.ResponseWriter,r *http.Request) {
 }
 
 func (s *Server) handlePublishRelease(w http.ResponseWriter,r *http.Request) {
+	gate,gateErr:=s.releaseGate(r.Context(),r.PathValue("id"))
+	if gateErr!=nil{s.internalError(w,r,gateErr);return}
+	if gate.Enforced&&len(gate.Blockers)>0{
+		admin,_:=adminFromContext(r.Context())
+		_ = s.store.WriteAudit(r.Context(),"admin",admin.ID,"release.publish.blocked","release",r.PathValue("id"),
+			requestIDFromContext(r.Context()),ipString(clientIP(r)),"blocked")
+		writeJSON(w,http.StatusConflict,map[string]any{
+			"error":"release_gate_failed","blockers":gate.Blockers,"warnings":gate.Warnings,
+		})
+		return
+	}
 	release,err:=s.store.PublishRelease(r.Context(),r.PathValue("id"))
 	if err!=nil{
 		if err.Error()=="not found"{writeError(w,http.StatusNotFound,"release_not_found");return}
@@ -107,4 +121,81 @@ func (s *Server) handleDownloadArtifact(w http.ResponseWriter,r *http.Request) {
 		s.logger.Error("admin artifact download failed","artifact_id",artifact.ID,"error",err)
 		writeError(w,http.StatusConflict,"artifact_integrity_failed")
 	}
+}
+
+
+type releaseGateResult struct {
+	Status string `json:"status"`
+	Enforced bool `json:"enforced"`
+	Blockers []string `json:"blockers"`
+	Warnings []string `json:"warnings"`
+	CheckedAt time.Time `json:"checked_at"`
+}
+
+func (s *Server) releaseGate(ctx context.Context,releaseID string)(releaseGateResult,error){
+	result:=releaseGateResult{
+		Status:"ok",
+		Enforced:s.cfg.Environment=="production",
+		Blockers:[]string{},
+		Warnings:[]string{},
+		CheckedAt:time.Now().UTC(),
+	}
+	add:=func(message string,critical bool){
+		if critical&&result.Enforced{result.Blockers=append(result.Blockers,message)}
+		else{result.Warnings=append(result.Warnings,message)}
+	}
+
+	data,err:=s.store.LaunchReadiness(ctx)
+	if err!=nil{return releaseGateResult{},err}
+
+	if data.LatestManifestAt==nil||time.Since(data.LatestManifestAt.UTC())>2*time.Hour{
+		add("Нет свежего подписанного Configuration Manifest",true)
+	}
+	if data.RoutableWorkers<1{add("Нет маршрутизируемого active VPN worker",true)}
+	if data.ActiveProbes<1||data.FreshProbeNodes<1{add("Нет свежего независимого probe-наблюдения",true)}
+	if data.FreshDataPlaneWorkers<1{add("Нет успешного synthetic WireGuard data-plane observation за 5 минут",true)}
+	if !data.AuditChainValid{add("Нарушена хеш-цепочка audit_log",true)}
+	if s.releaseSigner==nil{add("Release Signing Key не настроен",true)}
+	if s.yooKassa==nil{add("ЮKassa не настроена — коммерческие платежи недоступны",true)}
+
+	if s.cfg.BackupStatusFile==""{
+		add("Backup health-marker не настроен",true)
+	}else if stat,statErr:=os.Stat(s.cfg.BackupStatusFile);statErr!=nil{
+		add("Нет подтверждения успешного backup",true)
+	}else if time.Since(stat.ModTime().UTC())>36*time.Hour{
+		add("Последний успешный backup старше 36 часов",true)
+	}
+
+	if checker,ok:=s.artifacts.(artifactstorage.ReadinessChecker);ok{
+		checkCtx,cancel:=context.WithTimeout(ctx,3*time.Second)
+		checkErr:=checker.Check(checkCtx)
+		cancel()
+		if checkErr!=nil{add("Artifact storage недоступен",true)}
+	}
+
+	jobs,err:=s.store.ReleaseJobs(ctx,releaseID)
+	if err!=nil{return releaseGateResult{},err}
+	needsIngress:=false
+	for _,job:=range jobs{
+		if job.Target=="chrome_zip"||job.Target=="firefox_zip"{needsIngress=true}
+		if job.Status!="succeeded"{add("Не все build jobs завершены успешно",true);break}
+	}
+	if needsIngress&&data.ActiveIngresses<1{add("Browser release требует active ingress",true)}
+
+	if data.RenewalFailed24h>0{
+		add("Есть ошибки автопродления за последние 24 часа",false)
+	}
+	if data.RenewalDisabledFailures>0{
+		add("Есть подписки, где auto-renew отключён после серии ошибок",false)
+	}
+
+	if len(result.Blockers)>0{result.Status="failed"}
+	if len(result.Blockers)==0&&len(result.Warnings)>0{result.Status="warning"}
+	return result,nil
+}
+
+func (s *Server) handleReleaseGate(w http.ResponseWriter,r *http.Request){
+	gate,err:=s.releaseGate(r.Context(),r.PathValue("id"))
+	if err!=nil{s.internalError(w,r,err);return}
+	writeJSON(w,http.StatusOK,gate)
 }

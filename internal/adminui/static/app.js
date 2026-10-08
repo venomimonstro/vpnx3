@@ -655,11 +655,21 @@ function resolveIncidentDialog(i){
 
 async function releaseDialog(r){
   try{
-    const [jobsData,artData]=await Promise.all([
+    const [jobsData,artData,gate]=await Promise.all([
       api("/api/v1/admin/releases/"+r.id+"/jobs"),
-      api("/api/v1/admin/releases/"+r.id+"/artifacts")
+      api("/api/v1/admin/releases/"+r.id+"/artifacts"),
+      api("/api/v1/admin/releases/"+r.id+"/gate")
     ]);
     const body=$("div",{class:"stack"});
+    const gateCard=$("div",{class:"card"},$("h3",{},"Production release gate"),
+      $("p",{},"Статус: ",badge(gate.status)),
+      $("p",{class:"muted"},gate.enforced
+        ?"Production: публикация блокируется критическими проверками."
+        :"Не production: проверки информируют, но не блокируют публикацию.")
+    );
+    (gate.blockers||[]).forEach(x=>gateCard.append($("div",{class:"error"},"Блокер: "+x)));
+    (gate.warnings||[]).forEach(x=>gateCard.append($("div",{class:"muted"},"Предупреждение: "+x)));
+    body.append(gateCard);
     const jobs=$("div",{class:"card"},$("h3",{},"Задачи сборки"));
     if(!jobsData.jobs.length)jobs.append($("div",{class:"empty"},"Задач нет"));
     jobsData.jobs.forEach(job=>{
@@ -697,7 +707,7 @@ async function releaseDialog(r){
     body.append(jobs,artifacts);
 
     const buttons=[{label:"Закрыть",onclick:d=>d.close()}];
-    if(can("releases.manage")&&r.status==="ready"){
+    if(can("releases.manage")&&r.status==="ready"&&!(gate.enforced&&(gate.blockers||[]).length)){
       buttons.push({label:"Опубликовать",primary:true,onclick:async d=>{
         try{await api("/api/v1/admin/releases/"+r.id+"/publish",{method:"POST"});d.close();renderSection()}catch(e){alert(e.message)}
       }});
