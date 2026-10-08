@@ -182,6 +182,22 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 		}
 	}
 
+	if s.cfg.OffsiteBackupStatusFile=="" {
+		add("backup_offsite","warning","Внешняя резервная копия","Off-site backup marker не настроен; отказ основного хоста/аккаунта остаётся единичной точкой потери.")
+	}else if stat,err:=os.Stat(s.cfg.OffsiteBackupStatusFile);err!=nil {
+		add("backup_offsite","failed","Внешняя резервная копия","Нет подтверждения проверенной копии у независимого storage-провайдера.")
+	}else{
+		age:=time.Since(stat.ModTime().UTC())
+		switch{
+		case age<=30*time.Hour:
+			add("backup_offsite","ok","Внешняя резервная копия","Свежий зашифрованный backup проверен после загрузки во внешнее хранилище.")
+		case age<=36*time.Hour:
+			add("backup_offsite","warning","Внешняя резервная копия","Последняя проверенная off-site копия старше 30 часов.")
+		default:
+			add("backup_offsite","failed","Внешняя резервная копия","Последняя проверенная off-site копия старше 36 часов.")
+		}
+	}
+
 	alertSignals:=map[string]any{"configured":s.cfg.AlertWebhookURL!=""}
 	if s.cfg.AlertWebhookURL==""{
 		add("incident_notifications","warning","Операционные уведомления","HTTPS webhook для инцидентов не настроен.")
