@@ -31,6 +31,9 @@ data class MainUiState(
     val connection: ConnectionState = ConnectionState.PREPARING,
     val error: String? = null,
     val availableVersion: String? = null,
+    val updateRequired: Boolean = false,
+    val updateBlocked: Boolean = false,
+    val updateMessage: String? = null,
     val plans: List<ClientPlan> = emptyList(),
     val paymentLoading: Boolean = false,
     val account: ClientAccountStatus? = null,
@@ -46,7 +49,7 @@ data class MainUiState(
 
 private data class InitResult(
     val registration: ru.vpnx3.app.data.Registration,
-    val update: ru.vpnx3.app.update.ReleaseInfo?,
+    val update: ru.vpnx3.app.update.UpdateDecision,
     val plans: List<ClientPlan>,
     val connected: Boolean,
     val account: ClientAccountStatus?,
@@ -77,7 +80,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching {
                 val registration = repository.ensureRegistered()
                 repository.latestConfig()
-                val update = runCatching { updates.latest() }.getOrNull()
+                val update = runCatching { updates.evaluate(registration.deviceId) }
+                    .getOrDefault(ru.vpnx3.app.update.UpdateDecision())
                 val plans = runCatching { repository.plans() }.getOrDefault(emptyList())
                 val connected = repository.recoverConnectionState()
                 val account=runCatching { repository.accountStatus() }.getOrNull()
@@ -91,7 +95,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     registered = true,
                     trialExpiresAt = registration.trialExpiresAt,
                     connection = if(result.connected) ConnectionState.CONNECTED else ConnectionState.DISCONNECTED,
-                    availableVersion = result.update?.version,
+                    availableVersion = result.update.availableVersion,
+                    updateRequired = result.update.required,
+                    updateBlocked = result.update.blocked,
+                    updateMessage = result.update.message,
                     plans = result.plans,
                     account = result.account,
                     personalKeyEnabled = result.personalKeyEnabled,
@@ -294,6 +301,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun prepareConnection(onPrepared: () -> Unit) {
+        if(mutableState.value.updateRequired){
+            mutableState.value=mutableState.value.copy(
+                connection=ConnectionState.ERROR,
+                error=mutableState.value.updateMessage ?: "Требуется обновить приложение"
+            )
+            return
+        }
         mutableState.value = mutableState.value.copy(
             connection = ConnectionState.CONNECTING,
             error = null

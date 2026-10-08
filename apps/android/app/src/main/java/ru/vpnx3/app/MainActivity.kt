@@ -227,9 +227,31 @@ private fun HomeScreen(
             )
         }
 
-        state.availableVersion?.let {
-            Spacer(Modifier.height(6.dp))
-            Text("Доступно обновление: версия $it", style = MaterialTheme.typography.bodySmall)
+        state.updateRequired.let { required ->
+            if(required){
+                Spacer(Modifier.height(10.dp))
+                Card(modifier=Modifier.fillMaxWidth()){
+                    Column(Modifier.padding(16.dp)){
+                        Text(
+                            if(state.updateBlocked) "Эта версия отключена" else "Требуется обновление",
+                            style=MaterialTheme.typography.titleMedium,
+                            color=MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            state.updateMessage ?: "Установите актуальную версию VPNX3, чтобы продолжить работу.",
+                            style=MaterialTheme.typography.bodySmall
+                        )
+                        state.availableVersion?.let{
+                            Text("Актуальная версия: $it",style=MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }else{
+                state.availableVersion?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text("Доступно обновление: версия $it", style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
 
         Spacer(Modifier.height(20.dp))
