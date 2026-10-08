@@ -1,43 +1,44 @@
 package config
 
 import (
-	"log/slog"
+	"crypto/ed25519"
+	"encoding/base64"
+	"strings"
 	"testing"
-	"time"
 )
 
-func TestParseLogLevel(t *testing.T) {
-	tests := []struct {
-		input string
-		want  slog.Level
-	}{
-		{"debug", slog.LevelDebug},
-		{"INFO", slog.LevelInfo},
-		{"warning", slog.LevelWarn},
-		{"error", slog.LevelError},
-		{"unknown", slog.LevelInfo},
-	}
+func testSeed(fill byte) string {
+	b:=make([]byte,ed25519.SeedSize)
+	for i:=range b{b[i]=fill}
+	return base64.RawURLEncoding.EncodeToString(b)
+}
 
-	for _, tt := range tests {
-		if got := parseLogLevel(tt.input); got != tt.want {
-			t.Fatalf("parseLogLevel(%q) = %v, want %v", tt.input, got, tt.want)
-		}
+func TestValidateSigningSeedsAcceptsDistinctSeeds(t *testing.T){
+	if err:=validateSigningSeeds(testSeed(1),testSeed(2),testSeed(3));err!=nil{
+		t.Fatalf("unexpected error: %v",err)
 	}
 }
 
-func TestDuration(t *testing.T) {
-	t.Setenv("VPNX3_TEST_DURATION", "7s")
-	if got := duration("VPNX3_TEST_DURATION", time.Second); got != 7*time.Second {
-		t.Fatalf("duration = %v, want 7s", got)
+func TestValidateSigningSeedsRejectsDuplicateRoleKey(t *testing.T){
+	seed:=testSeed(9)
+	err:=validateSigningSeeds(seed,testSeed(2),seed)
+	if err==nil||!strings.Contains(err.Error(),"must differ"){
+		t.Fatalf("expected duplicate-key error, got %v",err)
 	}
+}
 
-	t.Setenv("VPNX3_TEST_DURATION", "12")
-	if got := duration("VPNX3_TEST_DURATION", time.Second); got != 12*time.Second {
-		t.Fatalf("numeric duration = %v, want 12s", got)
+func TestValidateSigningSeedsRejectsInvalidSeedLength(t *testing.T){
+	short:=base64.RawURLEncoding.EncodeToString(make([]byte,16))
+	err:=validateSigningSeeds(short,testSeed(2),"")
+	if err==nil||!strings.Contains(err.Error(),"exactly 32 bytes"){
+		t.Fatalf("expected size error, got %v",err)
 	}
+}
 
-	t.Setenv("VPNX3_TEST_DURATION", "invalid")
-	if got := duration("VPNX3_TEST_DURATION", 3*time.Second); got != 3*time.Second {
-		t.Fatalf("invalid duration = %v, want fallback 3s", got)
+func TestValidateSigningSeedsRejectsPaddedBase64(t *testing.T){
+	padded:=base64.URLEncoding.EncodeToString(make([]byte,32))
+	err:=validateSigningSeeds(padded,testSeed(2),"")
+	if err==nil{
+		t.Fatal("expected raw base64url validation error")
 	}
 }

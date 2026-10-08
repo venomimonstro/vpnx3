@@ -12,6 +12,7 @@ import (
 func main() {
 	printKey("VPNX3_CONFIG_SIGNING_KEY")
 	printKey("VPNX3_ACCESS_SIGNING_KEY")
+	printKey("VPNX3_RELEASE_SIGNING_KEY")
 }
 
 func printKey(name string) {

@@ -1,7 +1,9 @@
 package config
 
 import (
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -99,6 +101,9 @@ func Load() (Config, error) {
 	}
 	if cfg.AccessSigningKey == "" {
 		return Config{}, fmt.Errorf("VPNX3_ACCESS_SIGNING_KEY must be set")
+	}
+	if err:=validateSigningSeeds(cfg.ConfigSigningKey,cfg.AccessSigningKey,cfg.ReleaseSigningKey);err!=nil{
+		return Config{},err
 	}
 	if cfg.RegistrationRateKey=="" {
 		sum:=sha256.Sum256([]byte("vpnx3-registration-rate-v1\x00"+cfg.AccessSigningKey))
@@ -211,4 +216,33 @@ func csvEnv(key string) []string {
 		if v := strings.TrimSpace(part); v != "" { out = append(out, v) }
 	}
 	return out
+}
+
+
+func validateSigningSeeds(configSeed,accessSeed,releaseSeed string) error {
+	type namedSeed struct{ name,raw string }
+	inputs:=[]namedSeed{
+		{"VPNX3_CONFIG_SIGNING_KEY",strings.TrimSpace(configSeed)},
+		{"VPNX3_ACCESS_SIGNING_KEY",strings.TrimSpace(accessSeed)},
+	}
+	if strings.TrimSpace(releaseSeed)!=""{
+		inputs=append(inputs,namedSeed{"VPNX3_RELEASE_SIGNING_KEY",strings.TrimSpace(releaseSeed)})
+	}
+	decoded:=make([][]byte,0,len(inputs))
+	for _,item:=range inputs{
+		seed,err:=base64.RawURLEncoding.DecodeString(item.raw)
+		if err!=nil{
+			return fmt.Errorf("%s must be base64url without padding: %w",item.name,err)
+		}
+		if len(seed)!=ed25519.SeedSize{
+			return fmt.Errorf("%s must contain exactly %d bytes",item.name,ed25519.SeedSize)
+		}
+		for i,previous:=range decoded{
+			if string(previous)==string(seed){
+				return fmt.Errorf("%s must differ from %s",item.name,inputs[i].name)
+			}
+		}
+		decoded=append(decoded,seed)
+	}
+	return nil
 }
