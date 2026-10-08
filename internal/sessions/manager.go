@@ -11,6 +11,7 @@ import (
 
 	"github.com/venomimonstro/vpnx3/internal/accesslease"
 	"github.com/venomimonstro/vpnx3/internal/ipam"
+	"github.com/venomimonstro/vpnx3/internal/revocations"
 	"github.com/venomimonstro/vpnx3/network/transport"
 )
 
@@ -182,6 +183,28 @@ func (m *Manager) Sweep(ctx context.Context,now time.Time) {
 	m.mu.RUnlock()
 
 	for _,id:=range expired { _=m.closeLocked(ctx,id) }
+}
+
+func (m *Manager) CloseRevokedDeviceHashes(ctx context.Context,hashes []string)(int,error){
+	if len(hashes)==0{return 0,nil}
+	set:=make(map[string]struct{},len(hashes))
+	for _,hash:=range hashes{set[hash]=struct{}{}}
+
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+	m.mu.RLock()
+	ids:=make([]string,0)
+	for id,s:=range m.sessions{
+		if _,ok:=set[revocations.DeviceHash(s.DeviceID)];ok{ids=append(ids,id)}
+	}
+	m.mu.RUnlock()
+
+	closed:=0
+	for _,id:=range ids{
+		if err:=m.closeLocked(ctx,id);err!=nil{return closed,err}
+		closed++
+	}
+	return closed,nil
 }
 
 func (m *Manager) Count() int {

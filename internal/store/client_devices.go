@@ -71,7 +71,7 @@ func (s *Store) RevokeOwnPeerDevice(ctx context.Context,currentDeviceID,targetDe
 
 	if _,err:=tx.Exec(ctx,`
 		UPDATE devices
-		SET status='revoked',updated_at=now()
+		SET status='revoked',revoked_at=now(),last_seen_at=COALESCE(last_seen_at,now())
 		WHERE id=$1
 	`,targetDeviceID);err!=nil{return err}
 
