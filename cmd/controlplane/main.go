@@ -26,6 +26,7 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/billing"
 	"github.com/venomimonstro/vpnx3/internal/billing/yookassa"
 	"github.com/venomimonstro/vpnx3/internal/signing"
+	"github.com/venomimonstro/vpnx3/internal/securityexport"
 	"github.com/venomimonstro/vpnx3/internal/store"
 )
 
@@ -114,6 +115,14 @@ func main() {
 	go artifactcleaner.New(nodeStore,logger,artifactStorage,cfg.ArtifactRetentionDays).Run(monitorCtx)
 	go accountcleaner.New(nodeStore,logger).Run(monitorCtx)
 	go buildwatchdog.New(nodeStore,logger,2*time.Minute).Run(monitorCtx)
+	if cfg.SecurityExportURL!="" {
+		securitySigner,signErr:=signing.FromSeedBase64(cfg.SecurityExportSigningKey)
+		if signErr!=nil{
+			logger.Error("security export signing key initialization failed","error",signErr)
+			os.Exit(1)
+		}
+		go securityexport.New(nodeStore,securitySigner,cfg.SecurityExportURL,logger).Run(monitorCtx)
+	}
 	if cfg.YooKassaShopID!="" {
 		yoo,renewErr:=yookassa.New(cfg.YooKassaShopID,cfg.YooKassaSecretKey,cfg.YooKassaReturnURL)
 		if renewErr!=nil{

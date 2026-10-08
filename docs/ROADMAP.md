@@ -468,3 +468,27 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 - последние audit events пользователя и его устройств.
 
 Цель: типовая диагностика обращения должна выполняться из одной карточки без ручного SQL.
+
+
+## Спринт 18 — внешний журнал безопасности и уведомления: КОДОВАЯ ОСНОВА В РАБОТЕ
+
+Цель: критические административные и security-события должны иметь независимую от основной БД внешнюю копию.
+
+Реализовано:
+
+- transactional security_event_outbox, заполняемый после append-only audit_log;
+- очередь не участвует в критическом пути клиентских запросов;
+- конкурентная доставка через FOR UPDATE SKIP LOCKED;
+- отдельный Ed25519 signing key, не совпадающий с Configuration/Access/Release keys;
+- signed envelope содержит audit chain prev_hash/entry_hash;
+- внешний endpoint только HTTPS и без credentials в URL;
+- ограниченный batch;
+- retry с экспоненциальной задержкой;
+- успешная доставка фиксируется отдельно, исходный audit_log не меняется.
+
+Следующие задачи:
+
+1. добавить readiness/админ-метрики pending/oldest/max-attempts;
+2. добавить test receiver/runbook для проверки подписи;
+3. добавить операционные уведомления по критическим readiness/incidents без внешних SDK;
+4. физически подключить независимый WORM/SIEM endpoint.

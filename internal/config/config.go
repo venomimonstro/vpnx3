@@ -53,6 +53,8 @@ type Config struct {
 	TrustedProxyCIDRs      []string
 	RegistrationRateKey    string
 	BackupStatusFile       string
+	SecurityExportURL      string
+	SecurityExportSigningKey string
 }
 
 func Load() (Config, error) {
@@ -94,6 +96,8 @@ func Load() (Config, error) {
 		TrustedProxyCIDRs:      csvEnv("VPNX3_TRUSTED_PROXY_CIDRS"),
 		RegistrationRateKey:    strings.TrimSpace(os.Getenv("VPNX3_REGISTRATION_RATE_KEY")),
 		BackupStatusFile:       strings.TrimSpace(os.Getenv("VPNX3_BACKUP_STATUS_FILE")),
+		SecurityExportURL:      strings.TrimSpace(os.Getenv("VPNX3_SECURITY_EXPORT_URL")),
+		SecurityExportSigningKey: strings.TrimSpace(os.Getenv("VPNX3_SECURITY_EXPORT_SIGNING_KEY")),
 	}
 
 	if strings.TrimSpace(cfg.HTTPAddr) == "" {
@@ -176,6 +180,22 @@ func Load() (Config, error) {
 	}
 	if cfg.BackupStatusFile!="" && !strings.HasPrefix(cfg.BackupStatusFile,"/") {
 		return Config{}, fmt.Errorf("VPNX3_BACKUP_STATUS_FILE must be an absolute path")
+	}
+	securityExportConfigured:=cfg.SecurityExportURL!=""||cfg.SecurityExportSigningKey!=""
+	if securityExportConfigured {
+		if cfg.SecurityExportURL==""||cfg.SecurityExportSigningKey=="" {
+			return Config{},fmt.Errorf("security export requires URL and signing key")
+		}
+		u,err:=url.Parse(cfg.SecurityExportURL)
+		if err!=nil||u.Scheme!="https"||u.Hostname()==""||u.User!=nil {
+			return Config{},fmt.Errorf("VPNX3_SECURITY_EXPORT_URL must be a credential-free https URL")
+		}
+		if _,err:=base64.RawURLEncoding.DecodeString(cfg.SecurityExportSigningKey);err!=nil {
+			return Config{},fmt.Errorf("VPNX3_SECURITY_EXPORT_SIGNING_KEY must be base64url without padding")
+		}
+		if cfg.SecurityExportSigningKey==cfg.ConfigSigningKey||cfg.SecurityExportSigningKey==cfg.AccessSigningKey||cfg.SecurityExportSigningKey==cfg.ReleaseSigningKey {
+			return Config{},fmt.Errorf("security export signing key must be independent")
+		}
 	}
 	for _, cidr := range cfg.TrustedProxyCIDRs {
 		if _,_,err:=net.ParseCIDR(cidr);err!=nil {
