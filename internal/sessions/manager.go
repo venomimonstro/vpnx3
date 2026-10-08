@@ -11,6 +11,7 @@ import (
 
 	"github.com/venomimonstro/vpnx3/internal/accesslease"
 	"github.com/venomimonstro/vpnx3/internal/ipam"
+	"github.com/venomimonstro/vpnx3/internal/revocation"
 	"github.com/venomimonstro/vpnx3/internal/revocations"
 	"github.com/venomimonstro/vpnx3/network/transport"
 )
@@ -42,12 +43,13 @@ type Manager struct {
 	statePath string
 	sessions  map[string]Session
 	byDevice  map[string]string
+	revokedDeviceHashes map[string]struct{}
 }
 
 func New(verifier *accesslease.Verifier,pool *ipam.Pool,adapter transport.Adapter,statePath string) *Manager {
 	return &Manager{
 		verifier:verifier,ipam:pool,adapter:adapter,statePath:statePath,
-		sessions:map[string]Session{},byDevice:map[string]string{},
+		sessions:map[string]Session{},byDevice:map[string]string{},revokedDeviceHashes:map[string]struct{}{},
 	}
 }
 
@@ -103,6 +105,10 @@ func (m *Manager) Start(ctx context.Context,env accesslease.Envelope,clientPubli
 	if claims.TunnelPublicKey != clientPublicKey {
 		return Session{},fmt.Errorf("access lease is bound to a different tunnel public key")
 	}
+	m.mu.RLock()
+	_,revoked:=m.revokedDeviceHashes[revocation.DeviceHash(claims.DeviceID)]
+	m.mu.RUnlock()
+	if revoked{return Session{},fmt.Errorf("device access revoked")}
 
 	m.mu.RLock()
 	existingID,hasExisting:=m.byDevice[claims.DeviceID]
@@ -169,6 +175,39 @@ func (m *Manager) closeLocked(ctx context.Context,sessionID string) error {
 	m.mu.Unlock()
 	m.ipam.Release(session.DeviceID)
 	return m.persist()
+}
+
+
+func (m *Manager) ApplyRevokedDeviceHashes(ctx context.Context,hashes []string)(int,error){
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+
+	next:=make(map[string]struct{},len(hashes))
+	for _,h:=range hashes{
+		if len(h)==64{next[h]=struct{}{}}
+	}
+
+	m.mu.RLock()
+	toClose:=make([]string,0)
+	for id,s:=range m.sessions{
+		if _,ok:=next[revocation.DeviceHash(s.DeviceID)];ok{
+			toClose=append(toClose,id)
+		}
+	}
+	m.mu.RUnlock()
+
+	closed:=0
+	for _,id:=range toClose{
+		if err:=m.closeLocked(ctx,id);err!=nil{
+			return closed,fmt.Errorf("close revoked session %s: %w",id,err)
+		}
+		closed++
+	}
+
+	m.mu.Lock()
+	m.revokedDeviceHashes=next
+	m.mu.Unlock()
+	return closed,nil
 }
 
 func (m *Manager) Sweep(ctx context.Context,now time.Time) {
