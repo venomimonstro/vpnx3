@@ -1271,3 +1271,28 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 5. проверить keep-alive reuse;
 6. проверить timeout на TLS/header stall;
 7. убедиться, что dead-letter возникает только после реальных повторных попыток конкретного события.
+
+
+## Спринт 40 — локальные regression-тесты resilience: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: критические механизмы устойчивости должны иметь детерминированные тесты, даже при принципиальном отказе от CI/Actions.
+
+Реализовано:
+
+- unit-test closed → open → half-open → closed circuit breaker;
+- unit-test повторного открытия circuit после failed half-open probe;
+- unit-test HTTP admission saturation;
+- проверка Retry-After при overload;
+- проверка освобождения admission slot;
+- проверка, что health/live и health/ready обходят admission queue;
+- unit-test глобального body limit;
+- проверка отдельного большого лимита build artifact upload;
+- тесты являются обычными Go tests и не добавляют GitHub Actions/CI.
+
+Ручная приёмка перед production update:
+
+```bash
+go test ./internal/resilience ./internal/httpapi
+```
+
+После этого выполняются существующие production-smoke/failover/load/soak сценарии.
