@@ -2,29 +2,34 @@ package store
 
 import (
 	"context"
-	"time"
-
-	"github.com/venomimonstro/vpnx3/internal/revocations"
+	"fmt"
 )
 
-func (s *Store) RevokedDeviceHashes(ctx context.Context,since time.Time,limit int)([]string,error){
-	if limit<=0||limit>10000{limit=10000}
+type RevocationSnapshotData struct {
+	Version int64
+	DeviceIDs []string
+}
+
+func (s *Store) RevocationSnapshot(ctx context.Context)(RevocationSnapshotData,error){
+	var out RevocationSnapshotData
+	if err:=s.DB.QueryRow(ctx,`
+		SELECT COALESCE(max(id),0)::bigint FROM device_revocation_events
+	`).Scan(&out.Version);err!=nil{
+		return RevocationSnapshotData{},fmt.Errorf("revocation version: %w",err)
+	}
 	rows,err:=s.DB.Query(ctx,`
 		SELECT id::text
 		FROM devices
 		WHERE status='revoked'
-		  AND revoked_at IS NOT NULL
-		  AND revoked_at >= $1
-		ORDER BY revoked_at DESC
-		LIMIT $2
-	`,since,limit)
-	if err!=nil{return nil,err}
+		ORDER BY id
+	`)
+	if err!=nil{return RevocationSnapshotData{},fmt.Errorf("revoked devices: %w",err)}
 	defer rows.Close()
-	out:=make([]string,0)
 	for rows.Next(){
 		var id string
-		if err:=rows.Scan(&id);err!=nil{return nil,err}
-		out=append(out,revocations.DeviceHash(id))
+		if err:=rows.Scan(&id);err!=nil{return RevocationSnapshotData{},err}
+		out.DeviceIDs=append(out.DeviceIDs,id)
 	}
-	return out,rows.Err()
+	if err:=rows.Err();err!=nil{return RevocationSnapshotData{},err}
+	return out,nil
 }
