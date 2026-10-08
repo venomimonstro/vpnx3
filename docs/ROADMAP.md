@@ -949,3 +949,34 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 6. восстановиться до заданного timestamp/LSN;
 7. сравнить ключевые бизнес-таблицы до точки восстановления;
 8. измерить реальный RPO/RTO.
+
+
+## Спринт 29 — автоматизированный DR bootstrap: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: снизить RTO и исключить ручную импровизацию при полном восстановлении Control Plane.
+
+Реализовано:
+
+- `cmd/migrate` больше не зависит от runtime signing/payment secrets;
+- migration binary требует только database URL и migrations directory;
+- единый `scripts/dr-bootstrap.sh`;
+- обязательное подтверждение `DR_ISOLATED_ENVIRONMENT`;
+- восстановление в очевидную primary DB по умолчанию запрещено;
+- encrypted backup проверяется до restore;
+- restore выполняется существующим fail-closed drill;
+- после restore применяются актуальные migrations;
+- вызывается `verify_audit_chain()`;
+- проверяются критические таблицы revocation/HA/lease-abuse последних спринтов;
+- выводятся контрольные бизнес-счётчики;
+- script намеренно не запускает публичный Control Plane и не меняет endpoints.
+
+Физическая приёмка:
+
+1. поднять пустой PostgreSQL в отдельной DR-сети;
+2. восстановить только из off-site backup/secret escrow;
+3. применить WAL до выбранной точки;
+4. прогнать dr-bootstrap;
+5. выпустить новые operational keys/root-signed bundle;
+6. поднять Control Plane приватно;
+7. добиться launch readiness без failed;
+8. только после этого переключать клиентские endpoints.
