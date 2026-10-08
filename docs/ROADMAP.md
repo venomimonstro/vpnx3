@@ -887,3 +887,31 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 5. расшифровать recovery identity из независимого escrow;
 6. выполнить restore drill в пустую PostgreSQL;
 7. подтвердить readiness восстановленного Control Plane.
+
+
+## Спринт 27 — аварийный secret escrow: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: восстановление данных не должно зависеть от тех же production secrets и того же места хранения, что были потеряны вместе с Control Plane.
+
+Реализовано:
+
+- отдельный encrypted DR secret escrow;
+- только явный allowlist через повторяемый аргумент `--file label=/absolute/path`;
+- source-файлы обязаны быть обычными non-symlink файлами;
+- source-файлы обязаны иметь mode 0400/0600;
+- manifest содержит label, SHA-256 и размер каждого элемента;
+- весь secret bundle шифруется `age`;
+- ciphertext получает отдельный SHA-256 sidecar;
+- verifier расшифровывает во временный каталог и проверяет каждый item;
+- offline Root of Trust private seed явно запрещён политикой этого escrow;
+- root seed хранится отдельно/offline и используется для выпуска новых operational keys после DR.
+
+Физическая приёмка:
+
+1. создать escrow с независимым age recipient;
+2. хранить ciphertext, age identity и offline root в трёх логически раздельных местах;
+3. на чистом DR-host проверить decrypt + manifest;
+4. восстановить data backup;
+5. выпустить новые config/access/release operational keys;
+6. подписать новый trust bundle offline root;
+7. поднять изолированный Control Plane и только после readiness публиковать endpoints.
