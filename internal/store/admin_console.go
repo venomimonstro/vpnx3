@@ -31,6 +31,9 @@ type DashboardSummary struct {
 	RenewalSucceeded24h int64 `json:"renewal_succeeded_24h"`
 	RenewalFailed24h int64 `json:"renewal_failed_24h"`
 	RenewalDisabledFailures int64 `json:"renewal_disabled_failures"`
+	ReferralsClaimed30d int64 `json:"referrals_claimed_30d"`
+	ReferralsQualified30d int64 `json:"referrals_qualified_30d"`
+	ReferralRewardDays30d int64 `json:"referral_reward_days_30d"`
 }
 
 func (s *Store) Dashboard(ctx context.Context) (DashboardSummary,error) {
@@ -87,6 +90,15 @@ func (s *Store) Dashboard(ctx context.Context) (DashboardSummary,error) {
 		  (SELECT count(*)::bigint FROM subscriptions WHERE auto_renew=false AND renewal_failures>=3)
 	`).Scan(&d.AutoRenewActive,&d.RenewalPending,&d.RenewalSucceeded24h,&d.RenewalFailed24h,&d.RenewalDisabledFailures);err!=nil{
 		return DashboardSummary{},fmt.Errorf("dashboard renewal metrics: %w",err)
+	}
+	if err:=s.DB.QueryRow(ctx,`
+		SELECT
+		  count(*) FILTER(WHERE claimed_at>=now()-interval '30 days')::bigint,
+		  count(*) FILTER(WHERE qualified_at>=now()-interval '30 days')::bigint,
+		  COALESCE((SELECT sum(reward_days) FROM referral_rewards WHERE status='granted' AND granted_at>=now()-interval '30 days'),0)::bigint
+		FROM referral_redemptions
+	`).Scan(&d.ReferralsClaimed30d,&d.ReferralsQualified30d,&d.ReferralRewardDays30d);err!=nil{
+		return DashboardSummary{},fmt.Errorf("dashboard referral metrics: %w",err)
 	}
 	return d,nil
 }

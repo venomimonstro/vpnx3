@@ -303,6 +303,13 @@ func (s *Store) ApplyPaymentEvent(ctx context.Context,event PaymentEvent) (bool,
 		`,subscriptionID,paymentID,creditSeconds,event.OccurredAt);err!=nil{
 			return false,fmt.Errorf("record subscription credit: %w",err)
 		}
+
+		if _,err:=applyPendingReferralRewardsTx(ctx,tx,event.UserID,event.OccurredAt);err!=nil{
+			return false,fmt.Errorf("apply pending referral rewards: %w",err)
+		}
+		if err:=qualifyReferralOnPaymentTx(ctx,tx,event.UserID,paymentID,event.OccurredAt);err!=nil{
+			return false,fmt.Errorf("qualify referral: %w",err)
+		}
 	}
 
 	if _,err:=tx.Exec(ctx,`
@@ -416,6 +423,9 @@ func (s *Store) ApplyRefundEvent(ctx context.Context,event RefundEvent)(bool,err
 				WHERE id=$1
 			`,subscriptionID,creditSeconds);err!=nil{return false,err}
 		} else if !errors.Is(err,pgx.ErrNoRows) { return false,err }
+		if err:=revokeReferralQualificationTx(ctx,tx,paymentID,event.OccurredAt);err!=nil{
+			return false,fmt.Errorf("revoke referral qualification: %w",err)
+		}
 	}
 
 	if _,err:=tx.Exec(ctx,`
