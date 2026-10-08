@@ -10,6 +10,7 @@ PUBLIC_IP=""
 BINARY_URL=""
 BINARY_SHA256=""
 CAPACITY="1000"
+STATUS_URL=""
 
 usage() {
   cat <<'EOF'
@@ -23,7 +24,8 @@ usage() {
     [--public-ip 203.0.113.10] \
     --binary-url https://.../node-agent \
     --sha256 EXPECTED_SHA256 \
-    [--capacity 1000]
+    [--capacity 1000] \
+    [--status-url http://127.0.0.1:9090/internal/v1/status]
 
 SHA-256 бинарника обязателен.
 EOF
@@ -40,6 +42,7 @@ while [[ $# -gt 0 ]]; do
     --binary-url) BINARY_URL="${2:-}"; shift 2 ;;
     --sha256) BINARY_SHA256="${2:-}"; shift 2 ;;
     --capacity) CAPACITY="${2:-}"; shift 2 ;;
+    --status-url) STATUS_URL="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Неизвестный аргумент: $1" >&2; usage; exit 2 ;;
   esac
@@ -100,7 +103,7 @@ VPNX3_NODE_PROVIDER=$PROVIDER
 VPNX3_NODE_PUBLIC_IP=$PUBLIC_IP
 VPNX3_NODE_CAPACITY=$CAPACITY
 VPNX3_AGENT_IDENTITY_PATH=/var/lib/vpnx3-agent/identity.json
-VPNX3_WORKER_STATUS_URL=http://127.0.0.1:9090/internal/v1/status
+VPNX3_WORKER_STATUS_URL=$STATUS_URL
 EOF
 chmod 0600 /etc/vpnx3-agent.env
 chown root:root /etc/vpnx3-agent.env

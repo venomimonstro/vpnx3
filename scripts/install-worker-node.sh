@@ -130,6 +130,7 @@ node_args=(
   --binary-url "$NODE_AGENT_URL"
   --sha256 "$NODE_AGENT_SHA256"
   --capacity "$CAPACITY"
+  --status-url "$AUTH_ADDR/internal/v1/status"
 )
 [[ -n "$PUBLIC_IP" ]] && node_args+=(--public-ip "$PUBLIC_IP")
 

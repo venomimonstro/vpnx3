@@ -94,6 +94,21 @@ func main(){
 
 	mux:=http.NewServeMux()
 	mux.HandleFunc("GET /health/live",func(w http.ResponseWriter,_ *http.Request){w.WriteHeader(http.StatusNoContent)})
+	mux.HandleFunc("GET /internal/v1/status",func(w http.ResponseWriter,_ *http.Request){
+		now:=time.Now().UTC()
+		state.mu.RLock()
+		configOK:=len(state.configRaw)>0&&state.configExpires.After(now)
+		revocationOK:=len(state.revocationRaw)>0&&state.revocationExpires.After(now)
+		configVersion:=state.configVersion
+		revocationVersion:=state.revocationVersion
+		state.mu.RUnlock()
+		w.Header().Set("Content-Type","application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":"ok","service":"config-mirror","sessions":0,"transport":"https",
+			"healthy":configOK&&revocationOK,
+			"config_version":configVersion,"revocation_version":revocationVersion,
+		})
+	})
 	mux.HandleFunc("GET /health/ready",func(w http.ResponseWriter,_ *http.Request){
 		now:=time.Now().UTC()
 		state.mu.RLock()
