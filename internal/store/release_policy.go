@@ -24,6 +24,29 @@ type ReleasePolicy struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+func compareReleaseVersions(a,b string) int {
+	parse:=func(v string)[]int{
+		parts:=strings.Split(strings.TrimSpace(v),".")
+		out:=make([]int,0,len(parts))
+		for _,part:=range parts{
+			n:=0
+			for _,r:=range part{n=n*10+int(r-'0')}
+			out=append(out,n)
+		}
+		return out
+	}
+	aa,bb:=parse(a),parse(b)
+	n:=len(aa);if len(bb)>n{n=len(bb)}
+	for i:=0;i<n;i++{
+		av,bv:=0,0
+		if i<len(aa){av=aa[i]}
+		if i<len(bb){bv=bb[i]}
+		if av<bv{return -1}
+		if av>bv{return 1}
+	}
+	return 0
+}
+
 func validateReleasePolicyVersion(value string) error {
 	value=strings.TrimSpace(value)
 	if value==""{return nil}
@@ -90,6 +113,24 @@ func (s *Store) SetReleasePolicy(
 	if rollout<0||rollout>100{return ReleasePolicy{},fmt.Errorf("rollout percent must be 0..100")}
 	blocked,err:=normalizeBlockedVersions(blocked);if err!=nil{return ReleasePolicy{},err}
 	if len(message)>500{return ReleasePolicy{},fmt.Errorf("message too long")}
+	if (minVersion!=""||len(blocked)>0)&&recommended==""{
+		return ReleasePolicy{},fmt.Errorf("recommended version is required when clients can be blocked")
+	}
+	if minVersion!=""&&recommended!=""&&compareReleaseVersions(minVersion,recommended)>0{
+		return ReleasePolicy{},fmt.Errorf("minimum supported version cannot exceed recommended version")
+	}
+	if recommended!=""{
+		var exists bool
+		if err:=s.DB.QueryRow(ctx,`
+			SELECT EXISTS(
+			  SELECT 1
+			  FROM releases r
+			  JOIN release_artifacts a ON a.release_id=r.id
+			  WHERE r.status='published' AND r.version=$1 AND a.target=$2
+			)
+		`,recommended,target).Scan(&exists);err!=nil{return ReleasePolicy{},err}
+		if !exists{return ReleasePolicy{},fmt.Errorf("recommended version is not published for target")}
+	}
 
 	tx,err:=s.DB.Begin(ctx);if err!=nil{return ReleasePolicy{},err};defer tx.Rollback(ctx)
 	if _,err:=tx.Exec(ctx,`
