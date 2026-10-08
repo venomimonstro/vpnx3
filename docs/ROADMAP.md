@@ -544,3 +544,43 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 3. искусственно отключить receiver и проверить retry/backlog/dead-letter;
 4. восстановить receiver и проверить непрерывность prev_hash → entry_hash;
 5. хранить receiver credentials отдельно от database backup.
+
+
+## Спринт 18 — управление версиями клиентов: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: безопасно раскатывать клиентские релизы и иметь аварийный механизм остановки несовместимой версии без ручного SQL и без неподписанных remote flags.
+
+Реализовано:
+
+- отдельная release policy для Android APK, iOS IPA, Chrome и Firefox;
+- minimum supported version;
+- recommended version;
+- staged rollout 0–100%;
+- список явно заблокированных версий;
+- пользовательское сообщение;
+- append-only история изменения политики;
+- публичная политика подписывается отдельным Release Signing Key;
+- Android проверяет подпись policy и блокирует только новую VPN-сессию при minimum/blocked;
+- iOS проверяет signed policy и не рвёт уже активный tunnel;
+- Chrome/Firefox проверяют signed policy и не сбрасывают активный proxy в DIRECT;
+- rollout-когорта детерминирована по device ID + target + recommended version;
+- браузерные пакеты теперь обязаны содержать pinned Release Signing Key;
+- административная панель управляет политикой через структурированную форму;
+- сервер запрещает политику, которая блокирует клиентов без реально опубликованного recommended artifact;
+- minimum version не может быть выше recommended version.
+
+Безопасная последовательность массовой раскатки:
+
+1. опубликовать новый release artifact;
+2. поставить recommended version и rollout 5–10%;
+3. наблюдать crash/connect/payment/support метрики;
+4. увеличить rollout 25% → 50% → 100%;
+5. minimum supported version повышать только после устойчивого 100% rollout;
+6. blocked version использовать только для подтверждённой критической несовместимости/уязвимости.
+
+Физическая приёмка:
+
+- проверить policy на реальных Android/iOS/Chrome/Firefox сборках;
+- проверить сохранение активной сессии при появлении blocked policy;
+- проверить staged cohort между перезапусками;
+- проверить обновление через реальные store/direct distribution каналы.
