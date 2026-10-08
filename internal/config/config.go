@@ -165,6 +165,9 @@ func Load() (Config, error) {
 		if cfg.ReleaseSigningKey=="" {
 			return Config{},fmt.Errorf("VPNX3_RELEASE_SIGNING_KEY must be set in production")
 		}
+		if cfg.TrustRootPublicKey=="" || cfg.TrustBundleFile=="" {
+			return Config{},fmt.Errorf("production requires VPNX3_TRUST_ROOT_PUBLIC_KEY and VPNX3_TRUST_BUNDLE_FILE")
+		}
 		if !trustConfigured{
 			return Config{},fmt.Errorf("production requires offline trust root public key and signed trust bundle")
 		}
@@ -201,6 +204,19 @@ func Load() (Config, error) {
 	configuredYooKassa:=cfg.YooKassaShopID!="" || cfg.YooKassaSecretKey!="" || cfg.YooKassaReturnURL!=""
 	if configuredYooKassa && (cfg.YooKassaShopID=="" || cfg.YooKassaSecretKey=="" || !strings.HasPrefix(cfg.YooKassaReturnURL,"https://")) {
 		return Config{}, fmt.Errorf("YooKassa configuration requires shop id, secret key and https return URL")
+	}
+	trustConfigured:=cfg.TrustRootPublicKey!=""||cfg.TrustBundleFile!=""
+	if trustConfigured {
+		if cfg.TrustRootPublicKey==""||cfg.TrustBundleFile=="" {
+			return Config{},fmt.Errorf("trust root requires public key and bundle file")
+		}
+		raw,err:=base64.RawURLEncoding.DecodeString(cfg.TrustRootPublicKey)
+		if err!=nil||len(raw)!=ed25519.PublicKeySize {
+			return Config{},fmt.Errorf("VPNX3_TRUST_ROOT_PUBLIC_KEY must be a 32-byte Ed25519 public key in base64url")
+		}
+		if !strings.HasPrefix(cfg.TrustBundleFile,"/") {
+			return Config{},fmt.Errorf("VPNX3_TRUST_BUNDLE_FILE must be an absolute path")
+		}
 	}
 	if cfg.BackupStatusFile!="" && !strings.HasPrefix(cfg.BackupStatusFile,"/") {
 		return Config{}, fmt.Errorf("VPNX3_BACKUP_STATUS_FILE must be an absolute path")

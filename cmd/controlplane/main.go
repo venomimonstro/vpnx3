@@ -31,6 +31,7 @@ import (
 	"github.com/venomimonstro/vpnx3/internal/store"
 	"github.com/venomimonstro/vpnx3/internal/systemmonitor"
 	"github.com/venomimonstro/vpnx3/internal/trustbundle"
+	"github.com/venomimonstro/vpnx3/internal/trustbundle"
 )
 
 func main() {
@@ -97,6 +98,30 @@ func main() {
 		}
 		trustEnvelope=&env
 		logger.Info("offline-root trust bundle verified","version",payload.Version,"expires_at",payload.ExpiresAt)
+	}
+
+	var runtimeTrustBundle *trustbundle.Envelope
+	if cfg.TrustBundleFile!="" {
+		env,payload,trustErr:=trustbundle.LoadFile(
+			cfg.TrustBundleFile,cfg.TrustRootPublicKey,0,time.Now().UTC(),
+		)
+		if trustErr!=nil{
+			logger.Error("trust bundle verification failed","error",trustErr)
+			os.Exit(1)
+		}
+		if trustErr=trustbundle.MatchesSigner(payload,"config",configSigner);trustErr!=nil{
+			logger.Error("config signer is not authorized by trust bundle","error",trustErr);os.Exit(1)
+		}
+		if trustErr=trustbundle.MatchesSigner(payload,"access",accessSigner);trustErr!=nil{
+			logger.Error("access signer is not authorized by trust bundle","error",trustErr);os.Exit(1)
+		}
+		if releaseSigner!=nil {
+			if trustErr=trustbundle.MatchesSigner(payload,"release",releaseSigner);trustErr!=nil{
+				logger.Error("release signer is not authorized by trust bundle","error",trustErr);os.Exit(1)
+			}
+		}
+		runtimeTrustBundle=&env
+		logger.Info("offline-root trust bundle loaded","version",payload.Version,"expires_at",payload.ExpiresAt)
 	}
 
 	var artifactStorage artifactstorage.Storage
