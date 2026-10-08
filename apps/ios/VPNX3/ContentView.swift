@@ -84,10 +84,13 @@ struct ContentView: View {
                             paymentBusy:tunnel.paymentBusy,
                             pairingBusy:tunnel.pairingBusy,
                             pairingCode:tunnel.pairingCode,
+                            devices:tunnel.devices,
+                            devicesBusy:tunnel.devicesBusy,
                             autoRenewOnPurchase:$autoRenewOnPurchase,
                             onAutoRenew:{enabled in Task{await tunnel.setAutoRenew(enabled)}},
                             onCreatePairing:{Task{await tunnel.createPairingCode()}},
                             onClaimPairing:{showPairing=true},
+                            onRevokeDevice:{id in Task{await tunnel.revokeDevice(id)}},
                             onBuy:{plan in
                                 Task{
                                     if let url=await tunnel.startPayment(
@@ -147,10 +150,13 @@ private struct AccountView:View{
     let paymentBusy:Bool
     let pairingBusy:Bool
     let pairingCode:IOSPairingCode?
+    let devices:[IOSClientDevice]
+    let devicesBusy:Bool
     @Binding var autoRenewOnPurchase:Bool
     let onAutoRenew:(Bool)->Void
     let onCreatePairing:()->Void
     let onClaimPairing:()->Void
+    let onRevokeDevice:(String)->Void
     let onBuy:(IOSPlan)->Void
 
     var body:some View{
@@ -176,6 +182,27 @@ private struct AccountView:View{
                     Text("Код: \(pairingCode.code)").font(.headline)
                     Text("Действует до \(displayDateTime(pairingCode.expiresAt))")
                         .font(.footnote).foregroundStyle(.secondary)
+                }
+
+                if !devices.isEmpty {
+                    Divider()
+                    Text("Ваши устройства").font(.headline)
+                    ForEach(devices){device in
+                        HStack {
+                            VStack(alignment:.leading){
+                                Text(device.displayName + (device.current ? " · это устройство" : ""))
+                                Text(device.platform + (device.clientVersion.map{" · \($0)"} ?? ""))
+                                    .font(.footnote).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if !device.current && device.status=="active" {
+                                Button("Отключить",role:.destructive){
+                                    onRevokeDevice(device.id)
+                                }
+                                .disabled(devicesBusy)
+                            }
+                        }
+                    }
                 }
             }else{
                 Text("Активный тариф не найден").font(.headline)

@@ -41,6 +41,18 @@ final class IOSVPNRepository {
         return try await (registration,account,plans)
     }
 
+    func devices() async throws->[IOSClientDevice]{
+        let client=IOSControlClient()
+        let registration=try await client.ensureRegistered()
+        return try await client.devices(deviceID:registration.deviceID)
+    }
+
+    func revokeDevice(_ targetID:String) async throws{
+        let client=IOSControlClient()
+        let registration=try await client.ensureRegistered()
+        try await client.revokeDevice(deviceID:registration.deviceID,targetID:targetID)
+    }
+
     func createPairingCode() async throws->IOSPairingCode{
         let client=IOSControlClient()
         let registration=try await client.ensureRegistered()

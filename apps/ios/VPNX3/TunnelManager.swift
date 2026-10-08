@@ -14,6 +14,8 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var paymentBusy = false
     @Published private(set) var pairingBusy = false
     @Published private(set) var pairingCode: IOSPairingCode?
+    @Published private(set) var devices:[IOSClientDevice]=[]
+    @Published private(set) var devicesBusy=false
     @Published private(set) var referral: IOSReferralStatus?
     @Published private(set) var referralBusy = false
     @Published private(set) var referralMessage: String?
@@ -75,6 +77,7 @@ final class TunnelManager: ObservableObject {
                 await cleanupPersistedSession()
             }
             await refreshAccount()
+            await refreshDevices()
             await refreshReferral()
             await refreshUpdatePolicy()
         } catch {
@@ -166,6 +169,23 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    func refreshDevices() async {
+        guard !devicesBusy else{return}
+        devicesBusy=true;defer{devicesBusy=false}
+        do{devices=try await repository.devices()}
+        catch{ /* device list is secondary to VPN availability */ }
+    }
+
+    func revokeDevice(_ id:String) async {
+        guard !devicesBusy else{return}
+        devicesBusy=true;defer{devicesBusy=false}
+        do{
+            try await repository.revokeDevice(id)
+            devices=try await repository.devices()
+            await refreshAccount()
+        }catch{errorMessage="Не удалось отключить устройство"}
+    }
+
     func createPairingCode() async {
         guard !pairingBusy else{return}
         pairingBusy=true;defer{pairingBusy=false}
@@ -181,6 +201,7 @@ final class TunnelManager: ObservableObject {
             account=try await repository.claimPairingCode(normalized)
             pairingCode=nil
             await refreshAccount()
+            await refreshDevices()
         }catch{errorMessage="Не удалось привязать устройство"}
     }
 

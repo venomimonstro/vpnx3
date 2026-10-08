@@ -36,6 +36,16 @@ struct IOSPairingCode {
     let expiresAt:String
 }
 
+struct IOSClientDevice: Identifiable {
+    let id:String
+    let platform:String
+    let displayName:String
+    let status:String
+    let clientVersion:String?
+    let lastSeenAt:String?
+    let current:Bool
+}
+
 struct IOSReferralStatus {
     let code:String?
     let claimed30d:Int64
@@ -132,6 +142,34 @@ final class IOSControlClient {
             object:["enabled":enabled]
         )
         return try parseAccount(Data(raw.utf8))
+    }
+
+    func devices(deviceID:String) async throws->[IOSClientDevice]{
+        let raw=try await IOSDeviceIdentity.shared.signedJSON(
+            controlURL:runtime.controlURL,path:"/api/v1/client/devices",deviceID:deviceID,object:[:]
+        )
+        guard let data=raw.data(using:.utf8),
+              let root=try JSONSerialization.jsonObject(with:data) as? [String:Any],
+              let rows=root["devices"] as? [[String:Any]] else{throw IOSControlError.invalidResponse}
+        return rows.compactMap{d in
+            guard let id=d["id"] as? String,
+                  let platform=d["platform"] as? String,
+                  let name=d["display_name"] as? String,
+                  let status=d["status"] as? String else{return nil}
+            return IOSClientDevice(
+                id:id,platform:platform,displayName:name,status:status,
+                clientVersion:d["client_version"] as? String,
+                lastSeenAt:d["last_seen_at"] as? String,
+                current:(d["current"] as? Bool) ?? false
+            )
+        }
+    }
+
+    func revokeDevice(deviceID:String,targetID:String) async throws{
+        _ = try await IOSDeviceIdentity.shared.signedJSON(
+            controlURL:runtime.controlURL,path:"/api/v1/client/devices/revoke",deviceID:deviceID,
+            object:["device_id":targetID]
+        )
     }
 
     func createPairingCode(deviceID:String) async throws->IOSPairingCode{
