@@ -53,6 +53,24 @@ final class IOSVPNRepository {
         return try await client.claimPairingCode(deviceID:registration.deviceID,code:code)
     }
 
+    func referralCode() async throws->String{
+        let client=IOSControlClient()
+        let registration=try await client.ensureRegistered()
+        return try await client.referralCode(deviceID:registration.deviceID)
+    }
+
+    func referralStatus() async throws->IOSReferralStatus{
+        let client=IOSControlClient()
+        let registration=try await client.ensureRegistered()
+        return try await client.referralStatus(deviceID:registration.deviceID)
+    }
+
+    func claimReferralCode(_ code:String) async throws->IOSReferralClaimResult{
+        let client=IOSControlClient()
+        let registration=try await client.ensureRegistered()
+        return try await client.claimReferralCode(deviceID:registration.deviceID,code:code)
+    }
+
     func createPayment(planID:String,autoRenew:Bool) async throws->IOSPaymentStart{
         let client=IOSControlClient()
         let registration=try await client.ensureRegistered()

@@ -36,6 +36,20 @@ struct IOSPairingCode {
     let expiresAt:String
 }
 
+struct IOSReferralStatus {
+    let code:String?
+    let claimed30d:Int64
+    let qualified30d:Int64
+    let rewardDaysGranted:Int64
+    let referredBy:String?
+}
+
+struct IOSReferralClaimResult {
+    let rewardDays:Int
+    let rewardApplied:Bool
+    let referrerRewardPending:Bool
+}
+
 enum IOSControlError: Error {
     case runtimeNotConfigured
     case invalidResponse
@@ -125,6 +139,48 @@ final class IOSControlClient {
             object:["code":code]
         )
         return try parseAccount(Data(raw.utf8))
+    }
+
+    func referralCode(deviceID:String) async throws->String{
+        let raw=try await IOSDeviceIdentity.shared.signedJSON(
+            controlURL:runtime.controlURL,path:"/api/v1/client/referral/code",deviceID:deviceID,object:[:]
+        )
+        guard let data=raw.data(using:.utf8),
+              let json=try JSONSerialization.jsonObject(with:data) as? [String:Any],
+              let code=json["code"] as? String,!code.isEmpty else{throw IOSControlError.invalidResponse}
+        return code
+    }
+
+    func referralStatus(deviceID:String) async throws->IOSReferralStatus{
+        let raw=try await IOSDeviceIdentity.shared.signedJSON(
+            controlURL:runtime.controlURL,path:"/api/v1/client/referral/status",deviceID:deviceID,object:[:]
+        )
+        guard let data=raw.data(using:.utf8),
+              let json=try JSONSerialization.jsonObject(with:data) as? [String:Any]
+        else{throw IOSControlError.invalidResponse}
+        return IOSReferralStatus(
+            code:(json["code"] as? String)?.nilIfEmpty,
+            claimed30d:(json["claimed_30d"] as? NSNumber)?.int64Value ?? 0,
+            qualified30d:(json["qualified_30d"] as? NSNumber)?.int64Value ?? 0,
+            rewardDaysGranted:(json["reward_days_granted"] as? NSNumber)?.int64Value ?? 0,
+            referredBy:(json["referred_by"] as? String)?.nilIfEmpty
+        )
+    }
+
+    func claimReferralCode(deviceID:String,code:String) async throws->IOSReferralClaimResult{
+        let raw=try await IOSDeviceIdentity.shared.signedJSON(
+            controlURL:runtime.controlURL,path:"/api/v1/client/referral/claim",deviceID:deviceID,
+            object:["code":code]
+        )
+        guard let data=raw.data(using:.utf8),
+              let json=try JSONSerialization.jsonObject(with:data) as? [String:Any],
+              let days=(json["reward_days"] as? NSNumber)?.intValue
+        else{throw IOSControlError.invalidResponse}
+        return IOSReferralClaimResult(
+            rewardDays:days,
+            rewardApplied:(json["reward_applied"] as? Bool) ?? false,
+            referrerRewardPending:(json["referrer_reward_pending"] as? Bool) ?? true
+        )
     }
 
     func createPayment(deviceID:String,planID:String,autoRenew:Bool) async throws->IOSPaymentStart{
@@ -218,4 +274,11 @@ final class IOSControlClient {
         throw lastError
     }
 
+}
+
+
+private extension String {
+    var nilIfEmpty:String? {
+        isEmpty ? nil : self
+    }
 }
