@@ -22,6 +22,7 @@ command -v python3 >/dev/null || fail "Требуется python3"
 
 if [[ "$MODE" == "prepare" ]]; then
   [[ ! -e "$SECRETS_FILE" ]] || fail "Секреты уже существуют. Установщик не перезаписывает ключи."
+  command -v docker >/dev/null || fail "Docker нужен для вывода публичных ключей: установите Docker и Compose v2."
   read -r -p "Email владельца: " OWNER_EMAIL
   [[ "$OWNER_EMAIL" == *@* ]] || fail "Некорректный email"
   read -r -s -p "Пароль владельца (не менее 14 символов): " OWNER_PASSWORD
@@ -67,7 +68,11 @@ dest.chmod(0o600)
 print("Секреты созданы, доступ root-only.")
 PY
   info "Сейчас НЕ запускайте сервер: сначала подпишите trust bundle автономным корневым ключом."
-  info "Получите открытые ключи из seeds на автономной машине; подробности: docs/PRODUCTION_INSTALL.md."
+  info "Открытые ключи для автономного подписания:"
+  docker run --rm --env-file "$SECRETS_FILE" \
+    --network none -v "$REPO_DIR:/src:ro" -w /src golang:1.25-bookworm \
+    go run ./cmd/public-keys
+  info "Передайте только открытые ключи на автономную машину. Приватный root никогда не храните на сервере."
   exit 0
 fi
 
@@ -106,6 +111,16 @@ for i in $(seq 1 30); do
   if curl --silent --show-error --fail --max-time 3 http://127.0.0.1:8080/health/live >/dev/null; then
     info "Control Plane отвечает на localhost:8080"
     info "Публичный TLS reverse proxy и внешние ноды настраиваются отдельно."
+    # Initial owner credentials must not persist in the runtime env on future deploys.
+    export SECRETS_FILE
+    python3 - <<'PY'
+import os,pathlib
+p=pathlib.Path(os.environ["SECRETS_FILE"])
+lines=p.read_text().splitlines()
+lines=[line for line in lines if not line.startswith("VPNX3_BOOTSTRAP_OWNER_PASSWORD=")]
+p.write_text("\\n".join(lines)+"\\n")
+p.chmod(0o600)
+PY
     exit 0
   fi
   sleep 2
