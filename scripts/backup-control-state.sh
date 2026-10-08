@@ -72,7 +72,11 @@ payload={
 open(path,"w",encoding="utf-8").write(json.dumps(payload,ensure_ascii=False,sort_keys=True,indent=2)+"\n")
 PY
 
-tar -C "$work" -cf - database.dump manifest.json $([[ "$artifacts_included" == true ]] && printf '%s' artifacts.tar)   | age -r "$VPNX3_BACKUP_AGE_RECIPIENT" -o "$tmp_bundle"
+bundle_files=(database.dump manifest.json)
+if [[ "$artifacts_included" == true ]]; then
+  bundle_files+=(artifacts.tar)
+fi
+tar -C "$work" -cf - "${bundle_files[@]}" | age -r "$VPNX3_BACKUP_AGE_RECIPIENT" -o "$tmp_bundle"
 
 chmod 600 "$tmp_bundle"
 mv "$tmp_bundle" "$bundle"
