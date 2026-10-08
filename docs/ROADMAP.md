@@ -1296,3 +1296,31 @@ go test ./internal/resilience ./internal/httpapi
 ```
 
 После этого выполняются существующие production-smoke/failover/load/soak сценарии.
+
+
+## Спринт 41 — ручной predeploy gate без CI/Actions: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: сохранить разработку напрямую в main без CI, но не выкатывать заведомо сломанный код из-за синтаксической/форматной ошибки.
+
+Реализовано:
+
+- единый `scripts/predeploy-check.sh`;
+- проект остаётся без GitHub Actions/workflows;
+- проверка `git diff --check`;
+- проверка уникальности migration prefixes;
+- `bash -n` всех shell scripts;
+- Python syntax compile;
+- optional `node --check` admin/browser JS;
+- обязательный gofmt check;
+- `go vet ./...`;
+- полный `go test ./...`;
+- fast-режим запускает критические resilience/httpapi tests;
+- скрипт не выполняет deploy и не применяет миграции.
+
+Эксплуатационное правило:
+
+```bash
+bash scripts/predeploy-check.sh
+```
+
+должен завершиться `PREDEPLOY CHECK: OK` перед production update.
