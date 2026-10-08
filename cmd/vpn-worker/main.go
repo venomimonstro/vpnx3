@@ -11,6 +11,7 @@ import (
 
 	"github.com/venomimonstro/vpnx3/internal/accesslease"
 	"github.com/venomimonstro/vpnx3/internal/ipam"
+	"github.com/venomimonstro/vpnx3/internal/revocations"
 	"github.com/venomimonstro/vpnx3/internal/sessions"
 	"github.com/venomimonstro/vpnx3/internal/workerauth"
 	wgadapter "github.com/venomimonstro/vpnx3/network/transport/wireguard"
@@ -58,6 +59,49 @@ func main() {
 	defer runCancel()
 	go srv.RunSweeper(runCtx)
 
+	controlURL:=strings.TrimSpace(os.Getenv("VPNX3_CONTROL_URL"))
+	if controlURL!=""{
+		revVerifier,revErr:=revocations.NewVerifier(publicKey)
+		if revErr!=nil{
+			logger.Error("revocation verifier initialization failed","error",revErr)
+			os.Exit(1)
+		}
+		revClient,revErr:=revocations.NewClient(controlURL,revVerifier)
+		if revErr!=nil{
+			logger.Error("revocation client initialization failed","error",revErr)
+			os.Exit(1)
+		}
+		interval:=durationEnv("VPNX3_REVOCATION_POLL_INTERVAL",time.Minute)
+		if interval<15*time.Second{interval=15*time.Second}
+		go func(){
+			ticker:=time.NewTicker(interval);defer ticker.Stop()
+			poll:=func(){
+				ctx,cancel:=context.WithTimeout(runCtx,10*time.Second)
+				defer cancel()
+				feed,err:=revClient.Fetch(ctx,time.Now().UTC())
+				if err!=nil{
+					logger.Warn("revocation feed unavailable","error",err)
+					return
+				}
+				closed,err:=manager.CloseRevokedDeviceHashes(ctx,feed.RevokedDeviceHashes)
+				if err!=nil{
+					logger.Warn("revoked session cleanup failed","error",err)
+					return
+				}
+				if closed>0{logger.Warn("revoked device sessions closed","count",closed)}
+			}
+			poll()
+			for{
+				select{
+				case <-runCtx.Done():return
+				case <-ticker.C:poll()
+				}
+			}
+		}()
+	}else{
+		logger.Warn("revocation polling disabled because VPNX3_CONTROL_URL is empty")
+	}
+
 	errCh:=make(chan error,1)
 	go func(){ logger.Info("vpn worker starting","addr",addr,"transport","wireguard"); errCh<-srv.ListenAndServe() }()
 
@@ -77,5 +121,13 @@ func main() {
 
 func env(key,fallback string) string {
 	if v:=strings.TrimSpace(os.Getenv(key)); v!="" { return v }
+	return fallback
+}
+
+
+func durationEnv(key string,fallback time.Duration) time.Duration{
+	raw:=strings.TrimSpace(os.Getenv(key))
+	if raw==""{return fallback}
+	if value,err:=time.ParseDuration(raw);err==nil{return value}
 	return fallback
 }

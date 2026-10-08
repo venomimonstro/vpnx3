@@ -103,6 +103,7 @@ worker_args=(
   --binary-url "$WORKER_URL"
   --sha256 "$WORKER_SHA256"
   --access-public-key "$ACCESS_PUBLIC_KEY"
+  --control-url "$CONTROL_URL"
   --wg-interface "$WG_INTERFACE"
   --wg-endpoint "$WG_ENDPOINT"
   --wg-pool "$WG_POOL"

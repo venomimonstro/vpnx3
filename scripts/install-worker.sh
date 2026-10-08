@@ -4,6 +4,7 @@ set -euo pipefail
 BINARY_URL=""
 BINARY_SHA256=""
 ACCESS_PUBLIC_KEY=""
+CONTROL_URL=""
 WG_INTERFACE="wg0"
 WG_ENDPOINT=""
 WG_POOL="10.66.0.0/24"
@@ -21,6 +22,7 @@ usage() {
     --binary-url https://.../vpn-worker \
     --sha256 EXPECTED_SHA256 \
     --access-public-key BASE64URL_ED25519_PUBLIC_KEY \
+    [--control-url https://CONTROL-ENDPOINT] \
     --wg-endpoint PUBLIC_IP_OR_HOST:51820 \
     [--wg-interface wg0] \
     [--wg-pool 10.66.0.0/24] \
@@ -49,6 +51,7 @@ while [[ $# -gt 0 ]]; do
     --binary-url) BINARY_URL="${2:-}"; shift 2 ;;
     --sha256) BINARY_SHA256="${2:-}"; shift 2 ;;
     --access-public-key) ACCESS_PUBLIC_KEY="${2:-}"; shift 2 ;;
+    --control-url) CONTROL_URL="${2:-}"; shift 2 ;;
     --wg-interface) WG_INTERFACE="${2:-}"; shift 2 ;;
     --wg-endpoint) WG_ENDPOINT="${2:-}"; shift 2 ;;
     --wg-pool) WG_POOL="${2:-}"; shift 2 ;;
@@ -67,6 +70,11 @@ done
 for value in BINARY_URL BINARY_SHA256 ACCESS_PUBLIC_KEY WG_INTERFACE WG_ENDPOINT WG_POOL WG_ADDRESS WG_LISTEN_PORT; do
   [[ -n "${!value}" ]] || { echo "Не задан обязательный параметр: $value" >&2; exit 2; }
 done
+
+if [[ -n "$CONTROL_URL" && "$CONTROL_URL" != https://* ]]; then
+  echo "Control URL должен использовать HTTPS." >&2
+  exit 2
+fi
 
 [[ "$WG_INTERFACE" =~ ^[A-Za-z0-9_.-]{1,15}$ ]] || { echo "Некорректное имя WireGuard-интерфейса." >&2; exit 2; }
 [[ "$WG_LISTEN_PORT" =~ ^[0-9]+$ ]] || { echo "Некорректный WireGuard port." >&2; exit 2; }
@@ -177,6 +185,8 @@ install -m 0755 -o root -g root "$tmp" /usr/local/bin/vpnx3-worker
 
 cat >/etc/vpnx3-worker.env <<EOF
 VPNX3_ACCESS_PUBLIC_KEY=$ACCESS_PUBLIC_KEY
+VPNX3_CONTROL_URL=$CONTROL_URL
+VPNX3_REVOCATION_POLL_INTERVAL=60s
 VPNX3_WG_INTERFACE=$WG_INTERFACE
 VPNX3_WG_ENDPOINT=$WG_ENDPOINT
 VPNX3_WG_POOL=$WG_POOL
