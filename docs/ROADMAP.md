@@ -488,7 +488,12 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 
 Следующие задачи:
 
-1. добавить readiness/админ-метрики pending/oldest/max-attempts;
-2. добавить test receiver/runbook для проверки подписи;
-3. добавить операционные уведомления по критическим readiness/incidents без внешних SDK;
-4. физически подключить независимый WORM/SIEM endpoint.
+Дополнительно реализованы:
+- readiness pending/oldest/max-attempts;
+- пороги warning/failed по возрасту очереди;
+- локальный loopback-only test receiver с Ed25519 verification и fsync NDJSON;
+- runbook проверки signed envelope.
+
+Следующие задачи:
+1. добавить операционные уведомления по критическим readiness/incidents без внешних SDK;
+2. физически подключить независимый WORM/SIEM endpoint.

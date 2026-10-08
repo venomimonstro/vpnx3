@@ -107,6 +107,33 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 		add("audit_chain","ok","Целостность аудита","Append-only журнал и хеш-цепочка согласованы.")
 	}
 
+	securityExportSignals:=map[string]any{"configured":s.cfg.SecurityExportURL!=""}
+	if s.cfg.SecurityExportURL=="" {
+		add("security_export","warning","Внешний журнал безопасности","Внешний HTTPS/WORM/SIEM экспорт не настроен.")
+	}else{
+		health,healthErr:=s.store.SecurityExportHealth(r.Context())
+		if healthErr!=nil{
+			add("security_export","failed","Внешний журнал безопасности","Не удалось проверить очередь внешнего аудита.")
+		}else{
+			securityExportSignals["pending"]=health.Pending
+			securityExportSignals["max_attempts"]=health.MaxAttempts
+			securityExportSignals["oldest_pending_at"]=health.OldestPendingAt
+			if health.OldestPendingAt==nil{
+				add("security_export","ok","Внешний журнал безопасности","Очередь внешнего аудита пуста.")
+			}else{
+				age:=time.Since(health.OldestPendingAt.UTC())
+				switch{
+				case age>2*time.Hour:
+					add("security_export","failed","Внешний журнал безопасности","Самое старое недоставленное событие ждёт больше 2 часов.")
+				case age>15*time.Minute||health.MaxAttempts>=8:
+					add("security_export","warning","Внешний журнал безопасности","Есть заметная задержка или многократные ошибки доставки событий.")
+				default:
+					add("security_export","ok","Внешний журнал безопасности","Очередь доставки находится в допустимом окне.")
+				}
+			}
+		}
+	}
+
 	if s.cfg.BackupStatusFile=="" {
 		add("backup","warning","Резервное копирование","Backup health-marker не настроен.")
 	}else if stat,err:=os.Stat(s.cfg.BackupStatusFile);err!=nil {
@@ -155,6 +182,7 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			"renewal_failed_24h":data.RenewalFailed24h,
 			"renewal_disabled_failures":data.RenewalDisabledFailures,
 			"audit_chain_valid":data.AuditChainValid,
+			"security_export":securityExportSignals,
 		},
 	})
 }
