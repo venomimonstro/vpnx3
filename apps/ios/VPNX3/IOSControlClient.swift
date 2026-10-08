@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import WireGuardKit
 
 struct IOSRegistration {
@@ -75,15 +76,24 @@ final class IOSControlClient {
     private let configStore=IOSConfigStore()
 
     func ensureRegistered() async throws -> IOSRegistration {
-        guard runtime.controlURL.scheme=="https",!runtime.configPublicKey.isEmpty else {
+        guard runtime.controlURL.scheme=="https",
+              !runtime.trustRootPublicKey.isEmpty || !runtime.configPublicKey.isEmpty else {
             throw IOSControlError.runtimeNotConfigured
         }
         return try await IOSDeviceIdentity.shared.registration(controlURL: runtime.controlURL)
     }
 
     func latestVerifiedConfig() async throws -> IOSVerifiedConfig {
-        let verifier=IOSConfigVerifier(publicKeyBase64:runtime.configPublicKey)
         let minimum=configStore.highestVersion
+        let trustKeys:[String:String]
+        if !runtime.trustRootPublicKey.isEmpty {
+            trustKeys=try await IOSTrustRepository().refreshOrFallback().verificationKeys("config")
+        }else{
+            let legacy=runtime.configPublicKey
+            guard let raw=Data(vpnx3ControlB64URL:legacy) else{throw IOSControlError.runtimeNotConfigured}
+            let id=SHA256.hash(data:raw).prefix(8).map{String(format:"%02x",$0)}.joined()
+            trustKeys=[id:legacy]
+        }
         var lastError:Error=IOSControlError.invalidResponse
 
         var sources:[URL]=[]
@@ -105,7 +115,9 @@ final class IOSControlClient {
                 guard (response as? HTTPURLResponse)?.statusCode==200 else{
                     throw IOSControlError.invalidResponse
                 }
-                let verified=try verifier.verify(envelopeData:data,minimumVersion:minimum)
+                let verified=try IOSConfigVerifier.verify(
+                    envelopeData:data,minimumVersion:minimum,authorizedKeys:trustKeys
+                )
                 configStore.envelope=data
                 configStore.highestVersion=max(minimum,verified.version)
                 configStore.mirrorURLs=extractConfigMirrorURLs(verified)
@@ -116,9 +128,9 @@ final class IOSControlClient {
         }
 
         guard let cached=configStore.envelope else{throw lastError}
-        return try verifier.verify(
-            envelopeData:cached,
-            minimumVersion:configStore.highestVersion
+        return try IOSConfigVerifier.verify(
+            envelopeData:cached,minimumVersion:configStore.highestVersion,
+            authorizedKeys:trustKeys
         )
     }
 
@@ -147,15 +159,28 @@ final class IOSControlClient {
     }
 
     func releaseDecision(deviceID:String) async throws->IOSUpdateDecision{
-        guard !runtime.releasePublicKey.isEmpty else{throw IOSControlError.runtimeNotConfigured}
+        guard !runtime.trustRootPublicKey.isEmpty || !runtime.releasePublicKey.isEmpty else{
+            throw IOSControlError.runtimeNotConfigured
+        }
         guard let url=URL(string:"/api/v1/releases/policy?target=ios_ipa",relativeTo:runtime.controlURL)?.absoluteURL else{
             throw IOSControlError.runtimeNotConfigured
         }
         let (data,response)=try await URLSession.shared.data(from:url)
         guard (response as? HTTPURLResponse)?.statusCode==200 else{throw IOSControlError.invalidResponse}
         let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "0"
-        return try IOSReleasePolicyVerifier(publicKeyBase64:runtime.releasePublicKey)
-            .decision(envelopeData:data,target:"ios_ipa",currentVersion:current,deviceID:deviceID)
+        let keys:[String:String]
+        if !runtime.trustRootPublicKey.isEmpty {
+            keys=try await IOSTrustRepository().refreshOrFallback().verificationKeys("release")
+        }else{
+            let legacy=runtime.releasePublicKey
+            guard let raw=Data(vpnx3ControlB64URL:legacy) else{throw IOSControlError.runtimeNotConfigured}
+            let id=SHA256.hash(data:raw).prefix(8).map{String(format:"%02x",$0)}.joined()
+            keys=[id:legacy]
+        }
+        return try IOSReleasePolicyVerifier.decision(
+            envelopeData:data,target:"ios_ipa",currentVersion:current,
+            deviceID:deviceID,authorizedKeys:keys
+        )
     }
 
     func plans() async throws->[IOSPlan]{
@@ -376,5 +401,14 @@ final class IOSControlClient {
 private extension String {
     var nilIfEmpty:String? {
         isEmpty ? nil : self
+    }
+}
+
+
+private extension Data {
+    init?(vpnx3ControlB64URL value:String){
+        var text=value.replacingOccurrences(of:"-",with:"+").replacingOccurrences(of:"_",with:"/")
+        if text.count%4 != 0{text += String(repeating:"=",count:4-text.count%4)}
+        self.init(base64Encoded:text)
     }
 }

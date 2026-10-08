@@ -12,11 +12,19 @@ struct IOSReleasePolicyVerifier {
     let publicKeyBase64:String
 
     func decision(
-        envelopeData:Data,
-        target:String,
-        currentVersion:String,
-        deviceID:String
-    ) throws->IOSUpdateDecision {
+        envelopeData:Data,target:String,currentVersion:String,deviceID:String
+    )throws->IOSUpdateDecision {
+        guard !publicKeyBase64.isEmpty else{throw IOSControlError.runtimeNotConfigured}
+        return try Self.decision(
+            envelopeData:envelopeData,target:target,currentVersion:currentVersion,
+            deviceID:deviceID,authorizedKeys:[Self.keyID(publicKeyBase64):publicKeyBase64]
+        )
+    }
+
+    static func decision(
+        envelopeData:Data,target:String,currentVersion:String,deviceID:String,
+        authorizedKeys:[String:String]
+    )throws->IOSUpdateDecision {
         guard
             let envelope=try JSONSerialization.jsonObject(with:envelopeData) as? [String:Any],
             let payloadText=envelope["payload"] as? String,
@@ -24,12 +32,11 @@ struct IOSReleasePolicyVerifier {
             let keyID=envelope["key_id"] as? String,
             let payload=Data(vpnx3Base64URL:payloadText),
             let signature=Data(vpnx3Base64URL:signatureText),
-            let keyData=Data(vpnx3Base64URL:publicKeyBase64),
+            let encodedKey=authorizedKeys[keyID],
+            let keyData=Data(vpnx3Base64URL:encodedKey),
             keyData.count==32
-        else{throw IOSControlError.invalidResponse}
+        else{throw IOSControlError.invalidSignature}
 
-        let expected=SHA256.hash(data:keyData).prefix(8).map{String(format:"%02x",$0)}.joined()
-        guard keyID==expected else{throw IOSControlError.invalidSignature}
         let key=try Curve25519.Signing.PublicKey(rawRepresentation:keyData)
         guard key.isValidSignature(signature,for:payload) else{throw IOSControlError.invalidSignature}
         guard let p=try JSONSerialization.jsonObject(with:payload) as? [String:Any],
@@ -79,13 +86,18 @@ struct IOSReleasePolicyVerifier {
         return IOSUpdateDecision(availableVersion:nil,required:false,blocked:false,message:nil)
     }
 
-    private func stableCohort(deviceID:String,target:String,version:String)->Int{
+    private static func keyID(_ encoded:String)->String {
+        guard let raw=Data(vpnx3Base64URL:encoded) else{return ""}
+        return SHA256.hash(data:raw).prefix(8).map{String(format:"%02x",$0)}.joined()
+    }
+
+    private static func stableCohort(deviceID:String,target:String,version:String)->Int{
         let bytes=Data((deviceID+"\0"+target+"\0"+version).utf8)
         let digest=Array(SHA256.hash(data:bytes))
         return ((Int(digest[0])<<8)|Int(digest[1]))%100
     }
 
-    private func compare(_ a:String,_ b:String)->Int{
+    private static func compare(_ a:String,_ b:String)->Int{
         let aa=parse(a),bb=parse(b),count=max(aa.count,bb.count)
         for i in 0..<count{
             let av=i<aa.count ? aa[i]:0
@@ -95,7 +107,7 @@ struct IOSReleasePolicyVerifier {
         return 0
     }
 
-    private func parse(_ value:String)->[Int]{
+    private static func parse(_ value:String)->[Int]{
         value.trimmingCharacters(in:.whitespacesAndNewlines)
             .trimmingCharacters(in:CharacterSet(charactersIn:"v"))
             .split(separator:"-",maxSplits:1).first?

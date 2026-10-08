@@ -247,7 +247,7 @@ func iosBuildEnv(releaseVersion string)([]string,error){
 	if err!=nil{return nil,fmt.Errorf("invalid iOS release version: %w",err)}
 	keys:=[]string{
 		"VPNX3_IOS_TEAM_ID","VPNX3_IOS_EXPORT_OPTIONS_PLIST",
-		"VPNX3_CLIENT_CONTROL_URL","VPNX3_CONFIG_PUBLIC_KEY","VPNX3_RELEASE_PUBLIC_KEY",
+		"VPNX3_CLIENT_CONTROL_URL","VPNX3_CONFIG_PUBLIC_KEY","VPNX3_TRUST_ROOT_PUBLIC_KEY","VPNX3_RELEASE_PUBLIC_KEY",
 		"VPNX3_CONFIG_BOOTSTRAP_URLS","HOME",
 	}
 	out:=make([]string,0,len(keys)+1)

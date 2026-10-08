@@ -11,7 +11,20 @@ struct IOSVerifiedConfig {
 struct IOSConfigVerifier {
     let publicKeyBase64: String
 
-    func verify(envelopeData: Data, minimumVersion: Int64, now: Date = Date()) throws -> IOSVerifiedConfig {
+    func verify(envelopeData:Data,minimumVersion:Int64,now:Date=Date())throws->IOSVerifiedConfig {
+        guard !publicKeyBase64.isEmpty else{throw IOSControlError.runtimeNotConfigured}
+        return try Self.verify(
+            envelopeData:envelopeData,minimumVersion:minimumVersion,now:now,
+            authorizedKeys:[Self.keyID(publicKeyBase64):publicKeyBase64]
+        )
+    }
+
+    static func verify(
+        envelopeData:Data,
+        minimumVersion:Int64,
+        now:Date=Date(),
+        authorizedKeys:[String:String]
+    )throws->IOSVerifiedConfig {
         guard
             let envelope = try JSONSerialization.jsonObject(with: envelopeData) as? [String: Any],
             let payloadText = envelope["payload"] as? String,
@@ -19,14 +32,12 @@ struct IOSConfigVerifier {
             let keyID = envelope["key_id"] as? String,
             let payload = Data(base64URLEncoded: payloadText),
             let signature = Data(base64URLEncoded: signatureText),
-            let keyData = Data(base64URLEncoded: publicKeyBase64),
-            keyData.count == 32
-        else { throw IOSControlError.invalidResponse }
+            let encodedKey=authorizedKeys[keyID],
+            let keyData=Data(base64URLEncoded:encodedKey),
+            keyData.count==32
+        else{throw IOSControlError.invalidSignature}
 
-        let expectedKeyID = SHA256.hash(data:keyData).prefix(8).map { String(format:"%02x",$0) }.joined()
-        guard keyID == expectedKeyID else { throw IOSControlError.invalidSignature }
-
-        let key = try Curve25519.Signing.PublicKey(rawRepresentation: keyData)
+        let key=try Curve25519.Signing.PublicKey(rawRepresentation:keyData)
         guard key.isValidSignature(signature, for: payload) else { throw IOSControlError.invalidSignature }
         guard let json = try JSONSerialization.jsonObject(with: payload) as? [String: Any],
               (json["schema_version"] as? NSNumber)?.intValue == 1,
@@ -46,6 +57,11 @@ struct IOSConfigVerifier {
         else { throw IOSControlError.expiredConfiguration }
 
         return IOSVerifiedConfig(version:version,expiresAt:expires,rawPayload:payload,json:json)
+    }
+
+    private static func keyID(_ encoded:String)->String {
+        guard let raw=Data(base64URLEncoded:encoded) else{return ""}
+        return SHA256.hash(data:raw).prefix(8).map{String(format:"%02x",$0)}.joined()
     }
 }
 
