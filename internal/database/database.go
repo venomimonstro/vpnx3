@@ -53,6 +53,8 @@ func OpenHealth(ctx context.Context,databaseURL string)(*pgxpool.Pool,error){
 	pool,err:=pgxpool.NewWithConfig(ctx,cfg)
 	if err!=nil{return nil,fmt.Errorf("create health database pool: %w",err)}
 	pingCtx,cancel:=context.WithTimeout(ctx,5*time.Second);defer cancel()
-	if err:=pool.Ping(pingCtx);err!=nil{pool.Close();return nil,fmt.Errorf("health database ping: %w",err)}
+	if err:=pool.Ping(pingCtx);err!=nil{
+		return pool,fmt.Errorf("health database ping: %w",err)
+	}
 	return pool,nil
 }

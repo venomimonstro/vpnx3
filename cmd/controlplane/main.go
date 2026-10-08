@@ -56,14 +56,13 @@ func main() {
 	var replicaDB *pgxpool.Pool
 	if cfg.DatabaseReplicaURL!=""{
 		replicaDB,err=database.OpenHealth(startupCtx,cfg.DatabaseReplicaURL)
+		if replicaDB!=nil{defer replicaDB.Close()}
 		if err!=nil{
 			if cfg.DatabaseHARequired{
 				logger.Error("database replica initialization failed","error",err)
 				os.Exit(1)
 			}
-			logger.Warn("database replica unavailable at startup","error",err)
-		}else{
-			defer replicaDB.Close()
+			logger.Warn("database replica unavailable at startup; health pool will retry","error",err)
 		}
 	}
 
