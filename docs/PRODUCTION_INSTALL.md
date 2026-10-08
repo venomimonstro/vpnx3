@@ -8,7 +8,15 @@
 
 ## Основной сервер, Debian/Ubuntu
 
-Установите Docker Engine, Docker Compose v2, Python 3, curl и git из доверенных источников.
+На чистом Debian/Ubuntu запустите начальную подготовку (пакеты устанавливаются только из уже настроенных репозиториев APT):
+
+```bash
+curl -fsSLo /tmp/vpnx3-bootstrap.sh https://raw.githubusercontent.com/venomimonstro/vpnx3/main/scripts/bootstrap-control-host.sh
+# Проверьте содержимое /tmp/vpnx3-bootstrap.sh перед запуском от root.
+sudo bash /tmp/vpnx3-bootstrap.sh
+```
+
+Если ваша версия Debian/Ubuntu не предоставляет Docker Compose v2 в доверенных репозиториях, установщик остановится, а не скачает случайный бинарник.
 
 ```bash
 sudo mkdir -p /opt
