@@ -43,6 +43,10 @@ android {
             .orElse(providers.environmentVariable("VPNX3_CLIENT_CONTROL_URL"))
             .orElse("https://127.0.0.1")
             .get()
+        val trustRootPublicKey = providers.gradleProperty("VPNX3_TRUST_ROOT_PUBLIC_KEY")
+            .orElse(providers.environmentVariable("VPNX3_TRUST_ROOT_PUBLIC_KEY"))
+            .orElse("")
+            .get()
         val configPublicKey = providers.gradleProperty("VPNX3_CONFIG_PUBLIC_KEY")
             .orElse(providers.environmentVariable("VPNX3_CONFIG_PUBLIC_KEY"))
             .orElse("")
@@ -64,6 +68,7 @@ android {
             .filter { it.isNotEmpty() }
 
         buildConfigField("String", "CONTROL_URL", "\"$controlUrl\"")
+        buildConfigField("String", "TRUST_ROOT_PUBLIC_KEY", "\"$trustRootPublicKey\"")
         buildConfigField("String", "CONFIG_PUBLIC_KEY", "\"$configPublicKey\"")
         buildConfigField("String", "TRUST_ROOT_PUBLIC_KEY", "\"$trustRootPublicKey\"")
         buildConfigField("String", "RELEASE_PUBLIC_KEY", "\"$releasePublicKey\"")

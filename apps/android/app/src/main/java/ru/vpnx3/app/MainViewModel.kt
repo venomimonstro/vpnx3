@@ -14,7 +14,6 @@ import ru.vpnx3.app.data.ClientDevice
 import ru.vpnx3.app.data.PreparedConnection
 import ru.vpnx3.app.data.ReferralStatus
 import ru.vpnx3.app.data.VpnRepository
-import ru.vpnx3.app.update.UpdateRepository
 import ru.vpnx3.app.security.PersonalKeyInfo
 
 enum class ConnectionState {
@@ -83,7 +82,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching {
                 val registration = repository.ensureRegistered()
                 repository.latestConfig()
-                val update = runCatching { updates.evaluate(registration.deviceId) }
+                val update = runCatching { repository.evaluateUpdate(registration.deviceId) }
                     .getOrDefault(ru.vpnx3.app.update.UpdateDecision())
                 val plans = runCatching { repository.plans() }.getOrDefault(emptyList())
                 val connected = repository.recoverConnectionState()

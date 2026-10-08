@@ -1,11 +1,7 @@
 package ru.vpnx3.app.update
 
-import android.content.Context
 import ru.vpnx3.app.BuildConfig
-import ru.vpnx3.app.data.ControlApi
-import ru.vpnx3.app.data.LocalState
 import ru.vpnx3.app.data.TrustRepository
-import ru.vpnx3.app.security.DeviceIdentity
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
@@ -17,72 +13,43 @@ data class UpdateDecision(
     val message:String?=null
 )
 
-class UpdateRepository(context:Context) {
-    private val trustRepository:TrustRepository? =
-        BuildConfig.TRUST_ROOT_PUBLIC_KEY.takeIf{it.isNotBlank()}?.let{
-            TrustRepository(
-                ControlApi(BuildConfig.CONTROL_URL,DeviceIdentity()),
-                LocalState(context.applicationContext),
-                it
-            )
-        }
-
-    private fun releaseKeys():Map<String,String> {
-        val trust=trustRepository?.refreshOrFallback()
-        if(trust!=null) return trust.verificationKeys("release")
-        val legacy=BuildConfig.RELEASE_PUBLIC_KEY
-        if(legacy.isBlank()) return emptyMap()
-        val raw=java.util.Base64.getUrlDecoder().decode(legacy)
-        val id=MessageDigest.getInstance("SHA-256").digest(raw)
-            .take(8).joinToString(""){"%02x".format(it)}
-        return mapOf(id to legacy)
-    }
+class UpdateRepository(private val trustRepository:TrustRepository) {
     fun evaluate(deviceId:String):UpdateDecision {
-        val keys=runCatching{releaseKeys()}.getOrDefault(emptyMap())
-        if(keys.isEmpty()) return UpdateDecision()
+        val trust=trustRepository.refreshOrFallback()
+        if(trust.active("release")==null) return UpdateDecision()
 
-        val policyRaw=get("/api/v1/releases/policy?target=android_apk") ?: return fallbackLatest(keys)
-        val policy=ReleasePolicyVerifier.verifyWithKeys(policyRaw,keys)
+        val policyRaw=get("/api/v1/releases/policy?target=android_apk") ?: return fallbackLatest(trust)
+        val policy=ReleasePolicyVerifier(trust).verify(policyRaw)
         val current=BuildConfig.VERSION_NAME
-
         val blocked=current in policy.blockedVersions
         val belowMinimum=policy.minimumSupportedVersion.isNotBlank() &&
             compareVersions(current,policy.minimumSupportedVersion)<0
-
         if(blocked||belowMinimum){
             return UpdateDecision(
-                availableVersion=policy.recommendedVersion.ifBlank{null},
-                required=true,
-                blocked=blocked,
-                message=policy.message.ifBlank{
+                policy.recommendedVersion.ifBlank{null},true,blocked,
+                policy.message.ifBlank{
                     if(blocked) "Эта версия приложения отключена. Установите обновление."
                     else "Для продолжения работы требуется обновить VPNX3."
                 }
             )
         }
-
         val recommended=policy.recommendedVersion
-        if(recommended.isBlank()||compareVersions(current,recommended)>=0) return UpdateDecision()
-
+        if(recommended.isBlank()||compareVersions(current,recommended)>=0)return UpdateDecision()
         val cohort=stableCohort(deviceId,"android_apk",recommended)
-        return if(cohort<policy.rolloutPercent) {
-            UpdateDecision(
-                availableVersion=recommended,
-                message=policy.message.ifBlank{null}
-            )
-        } else UpdateDecision()
+        return if(cohort<policy.rolloutPercent) UpdateDecision(
+            availableVersion=recommended,message=policy.message.ifBlank{null}
+        ) else UpdateDecision()
     }
 
-    private fun fallbackLatest(keys:Map<String,String>):UpdateDecision {
-        val info=latest(keys) ?: return UpdateDecision()
+    private fun fallbackLatest(trust:ru.vpnx3.app.security.VerifiedTrustBundle):UpdateDecision {
+        val info=latest(trust) ?: return UpdateDecision()
         return UpdateDecision(availableVersion=info.version)
     }
 
-    fun latest(keys:Map<String,String> = runCatching{releaseKeys()}.getOrDefault(emptyMap())):ReleaseInfo? {
-        if(keys.isEmpty()) return null
+    fun latest(trust:ru.vpnx3.app.security.VerifiedTrustBundle):ReleaseInfo? {
         val raw=get("/api/v1/releases/latest?target=android_apk") ?: return null
-        val info=ReleaseVerifier.verifyWithKeys(raw,keys)
-        if(info.version==BuildConfig.VERSION_NAME) return null
+        val info=ReleaseVerifier(trust).verify(raw)
+        if(info.version==BuildConfig.VERSION_NAME)return null
         return info
     }
 
@@ -94,7 +61,7 @@ class UpdateRepository(context:Context) {
         val raw=(if(code in 200..299)c.inputStream else c.errorStream)
             ?.bufferedReader()?.use{it.readText()}.orEmpty()
         c.disconnect()
-        if(code !in 200..299) return null
+        if(code !in 200..299)return null
         return raw
     }
 
@@ -114,8 +81,6 @@ class UpdateRepository(context:Context) {
         }
         return 0
     }
-
     private fun parseVersion(value:String):List<Int> =
-        value.trim().removePrefix("v").substringBefore('-')
-            .split('.').map{it.toIntOrNull() ?: 0}
+        value.trim().removePrefix("v").substringBefore('-').split('.').map{it.toIntOrNull() ?: 0}
 }

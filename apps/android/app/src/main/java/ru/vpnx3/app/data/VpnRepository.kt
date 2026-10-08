@@ -13,6 +13,8 @@ import ru.vpnx3.app.security.PersonalKeyInfo
 import ru.vpnx3.app.security.PersonalTunnelKeyStore
 import ru.vpnx3.app.security.VerifiedConfig
 import ru.vpnx3.app.vpn.WireGuardController
+import ru.vpnx3.app.update.UpdateDecision
+import ru.vpnx3.app.update.UpdateRepository
 import java.io.ByteArrayInputStream
 
 data class PreparedConnection(
@@ -30,7 +32,9 @@ class VpnRepository(private val context: Context) {
     private val tunnelKeys = TunnelKeyStore(context)
     private val personalTunnelKeys = PersonalTunnelKeyStore(context)
     private val wireGuard = WireGuardController(context)
+    private val trustRepository: TrustRepository
     private val configRepository: ConfigRepository
+    private val updateRepository: UpdateRepository
 
     @Volatile
     private var active: PreparedConnection? = null
@@ -71,6 +75,8 @@ class VpnRepository(private val context: Context) {
     }
 
     fun latestConfig(): VerifiedConfig = configRepository.refreshOrFallback()
+
+    fun evaluateUpdate(deviceId:String):UpdateDecision = updateRepository.evaluate(deviceId)
 
     fun plans(): List<ClientPlan> = api.plans()
 

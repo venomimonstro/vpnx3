@@ -6,7 +6,7 @@ import java.security.MessageDigest
 import java.time.Instant
 import java.util.Base64
 
-data class TrustKey(
+data class TrustedKey(
     val purpose:String,
     val keyId:String,
     val publicKey:String,
@@ -16,12 +16,13 @@ data class TrustKey(
 data class VerifiedTrustBundle(
     val version:Long,
     val expiresAt:Instant,
-    val keys:List<TrustKey>
+    val keys:List<TrustedKey>
 ) {
-    fun verificationKeys(purpose:String):Map<String,String> =
-        keys.filter {
-            it.purpose==purpose && (it.state=="active" || it.state=="retired")
-        }.associate { it.keyId to it.publicKey }
+    fun key(purpose:String,keyId:String):TrustedKey? =
+        keys.firstOrNull { it.purpose==purpose && it.keyId==keyId && it.state in setOf("active","next","retired") }
+
+    fun active(purpose:String):TrustedKey? =
+        keys.firstOrNull { it.purpose==purpose && it.state=="active" }
 }
 
 class TrustBundleVerifier(rootPublicKeyBase64Url:String) {
@@ -30,11 +31,11 @@ class TrustBundleVerifier(rootPublicKeyBase64Url:String) {
     private val rootKeyId=MessageDigest.getInstance("SHA-256")
         .digest(root).take(8).joinToString(""){"%02x".format(it)}
 
-    init { require(root.size==32) { "Trust root must contain 32 bytes" } }
+    init { require(root.size==32) { "Trust root public key must contain 32 bytes" } }
 
     fun verify(rawEnvelope:String,minimumVersion:Long,now:Instant):VerifiedTrustBundle {
         val env=JSONObject(rawEnvelope)
-        require(env.getString("key_id")==rootKeyId) { "Unexpected trust root" }
+        require(env.getString("key_id")==rootKeyId) { "Unexpected trust root key" }
         val payload=Base64.getUrlDecoder().decode(env.getString("payload"))
         val signature=Base64.getUrlDecoder().decode(env.getString("signature"))
         verifier.verify(signature,payload)
@@ -43,26 +44,21 @@ class TrustBundleVerifier(rootPublicKeyBase64Url:String) {
         require(json.getInt("schema_version")==1) { "Unsupported trust bundle schema" }
         val version=json.getLong("version")
         require(version>0 && version>=minimumVersion) { "Trust bundle rollback detected" }
-        val issued=Instant.parse(json.getString("issued_at"))
-        val expires=Instant.parse(json.getString("expires_at"))
-        require(!issued.isAfter(now.plusSeconds(300))) { "Trust bundle is from the future" }
-        require(expires.isAfter(now)) { "Trust bundle expired" }
-        require(expires.epochSecond-issued.epochSecond in 1..(366L*24*3600)) {
-            "Invalid trust bundle validity"
-        }
+        val issuedAt=Instant.parse(json.getString("issued_at"))
+        val expiresAt=Instant.parse(json.getString("expires_at"))
+        require(!issuedAt.isAfter(now.plusSeconds(300))) { "Trust bundle is from the future" }
+        require(expiresAt.isAfter(now)) { "Trust bundle expired" }
 
-        val array=json.getJSONArray("keys")
-        require(array.length() in 2..12) { "Invalid trust key count" }
-        val seen=mutableSetOf<String>()
-        val active=mutableMapOf<String,Int>()
+        val arr=json.getJSONArray("keys")
+        require(arr.length() in 2..12) { "Invalid trust key count" }
         val keys=buildList {
-            for(i in 0 until array.length()){
-                val item=array.getJSONObject(i)
-                val purpose=item.getString("purpose")
-                val algorithm=item.getString("algorithm")
-                val state=item.getString("state")
-                val keyId=item.getString("key_id")
-                val publicKey=item.getString("public_key")
+            for(i in 0 until arr.length()) {
+                val k=arr.getJSONObject(i)
+                val purpose=k.getString("purpose")
+                val algorithm=k.getString("algorithm")
+                val publicKey=k.getString("public_key")
+                val state=k.getString("state")
+                val keyId=k.getString("key_id")
                 require(purpose in setOf("config","access","release"))
                 require(algorithm=="ed25519")
                 require(state in setOf("active","next","retired"))
@@ -71,13 +67,13 @@ class TrustBundleVerifier(rootPublicKeyBase64Url:String) {
                 val expected=MessageDigest.getInstance("SHA-256")
                     .digest(raw).take(8).joinToString(""){"%02x".format(it)}
                 require(expected==keyId) { "Trust key id mismatch" }
-                require(seen.add("$purpose\u0000$keyId")) { "Duplicate trust key" }
-                if(state=="active") active[purpose]=(active[purpose] ?: 0)+1
-                add(TrustKey(purpose,keyId,publicKey,state))
+                add(TrustedKey(purpose,keyId,publicKey,state))
             }
         }
-        require(active["config"]==1 && active["access"]==1)
-        require((active["release"] ?: 0)<=1)
-        return VerifiedTrustBundle(version,expires,keys)
+        require(keys.count{it.purpose=="config"&&it.state=="active"}==1)
+        require(keys.count{it.purpose=="access"&&it.state=="active"}==1)
+        require(keys.count{it.purpose=="release"&&it.state=="active"}<=1)
+        require(keys.map{it.purpose+"\u0000"+it.keyId}.distinct().size==keys.size)
+        return VerifiedTrustBundle(version,expiresAt,keys)
     }
 }
