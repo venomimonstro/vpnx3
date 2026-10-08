@@ -23,6 +23,7 @@ var allowedBuildTargets=map[string]bool{
 	"ingress_proxy_linux_amd64":true,
 	"build_worker_darwin_arm64":true,
 	"config_mirror_linux_amd64":true,
+	"runtime_updater_linux_amd64":true,
 }
 
 type Release struct {
