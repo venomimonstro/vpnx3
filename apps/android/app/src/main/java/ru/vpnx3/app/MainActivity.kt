@@ -93,6 +93,7 @@ class MainActivity : ComponentActivity() {
                     onRotatePersonalKey = vm::rotatePersonalKey,
                     onDeletePersonalKey = vm::deletePersonalKey,
                     onSetAutoRenew = vm::setAutoRenew,
+                    onRevokeDevice = vm::revokeDevice,
                     onBuy = { planId, autoRenew ->
                         vm.startPayment(planId,autoRenew) { url ->
                             runOnUiThread {
@@ -127,6 +128,7 @@ private fun HomeScreen(
     onRotatePersonalKey: () -> Unit,
     onDeletePersonalKey: () -> Unit,
     onSetAutoRenew: (Boolean) -> Unit,
+    onRevokeDevice: (String) -> Unit,
     onBuy: (String, Boolean) -> Unit
 ) {
     val busy = state.connection == ConnectionState.PREPARING ||
@@ -268,6 +270,7 @@ private fun HomeScreen(
                 onCreatePairingCode = onCreatePairingCode,
                 onOpenPairDialog = { showPairDialog = true },
                 onSetAutoRenew = onSetAutoRenew,
+                onRevokeDevice = onRevokeDevice,
                 onCreateReferralCode = onCreateReferralCode,
                 onOpenReferralDialog = { showReferralDialog = true },
                 onShareReferral = onShareReferral,
@@ -436,6 +439,7 @@ private fun AccountSection(
     onCreatePairingCode: () -> Unit,
     onOpenPairDialog: () -> Unit,
     onSetAutoRenew: (Boolean) -> Unit,
+    onRevokeDevice: (String) -> Unit,
     onCreateReferralCode: () -> Unit,
     onOpenReferralDialog: () -> Unit,
     onShareReferral: (String) -> Unit,
@@ -492,6 +496,37 @@ private fun AccountSection(
                             "Одноразовый код действует до ${displayDateTime(expires)}",
                             style = MaterialTheme.typography.bodySmall
                         )
+                    }
+                }
+
+                if(state.devices.isNotEmpty()){
+                    Spacer(Modifier.height(14.dp))
+                    Text("Ваши устройства",style=MaterialTheme.typography.titleMedium)
+                    state.devices.forEach { device ->
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier=Modifier.fillMaxWidth(),
+                            horizontalArrangement=Arrangement.SpaceBetween,
+                            verticalAlignment=Alignment.CenterVertically
+                        ){
+                            Column(Modifier.weight(1f)){
+                                Text(
+                                    device.displayName + if(device.current) " · это устройство" else "",
+                                    style=MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    device.platform + (device.clientVersion?.let{" · $it"} ?: ""),
+                                    style=MaterialTheme.typography.bodySmall,
+                                    color=MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if(!device.current && device.status=="active"){
+                                TextButton(
+                                    enabled=!state.devicesBusy,
+                                    onClick={onRevokeDevice(device.id)}
+                                ){Text("Отключить")}
+                            }
+                        }
                     }
                 }
             } ?: state.trialExpiresAt?.takeIf { it.isNotBlank() }?.let {

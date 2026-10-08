@@ -49,6 +49,17 @@ data class PairingCode(
     val expiresAt: String
 )
 
+data class ClientDevice(
+    val id:String,
+    val platform:String,
+    val displayName:String,
+    val status:String,
+    val clientVersion:String?,
+    val firstSeenAt:String,
+    val lastSeenAt:String?,
+    val current:Boolean
+)
+
 data class ReferralStatus(
     val code: String?,
     val claimed30d: Long,
@@ -173,6 +184,36 @@ class ControlApi(
             rewardApplied=json.optBoolean("reward_applied",false),
             referrerRewardPending=json.optBoolean("referrer_reward_pending",true)
         )
+    }
+
+    fun devices(deviceId:String,sequence:Long):List<ClientDevice>{
+        val path="/api/v1/client/devices"
+        val body=JSONObject().put("sequence",sequence).toString().toByteArray(Charsets.UTF_8)
+        val arr=JSONObject(signedRequest("POST",path,body,deviceId)).getJSONArray("devices")
+        return buildList {
+            for(i in 0 until arr.length()){
+                val d=arr.getJSONObject(i)
+                add(ClientDevice(
+                    id=d.getString("id"),
+                    platform=d.getString("platform"),
+                    displayName=d.getString("display_name"),
+                    status=d.getString("status"),
+                    clientVersion=d.optString("client_version").takeIf{it.isNotBlank()},
+                    firstSeenAt=d.getString("first_seen_at"),
+                    lastSeenAt=d.optString("last_seen_at").takeIf{it.isNotBlank()},
+                    current=d.optBoolean("current",false)
+                ))
+            }
+        }
+    }
+
+    fun revokeDevice(deviceId:String,sequence:Long,targetDeviceId:String){
+        val path="/api/v1/client/devices/revoke"
+        val body=JSONObject()
+            .put("sequence",sequence)
+            .put("device_id",targetDeviceId)
+            .toString().toByteArray(Charsets.UTF_8)
+        signedRequest("POST",path,body,deviceId)
     }
 
     fun setAutoRenew(deviceId:String,sequence:Long,enabled:Boolean): ClientAccountStatus {

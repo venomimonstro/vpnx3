@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import ru.vpnx3.app.data.ClientAccountStatus
 import ru.vpnx3.app.data.ClientPlan
+import ru.vpnx3.app.data.ClientDevice
 import ru.vpnx3.app.data.PreparedConnection
 import ru.vpnx3.app.data.ReferralStatus
 import ru.vpnx3.app.data.VpnRepository
@@ -44,7 +45,9 @@ data class MainUiState(
     val personalKeyInfo: PersonalKeyInfo? = null,
     val referral: ReferralStatus? = null,
     val referralBusy: Boolean = false,
-    val referralMessage: String? = null
+    val referralMessage: String? = null,
+    val devices: List<ClientDevice> = emptyList(),
+    val devicesBusy: Boolean = false
 )
 
 private data class InitResult(
@@ -105,6 +108,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     personalKeyInfo = result.personalKeyInfo,
                     referral = result.referral
                 )
+                refreshDevices()
             }.onFailure {
                 mutableState.value = MainUiState(
                     connection = ConnectionState.ERROR,
@@ -124,6 +128,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.accountStatus() }
                 .onSuccess { mutableState.value=mutableState.value.copy(account=it,trialExpiresAt=null) }
+            runCatching { repository.devices() }
+                .onSuccess { mutableState.value=mutableState.value.copy(devices=it) }
+        }
+    }
+
+    fun refreshDevices(){
+        if(!mutableState.value.registered||mutableState.value.devicesBusy)return
+        mutableState.value=mutableState.value.copy(devicesBusy=true)
+        viewModelScope.launch(Dispatchers.IO){
+            runCatching{repository.devices()}
+                .onSuccess{mutableState.value=mutableState.value.copy(devices=it,devicesBusy=false)}
+                .onFailure{mutableState.value=mutableState.value.copy(devicesBusy=false)}
+        }
+    }
+
+    fun revokeDevice(deviceId:String){
+        if(mutableState.value.devicesBusy)return
+        mutableState.value=mutableState.value.copy(devicesBusy=true,error=null)
+        viewModelScope.launch(Dispatchers.IO){
+            runCatching{repository.revokeDevice(deviceId)}
+                .onSuccess{
+                    val devices=runCatching{repository.devices()}.getOrDefault(emptyList())
+                    val account=runCatching{repository.accountStatus()}.getOrNull()
+                    mutableState.value=mutableState.value.copy(
+                        devices=devices,account=account,devicesBusy=false
+                    )
+                }
+                .onFailure{
+                    mutableState.value=mutableState.value.copy(
+                        devicesBusy=false,error="Не удалось отключить устройство"
+                    )
+                }
         }
     }
 

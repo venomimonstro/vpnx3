@@ -113,6 +113,18 @@ class VpnRepository(private val context: Context) {
         return api.claimReferralCode(registration.deviceId,sequence,code)
     }
 
+    fun devices():List<ClientDevice>{
+        val registration=ensureRegistered()
+        val sequence=state.reserveNextRequestSequence()
+        return api.devices(registration.deviceId,sequence)
+    }
+
+    fun revokeDevice(targetDeviceId:String){
+        val registration=ensureRegistered()
+        val sequence=state.reserveNextRequestSequence()
+        api.revokeDevice(registration.deviceId,sequence,targetDeviceId)
+    }
+
     fun setAutoRenew(enabled:Boolean): ClientAccountStatus {
         val registration=ensureRegistered()
         val sequence=state.reserveNextRequestSequence()
