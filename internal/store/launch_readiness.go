@@ -32,6 +32,9 @@ type LaunchReadinessData struct {
 	RuntimeManagedNodes int64
 	RuntimeUpdaterReportedNodes int64
 	RuntimeUpdaterUnhealthyNodes int64
+	LocalHealthWarningNodes int64
+	LocalHealthDegradedNodes int64
+	NodesMissingDiskTelemetry int64
 }
 
 func (s *Store) LaunchReadiness(ctx context.Context)(LaunchReadinessData,error){
@@ -121,7 +124,29 @@ func (s *Store) LaunchReadiness(ctx context.Context)(LaunchReadinessData,error){
 		    ) e
 		    WHERE n.status='active'
 		      AND n.role IN ('worker','ingress','probe','config_mirror')
-		      AND COALESCE((e->>'healthy')::boolean,false)=false
+		      AND jsonb_typeof(e->'healthy')='boolean'
+		      AND (e->>'healthy')::boolean=false
+		  ),
+		  (
+		    SELECT count(*)::bigint FROM nodes
+		    WHERE status='active'
+		      AND role IN ('worker','ingress','probe','config_mirror')
+		      AND local_health_bad_streak>=2
+		  ),
+		  (
+		    SELECT count(*)::bigint FROM nodes
+		    WHERE status='degraded'
+		      AND role IN ('worker','ingress','probe','config_mirror')
+		      AND local_health_bad_streak>=3
+		  ),
+		  (
+		    SELECT count(*)::bigint FROM nodes
+		    WHERE status='active'
+		      AND role IN ('worker','ingress','probe','config_mirror')
+		      AND NOT (
+		        jsonb_typeof(metadata->'disk_total_bytes')='number'
+		        AND jsonb_typeof(metadata->'disk_available_bytes')='number'
+		      )
 		  )
 	`).Scan(
 		&d.LatestManifestAt,&d.ActiveWorkers,&d.RoutableWorkers,&d.ActiveIngresses,
@@ -133,6 +158,7 @@ func (s *Store) LaunchReadiness(ctx context.Context)(LaunchReadinessData,error){
 		&d.SecurityExportPending,&d.SecurityExportDead,
 		&d.SecurityExportOldestPendingAt,&d.SecurityExportLastDeliveredAt,
 		&d.RuntimeManagedNodes,&d.RuntimeUpdaterReportedNodes,&d.RuntimeUpdaterUnhealthyNodes,
+		&d.LocalHealthWarningNodes,&d.LocalHealthDegradedNodes,&d.NodesMissingDiskTelemetry,
 	)
 	if err!=nil{return LaunchReadinessData{},fmt.Errorf("launch readiness: %w",err)}
 	return d,nil

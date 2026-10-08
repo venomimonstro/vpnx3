@@ -759,3 +759,33 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 4. проверить отказ downgrade N+1 → N;
 5. отключить Control Plane и подтвердить получение release metadata через mirror;
 6. выполнить trust-key rotation и подтвердить продолжение обновлений через новый root-authorized release key.
+
+
+## Спринт 23 — здоровье хостов и самовосстановление нод: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: процесс может быть жив, но хост или VPN worker уже непригоден для клиентского трафика. Такие ноды должны автоматически выводиться из маршрутизации только после устойчивого подтверждения и самостоятельно возвращаться после восстановления.
+
+Реализовано:
+
+- Node Agent публикует uptime, kernel release, размер и свободное место корневой файловой системы;
+- локальный worker health остаётся частью подписанного heartbeat;
+- критическим локальным состоянием считается worker_healthy=false или менее 5% свободного диска;
+- bad/good streak сохраняются в PostgreSQL и переживают перезапуск Control Plane;
+- одиночный плохой heartbeat не меняет маршрутизацию;
+- после 3 подряд плохих heartbeat active-нода переходит в degraded;
+- изменение ноды немедленно вызывает refresh signed Configuration Manifest;
+- после 2 подряд здоровых heartbeat нода, деградированная именно local-health автоматикой, возвращается в active;
+- manual/circuit-breaker/heartbeat-timeout деградации не снимаются этим механизмом;
+- отдельный admin endpoint и экран «Здоровье нод»;
+- видны worker health, disk free, uptime, kernel, streak и runtime updater status;
+- readiness предупреждает о предаварийных и degraded local-health состояниях;
+- системный incident открывается после debounce при auto-degraded нодах;
+- отдельный incident создаётся при ошибках signed runtime updater.
+
+Физическая приёмка:
+
+1. заполнить диск тестовой ноды до менее 5% и подтвердить bad streak → degraded;
+2. освободить диск и подтвердить два healthy heartbeat → active;
+3. остановить локальный VPN worker, оставив Node Agent живым, и проверить исключение ноды;
+4. подтвердить, что manual maintenance/quarantine не снимаются автоматикой;
+5. проверить refresh manifest и отсутствие новой маршрутизации на degraded ноду.

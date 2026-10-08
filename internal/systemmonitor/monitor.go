@@ -61,6 +61,12 @@ func (m *Monitor) run(parent context.Context){
 		{code:"audit_chain_invalid",severity:"critical",title:"Нарушена целостность audit chain",
 			summary:"verify_audit_chain() вернул false. Требуется немедленная проверка безопасности.",
 			failed:!data.AuditChainValid},
+		{code:"fleet_local_health_degraded",severity:"warning",title:"Ноды деградировали по локальному health",
+			summary:"Одна или несколько runtime-нод автоматически исключены после устойчивого локального отказа worker или критически малого диска.",
+			failed:data.LocalHealthDegradedNodes>0},
+		{code:"runtime_updater_unhealthy",severity:"warning",title:"Ошибки защищённого runtime updater",
+			summary:"Есть active runtime-ноды, где последняя проверка подписанного обновления завершилась ошибкой.",
+			failed:data.RuntimeUpdaterUnhealthyNodes>0},
 	}
 
 	if risk,riskErr:=m.store.NetworkRisk(ctx);riskErr==nil{

@@ -91,6 +91,7 @@ const sections=[
   ["dashboard","Обзор","analytics.read"],
   ["referrals","Рефералы","analytics.read"],
   ["networkrisk","Риск сети","analytics.read"],
+  ["fleet","Здоровье нод","analytics.read"],
   ["readiness","Готовность запуска","analytics.read"],
   ["issues","Требует внимания","analytics.read"],
   ["nodes","Сеть","nodes.read"],
@@ -272,6 +273,32 @@ async function networkrisk(){
       $("h2",{},"По странам"),
       c.length?table(["Страна","Нод","Ёмкость","Сессии","Доля"],c):$("div",{class:"empty"},"Нет active worker")
     )
+  ));
+}
+
+
+async function fleet(){
+  const d=await api("/api/v1/admin/fleet-health");
+  const s=d.summary||{};
+  const cards=$("div",{class:"kpi-grid"},
+    kpi("Нод в наблюдении",s.tracked_nodes||0),
+    kpi("Предупреждение",s.local_warning_nodes||0),
+    kpi("Авто-degraded",s.local_degraded_nodes||0),
+    kpi("Без данных диска",s.missing_disk_telemetry||0),
+    kpi("Updater с ошибкой",s.updater_unhealthy_nodes||0)
+  );
+  const rows=(d.nodes||[]).map(n=>[
+    n.name,badge(n.status),n.role,n.provider||"—",n.country_code||"—",
+    n.worker_healthy===undefined?"—":badge(n.worker_healthy?"active":"failed"),
+    n.disk_total_bytes?Number(n.disk_free_percent||0).toFixed(1)+"%":"—",
+    n.uptime_seconds?Math.floor(n.uptime_seconds/3600)+" ч":"—",
+    n.local_bad_streak||0,n.local_good_streak||0,
+    (n.runtime_updater_unhealthy||0)+"/"+(n.runtime_updater_count||0),
+    n.kernel_release||"—",dt(n.last_heartbeat_at)
+  ]);
+  return sectionFrame("Здоровье нод",$("div",{class:"stack"},
+    cards,
+    table(["Нода","Статус","Роль","Провайдер","Страна","Worker","Диск свободен","Uptime","Bad","Good","Updater ошибки/всего","Kernel","Heartbeat"],rows)
   ));
 }
 
@@ -1092,7 +1119,7 @@ async function renderSection(){
   const target=document.getElementById("section");if(!target)return;
   target.replaceChildren($("div",{class:"card"},"Загрузка…"));
   try{
-    const fn={dashboard,referrals,networkrisk,readiness,issues,nodes,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
+    const fn={dashboard,referrals,networkrisk,fleet,readiness,issues,nodes,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
     target.replaceChildren(await fn());
   }catch(e){target.replaceChildren(sectionError("VPNX3",e))}
 }

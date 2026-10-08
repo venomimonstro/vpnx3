@@ -241,6 +241,19 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 		}
 	}
 
+	if data.LocalHealthDegradedNodes>0{
+		add("fleet_local_health","warning","Здоровье хостов","Есть ноды, автоматически выведенные из маршрутизации после устойчивого локального отказа.")
+	}else if data.LocalHealthWarningNodes>0{
+		add("fleet_local_health","warning","Здоровье хостов","Есть active-ноды с двумя подряд плохими локальными наблюдениями; следующий плохой heartbeat переведёт их в degraded.")
+	}else{
+		add("fleet_local_health","ok","Здоровье хостов","Устойчивых локальных отказов active runtime-нод не обнаружено.")
+	}
+	if data.NodesMissingDiskTelemetry>0{
+		add("fleet_disk_telemetry","warning","Контроль диска","Не все active runtime-ноды публикуют данные о свободном месте.")
+	}else if data.RuntimeManagedNodes>0{
+		add("fleet_disk_telemetry","ok","Контроль диска","Все active runtime-ноды публикуют данные о диске.")
+	}
+
 	if data.ActiveIngresses<1{
 		add("browser_ingress","warning","Browser ingress","Нет active ingress; браузерные расширения не смогут подключаться.")
 	}else{
@@ -285,6 +298,9 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			"runtime_managed_nodes":data.RuntimeManagedNodes,
 			"runtime_updater_reported_nodes":data.RuntimeUpdaterReportedNodes,
 			"runtime_updater_unhealthy_nodes":data.RuntimeUpdaterUnhealthyNodes,
+			"local_health_warning_nodes":data.LocalHealthWarningNodes,
+			"local_health_degraded_nodes":data.LocalHealthDegradedNodes,
+			"nodes_missing_disk_telemetry":data.NodesMissingDiskTelemetry,
 		},
 	})
 }
