@@ -25,6 +25,7 @@ var allowedBuildTargets=map[string]bool{
 	"config_mirror_linux_amd64":true,
 	"runtime_updater_linux_amd64":true,
 	"backup_replicator_linux_amd64":true,
+	"wal_replicator_linux_amd64":true,
 }
 
 type Release struct {

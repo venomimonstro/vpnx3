@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/venomimonstro/vpnx3/internal/artifactstorage"
@@ -195,6 +197,34 @@ func (s *Server) handleLaunchReadiness(w http.ResponseWriter,r *http.Request){
 			add("backup_offsite","warning","Внешняя резервная копия","Последняя проверенная off-site копия старше 30 часов.")
 		default:
 			add("backup_offsite","failed","Внешняя резервная копия","Последняя проверенная off-site копия старше 36 часов.")
+		}
+	}
+
+	if s.cfg.WalOffsiteStatusFile=="" {
+		add("pitr_wal","warning","Непрерывное восстановление БД","WAL off-site marker не настроен; RPO ограничен периодом полного backup.")
+	}else if stat,err:=os.Stat(s.cfg.WalOffsiteStatusFile);err!=nil {
+		add("pitr_wal","failed","Непрерывное восстановление БД","Нет подтверждения внешней репликации зашифрованного WAL.")
+	}else{
+		age:=time.Since(stat.ModTime().UTC())
+		backlog:=-1
+		if raw,err:=os.ReadFile(s.cfg.WalOffsiteStatusFile);err==nil{
+			for _,line:=range strings.Split(string(raw),"\n"){
+				if strings.HasPrefix(line,"backlog_files="){
+					if n,err:=strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line,"backlog_files=")));err==nil{backlog=n}
+				}
+			}
+		}
+		switch{
+		case age>30*time.Minute:
+			add("pitr_wal","failed","Непрерывное восстановление БД","WAL off-site replication не подтверждалась больше 30 минут.")
+		case backlog>128:
+			add("pitr_wal","failed","Непрерывное восстановление БД","Очередь WAL превышает 128 сегментов; RPO быстро ухудшается.")
+		case age>10*time.Minute||backlog>16:
+			add("pitr_wal","warning","Непрерывное восстановление БД","Есть задержка WAL replication или заметная очередь сегментов.")
+		case backlog<0:
+			add("pitr_wal","warning","Непрерывное восстановление БД","WAL marker свежий, но backlog не удалось прочитать.")
+		default:
+			add("pitr_wal","ok","Непрерывное восстановление БД","Зашифрованный WAL регулярно реплицируется во внешнее хранилище.")
 		}
 	}
 

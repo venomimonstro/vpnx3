@@ -56,6 +56,7 @@ type Config struct {
 	RegistrationRateKey    string
 	BackupStatusFile       string
 	OffsiteBackupStatusFile string
+	WalOffsiteStatusFile   string
 	SecurityExportURL      string
 	SecurityExportSigningKey string
 	AlertWebhookURL         string
@@ -104,6 +105,7 @@ func Load() (Config, error) {
 		RegistrationRateKey:    strings.TrimSpace(os.Getenv("VPNX3_REGISTRATION_RATE_KEY")),
 		BackupStatusFile:       strings.TrimSpace(os.Getenv("VPNX3_BACKUP_STATUS_FILE")),
 		OffsiteBackupStatusFile: strings.TrimSpace(os.Getenv("VPNX3_BACKUP_OFFSITE_STATUS_FILE")),
+		WalOffsiteStatusFile:    strings.TrimSpace(os.Getenv("VPNX3_WAL_OFFSITE_STATUS_FILE")),
 		SecurityExportURL:      strings.TrimSpace(os.Getenv("VPNX3_SECURITY_EXPORT_URL")),
 		SecurityExportSigningKey: strings.TrimSpace(os.Getenv("VPNX3_SECURITY_EXPORT_SIGNING_KEY")),
 		AlertWebhookURL:         strings.TrimSpace(os.Getenv("VPNX3_ALERT_WEBHOOK_URL")),
@@ -212,6 +214,9 @@ func Load() (Config, error) {
 	}
 	if cfg.OffsiteBackupStatusFile!="" && !strings.HasPrefix(cfg.OffsiteBackupStatusFile,"/") {
 		return Config{}, fmt.Errorf("VPNX3_BACKUP_OFFSITE_STATUS_FILE must be an absolute path")
+	}
+	if cfg.WalOffsiteStatusFile!="" && !strings.HasPrefix(cfg.WalOffsiteStatusFile,"/") {
+		return Config{}, fmt.Errorf("VPNX3_WAL_OFFSITE_STATUS_FILE must be an absolute path")
 	}
 	securityExportConfigured:=cfg.SecurityExportURL!=""||cfg.SecurityExportSigningKey!=""
 	if securityExportConfigured {
