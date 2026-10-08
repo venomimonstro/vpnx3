@@ -112,3 +112,11 @@ func (c *Client) persist(env Envelope)error{
 	if err:=os.Rename(tmp,c.statePath);err!=nil{return err}
 	return nil
 }
+
+
+func LKGUsable(p Payload,now time.Time,grace time.Duration)bool{
+	if grace<0{return false}
+	if grace>2*time.Hour{grace=2*time.Hour}
+	if p.GeneratedAt.After(now.Add(2*time.Minute)){return false}
+	return p.ExpiresAt.Add(grace).After(now)
+}

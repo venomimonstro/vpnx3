@@ -26,6 +26,9 @@ func main(){
 	verifier,err:=proxylease.NewVerifier(publicKey)
 	if err!=nil{logger.Error("proxy verifier failed","error",err);os.Exit(1)}
 	srv:=ingressproxy.New(env("VPNX3_INGRESS_ADDR",":8443"),logger,verifier)
+	revocationGrace:=durationEnv("VPNX3_REVOCATION_LKG_GRACE",30*time.Minute)
+	if revocationGrace<0{revocationGrace=0}
+	if revocationGrace>2*time.Hour{revocationGrace=2*time.Hour}
 
 	controlURL:=strings.TrimSpace(os.Getenv("VPNX3_CONTROL_URL"))
 	sources:=make([]string,0)
@@ -51,8 +54,13 @@ func main(){
 	if stored,ok,loadErr:=revClient.LoadStored();loadErr!=nil{
 		logger.Error("stored revocation snapshot invalid","error",loadErr);os.Exit(1)
 	}else if ok{
-		srv.ApplyRevokedDeviceHashes(stored.RevokedDeviceHashes)
-		haveSnapshot=true
+		if !revocation.LKGUsable(stored,time.Now().UTC(),revocationGrace){
+			logger.Warn("stored revocation snapshot is outside LKG grace","version",stored.Version,"expires_at",stored.ExpiresAt)
+		}else{
+			srv.ApplyRevokedDeviceHashes(stored.RevokedDeviceHashes)
+			srv.SetRevocationSnapshot(stored.Version,stored.ExpiresAt,stored.ExpiresAt.Add(revocationGrace))
+			haveSnapshot=true
+		}
 		logger.Info("stored revocation snapshot loaded","version",stored.Version,"revoked",len(stored.RevokedDeviceHashes))
 	}
 	initialCtx,initialCancel:=context.WithTimeout(context.Background(),10*time.Second)
@@ -60,6 +68,7 @@ func main(){
 	initialCancel()
 	if fetchErr==nil{
 		srv.ApplyRevokedDeviceHashes(initial.RevokedDeviceHashes)
+		srv.SetRevocationSnapshot(initial.Version,initial.ExpiresAt,initial.ExpiresAt.Add(revocationGrace))
 		haveSnapshot=true
 		logger.Info("fresh revocation snapshot loaded","version",initial.Version,"revoked",len(initial.RevokedDeviceHashes))
 	}else if !haveSnapshot{
@@ -82,9 +91,15 @@ func main(){
 				snapshot,err:=revClient.Fetch(ctx,time.Now().UTC())
 				cancel()
 				if err!=nil{
-					logger.Warn("revocation snapshot unavailable; keeping LKG deny-list","error",err)
+					if !srv.RevocationUsable(time.Now().UTC()){
+						closed:=srv.CloseAllConnections()
+						logger.Error("revocation LKG hard-expired; proxy auth blocked","closed_connections",closed,"error",err)
+					}else{
+						logger.Warn("revocation snapshot unavailable; keeping bounded LKG deny-list","error",err)
+					}
 					continue
 				}
+				srv.SetRevocationSnapshot(snapshot.Version,snapshot.ExpiresAt,snapshot.ExpiresAt.Add(revocationGrace))
 				closed:=srv.ApplyRevokedDeviceHashes(snapshot.RevokedDeviceHashes)
 				if closed>0{logger.Warn("revoked browser tunnels closed","connections",closed,"version",snapshot.Version)}
 			}

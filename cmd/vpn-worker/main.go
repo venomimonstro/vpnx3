@@ -54,6 +54,9 @@ func main() {
 
 	addr:=env("VPNX3_WORKER_AUTH_ADDR","127.0.0.1:9090")
 	srv:=workerauth.New(addr,logger,verifier,manager,adapter)
+	revocationGrace:=durationEnv("VPNX3_REVOCATION_LKG_GRACE",30*time.Minute)
+	if revocationGrace<0{revocationGrace=0}
+	if revocationGrace>2*time.Hour{revocationGrace=2*time.Hour}
 
 	runCtx,runCancel:=context.WithCancel(context.Background())
 	defer runCancel()
@@ -89,7 +92,9 @@ func main() {
 			logger.Error("stored revocation snapshot invalid","error",loadErr)
 			os.Exit(1)
 		}else if ok{
-			if _,applyErr:=manager.ApplyRevokedDeviceHashes(context.Background(),stored.RevokedDeviceHashes);applyErr!=nil{
+			if !revocation.LKGUsable(stored,time.Now().UTC(),revocationGrace){
+				logger.Warn("stored revocation snapshot is outside LKG grace","version",stored.Version,"expires_at",stored.ExpiresAt)
+			}else if _,applyErr:=manager.ApplyRevokedDeviceHashes(context.Background(),stored.RevokedDeviceHashes);applyErr!=nil{
 				logger.Error("apply stored revocation snapshot failed","error",applyErr)
 				os.Exit(1)
 			}
@@ -106,6 +111,7 @@ func main() {
 				os.Exit(1)
 			}
 			haveSnapshot=true
+			srv.SetRevocationSnapshot(initial.Version,initial.ExpiresAt,initial.ExpiresAt.Add(revocationGrace))
 			logger.Info("fresh revocation snapshot loaded","version",initial.Version,"revoked",len(initial.RevokedDeviceHashes))
 		}else if !haveSnapshot{
 			logger.Error("no trusted revocation snapshot available","error",fetchErr)
@@ -123,9 +129,19 @@ func main() {
 				defer cancel()
 				snapshot,err:=revClient.Fetch(ctx,time.Now().UTC())
 				if err!=nil{
-					logger.Warn("revocation snapshot unavailable; keeping LKG deny-list","error",err)
+					_,_,usableUntil,_,usable:=srv.RevocationStateForRuntime(time.Now().UTC())
+					if !usable{
+						closeCtx,closeCancel:=context.WithTimeout(runCtx,10*time.Second)
+						closed,closeErr:=manager.CloseAll(closeCtx)
+						closeCancel()
+						if closeErr!=nil{logger.Error("close sessions after revocation hard-expiry failed","error",closeErr)}
+						logger.Error("revocation LKG hard-expired; new sessions blocked","closed_sessions",closed,"usable_until",usableUntil,"error",err)
+					}else{
+						logger.Warn("revocation snapshot unavailable; keeping bounded LKG deny-list","usable_until",usableUntil,"error",err)
+					}
 					return
 				}
+				srv.SetRevocationSnapshot(snapshot.Version,snapshot.ExpiresAt,snapshot.ExpiresAt.Add(revocationGrace))
 				closed,err:=manager.ApplyRevokedDeviceHashes(ctx,snapshot.RevokedDeviceHashes)
 				if err!=nil{
 					logger.Warn("apply revocation snapshot failed","error",err)

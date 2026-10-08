@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,6 +27,9 @@ type Server struct {
 	maxPerLease int
 	revokedDeviceHashes map[string]struct{}
 	activeConns map[string]map[net.Conn]struct{}
+	revocationVersion int64
+	revocationExpires time.Time
+	revocationUsableUntil time.Time
 }
 
 func New(addr string,logger *slog.Logger,verifier *proxylease.Verifier)*Server{
@@ -46,10 +50,23 @@ func New(addr string,logger *slog.Logger,verifier *proxylease.Verifier)*Server{
 
 func (s *Server) ServeHTTP(w http.ResponseWriter,r *http.Request){
 	if r.Method==http.MethodGet && r.URL.Path=="/__vpnx3/health" && r.Header.Get("Proxy-Authorization")=="" {
+		now:=time.Now().UTC()
+		s.mu.Lock()
+		version:=s.revocationVersion
+		expires:=s.revocationExpires
+		usableUntil:=s.revocationUsableUntil
+		s.mu.Unlock()
+		fresh:=version>0&&expires.After(now)
+		usable:=version>0&&usableUntil.After(now)
 		w.Header().Set("Content-Type","application/json")
 		w.Header().Set("Cache-Control","no-store")
-		w.WriteHeader(http.StatusOK)
-		_,_=w.Write([]byte(`{"status":"ok","service":"browser-ingress"}`))
+		if !fresh{w.WriteHeader(http.StatusServiceUnavailable)}else{w.WriteHeader(http.StatusOK)}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":map[bool]string{true:"ok",false:"degraded"}[fresh],
+			"service":"browser-ingress","healthy":fresh,
+			"revocation_version":version,"revocation_expires_at":expires,
+			"revocation_usable_until":usableUntil,"revocation_fresh":fresh,"revocation_usable":usable,
+		})
 		return
 	}
 	claims,ok:=s.authorize(w,r)
@@ -64,6 +81,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter,r *http.Request){
 }
 
 func (s *Server) authorize(w http.ResponseWriter,r *http.Request)(proxylease.Claims,bool){
+	now:=time.Now().UTC()
+	s.mu.Lock()
+	revocationUsable:=s.revocationVersion>0&&s.revocationUsableUntil.After(now)
+	s.mu.Unlock()
+	if !revocationUsable{
+		http.Error(w,"revocation state unavailable",http.StatusServiceUnavailable)
+		return proxylease.Claims{},false
+	}
 	raw:=strings.TrimSpace(r.Header.Get("Proxy-Authorization"))
 	if !strings.HasPrefix(raw,"Basic "){
 		w.Header().Set("Proxy-Authenticate",`Basic realm="VPNX3"`)
@@ -243,6 +268,33 @@ func (s *Server) ApplyRevokedDeviceHashes(hashes []string)int{
 	s.revokedDeviceHashes=next
 	s.mu.Unlock()
 
+	for _,conn:=range toClose{_ = conn.Close()}
+	return len(toClose)
+}
+
+
+func (s *Server) SetRevocationSnapshot(version int64,expiresAt,usableUntil time.Time){
+	s.mu.Lock()
+	s.revocationVersion=version
+	s.revocationExpires=expiresAt.UTC()
+	s.revocationUsableUntil=usableUntil.UTC()
+	s.mu.Unlock()
+}
+
+func (s *Server) RevocationUsable(now time.Time)bool{
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.revocationVersion>0&&s.revocationUsableUntil.After(now)
+}
+
+func (s *Server) CloseAllConnections()int{
+	s.mu.Lock()
+	toClose:=make([]net.Conn,0)
+	for hash,connections:=range s.activeConns{
+		for conn:=range connections{toClose=append(toClose,conn)}
+		delete(s.activeConns,hash)
+	}
+	s.mu.Unlock()
 	for _,conn:=range toClose{_ = conn.Close()}
 	return len(toClose)
 }

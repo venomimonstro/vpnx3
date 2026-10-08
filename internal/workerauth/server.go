@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/venomimonstro/vpnx3/internal/accesslease"
@@ -18,6 +19,10 @@ type Server struct {
 	verifier *accesslease.Verifier
 	sessions *sessions.Manager
 	adapter  transport.Adapter
+	revMu sync.RWMutex
+	revocationVersion int64
+	revocationExpires time.Time
+	revocationUsableUntil time.Time
 }
 
 func New(addr string,logger *slog.Logger,verifier *accesslease.Verifier,manager *sessions.Manager,adapter transport.Adapter) *Server {
@@ -35,20 +40,50 @@ func New(addr string,logger *slog.Logger,verifier *accesslease.Verifier,manager 
 	return s
 }
 
+func (s *Server) SetRevocationSnapshot(version int64,expiresAt,usableUntil time.Time){
+	s.revMu.Lock()
+	s.revocationVersion=version
+	s.revocationExpires=expiresAt.UTC()
+	s.revocationUsableUntil=usableUntil.UTC()
+	s.revMu.Unlock()
+}
+
+func (s *Server) revocationState(now time.Time)(version int64,expires,usableUntil time.Time,fresh,usable bool){
+	s.revMu.RLock()
+	version=s.revocationVersion
+	expires=s.revocationExpires
+	usableUntil=s.revocationUsableUntil
+	s.revMu.RUnlock()
+	fresh=version>0&&expires.After(now)
+	usable=version>0&&usableUntil.After(now)
+	return
+}
+
 func (s *Server) handleStatus(w http.ResponseWriter,r *http.Request) {
 	ctx,cancel:=context.WithTimeout(r.Context(),2*time.Second)
 	defer cancel()
 	err:=s.adapter.Healthy(ctx)
-	writeJSON(w,http.StatusOK,map[string]any{
-		"status":"ok",
+	now:=time.Now().UTC()
+	version,expires,usableUntil,fresh,usable:=s.revocationState(now)
+	status:=http.StatusOK
+	if err!=nil||!fresh{status=http.StatusServiceUnavailable}
+	writeJSON(w,status,map[string]any{
+		"status":map[bool]string{true:"ok",false:"degraded"}[err==nil&&fresh],
 		"service":"vpn-worker",
 		"sessions":s.sessions.Count(),
 		"transport":s.adapter.Name(),
-		"healthy":err==nil,
+		"healthy":err==nil&&fresh,
+		"revocation_version":version,
+		"revocation_expires_at":expires,
+		"revocation_usable_until":usableUntil,
+		"revocation_fresh":fresh,
+		"revocation_usable":usable,
 	})
 }
 
 func (s *Server) handleAuthorize(w http.ResponseWriter,r *http.Request) {
+	_,_,_,_,usable:=s.revocationState(time.Now().UTC())
+	if !usable{writeJSON(w,http.StatusServiceUnavailable,map[string]string{"error":"revocation_state_unavailable"});return}
 	var env accesslease.Envelope
 	decoder:=json.NewDecoder(http.MaxBytesReader(w,r.Body,64<<10))
 	decoder.DisallowUnknownFields()
@@ -62,6 +97,8 @@ func (s *Server) handleAuthorize(w http.ResponseWriter,r *http.Request) {
 }
 
 func (s *Server) handleCreateSession(w http.ResponseWriter,r *http.Request) {
+	_,_,_,_,usable:=s.revocationState(time.Now().UTC())
+	if !usable{writeJSON(w,http.StatusServiceUnavailable,map[string]string{"error":"revocation_state_unavailable"});return}
 	var req struct {
 		Lease accesslease.Envelope `json:"lease"`
 		ClientPublicKey string `json:"client_public_key"`
@@ -115,4 +152,9 @@ func writeJSON(w http.ResponseWriter,status int,payload any) {
 	w.Header().Set("X-Content-Type-Options","nosniff")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+
+func (s *Server) RevocationStateForRuntime(now time.Time)(version int64,expires,usableUntil time.Time,fresh,usable bool){
+	return s.revocationState(now)
 }

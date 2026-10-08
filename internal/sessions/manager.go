@@ -209,6 +209,23 @@ func (m *Manager) ApplyRevokedDeviceHashes(ctx context.Context,hashes []string)(
 	return closed,nil
 }
 
+func (m *Manager) CloseAll(ctx context.Context) (int,error) {
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+
+	m.mu.RLock()
+	ids:=make([]string,0,len(m.sessions))
+	for id:=range m.sessions{ids=append(ids,id)}
+	m.mu.RUnlock()
+
+	closed:=0
+	for _,id:=range ids{
+		if err:=m.closeLocked(ctx,id);err!=nil{return closed,err}
+		closed++
+	}
+	return closed,nil
+}
+
 func (m *Manager) Sweep(ctx context.Context,now time.Time) {
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
