@@ -14,8 +14,10 @@ for name,text in [("TunnelManager",manager),("VPNRepository",repository)]:
     if "wgQuickConfig" in text or "PrivateKey =" in text:
         errors.append(f"{name} serializes WireGuard private configuration outside PacketTunnel")
 
-if '"keyMode"' not in manager or '"sessionID"' not in manager:
-    errors.append("TunnelManager provider configuration is missing safe session/key references")
+if '"keyMode"' not in repository or '"sessionID"' not in repository:
+    errors.append("PreparedIOSConnection provider configuration is missing safe session/key references")
+if "providerConfiguration=next.providerConfiguration" not in manager.replace(" ",""):
+    errors.append("TunnelManager must pass only PreparedIOSConnection provider configuration")
 
 if "PersonalKeyStore().ensure().privateKey" not in provider:
     errors.append("PacketTunnel does not load personal private key locally")
