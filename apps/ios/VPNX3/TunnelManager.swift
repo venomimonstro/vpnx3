@@ -17,6 +17,10 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var referral: IOSReferralStatus?
     @Published private(set) var referralBusy = false
     @Published private(set) var referralMessage: String?
+    @Published private(set) var updateRequired = false
+    @Published private(set) var updateBlocked = false
+    @Published private(set) var availableVersion:String?
+    @Published private(set) var updateMessage:String?
 
     private var manager: NETunnelProviderManager?
     private let personalKeys = PersonalKeyStore()
@@ -72,6 +76,7 @@ final class TunnelManager: ObservableObject {
             }
             await refreshAccount()
             await refreshReferral()
+            await refreshUpdatePolicy()
         } catch {
             errorMessage="Не удалось прочитать настройки VPN"
         }
@@ -79,6 +84,10 @@ final class TunnelManager: ObservableObject {
 
     func connect() async {
         guard !isBusy else{return}
+        if updateRequired{
+            errorMessage=updateMessage ?? "Требуется обновить приложение"
+            return
+        }
         isBusy=true;defer{isBusy=false};errorMessage=nil
         var prepared:PreparedIOSConnection?
         do{
@@ -117,6 +126,20 @@ final class TunnelManager: ObservableObject {
         proto.providerConfiguration=nil
         manager?.protocolConfiguration=proto
         try? await manager?.saveAsync()
+    }
+
+    func refreshUpdatePolicy() async {
+        do{
+            let registration=try await IOSControlClient().ensureRegistered()
+            let decision=try await IOSControlClient().releaseDecision(deviceID:registration.deviceID)
+            updateRequired=decision.required
+            updateBlocked=decision.blocked
+            availableVersion=decision.availableVersion
+            updateMessage=decision.message
+        }catch{
+            // Update policy is non-destructive while unavailable. Existing tunnel
+            // and last known app version continue to work.
+        }
     }
 
     func refreshAccount() async {

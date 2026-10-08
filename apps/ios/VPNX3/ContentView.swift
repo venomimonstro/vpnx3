@@ -18,6 +18,24 @@ struct ContentView: View {
                     Text("Защищённое подключение без лишних настроек")
                         .foregroundStyle(.secondary)
 
+                    if tunnel.updateRequired {
+                        VStack(alignment:.leading,spacing:6){
+                            Text(tunnel.updateBlocked ? "Эта версия отключена" : "Требуется обновление")
+                                .font(.headline).foregroundStyle(.red)
+                            Text(tunnel.updateMessage ?? "Установите актуальную версию VPNX3.")
+                                .font(.footnote)
+                            if let version=tunnel.availableVersion{
+                                Text("Актуальная версия: \(version)").font(.footnote)
+                            }
+                        }
+                        .padding()
+                        .frame(maxWidth:.infinity,alignment:.leading)
+                        .background(.thinMaterial,in:RoundedRectangle(cornerRadius:16))
+                    } else if let version=tunnel.availableVersion {
+                        Text("Доступно обновление: \(version)")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+
                     VStack(spacing:12){
                         Text(tunnel.statusTitle).font(.title2.bold())
                         Text(tunnel.statusHint)
@@ -42,13 +60,15 @@ struct ContentView: View {
                             Text(
                                 tunnel.isConnected
                                 ? "Отключить защиту"
-                                : (tunnel.hasUsableAccess ? "Подключить" : "Выбрать тариф")
+                                : (tunnel.updateRequired
+                                    ? "Требуется обновление"
+                                    : (tunnel.hasUsableAccess ? "Подключить" : "Выбрать тариф"))
                             )
                             .frame(maxWidth:.infinity)
                             .padding(.vertical,8)
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(tunnel.isBusy)
+                        .disabled(tunnel.isBusy || (tunnel.updateRequired && !tunnel.isConnected))
                     }
                     .padding()
                     .background(.thinMaterial,in:RoundedRectangle(cornerRadius:16))
@@ -85,7 +105,12 @@ struct ContentView: View {
             .refreshable { await tunnel.refreshAccount() }
         }
         .onChange(of:scenePhase){phase in
-            if phase == .active { Task{await tunnel.refreshAccount()} }
+            if phase == .active {
+                Task{
+                    await tunnel.refreshAccount()
+                    await tunnel.refreshUpdatePolicy()
+                }
+            }
         }
         .sheet(isPresented:$showPairing){
             NavigationStack {

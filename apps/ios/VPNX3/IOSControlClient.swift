@@ -90,6 +90,18 @@ final class IOSControlClient {
         }
     }
 
+    func releaseDecision(deviceID:String) async throws->IOSUpdateDecision{
+        guard !runtime.releasePublicKey.isEmpty else{throw IOSControlError.runtimeNotConfigured}
+        guard let url=URL(string:"/api/v1/releases/policy?target=ios_ipa",relativeTo:runtime.controlURL)?.absoluteURL else{
+            throw IOSControlError.runtimeNotConfigured
+        }
+        let (data,response)=try await URLSession.shared.data(from:url)
+        guard (response as? HTTPURLResponse)?.statusCode==200 else{throw IOSControlError.invalidResponse}
+        let current=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "0"
+        return try IOSReleasePolicyVerifier(publicKeyBase64:runtime.releasePublicKey)
+            .decision(envelopeData:data,target:"ios_ipa",currentVersion:current,deviceID:deviceID)
+    }
+
     func plans() async throws->[IOSPlan]{
         guard let url=URL(string:"/api/v1/plans",relativeTo:runtime.controlURL)?.absoluteURL else{throw IOSControlError.runtimeNotConfigured}
         let (data,response)=try await URLSession.shared.data(from:url)
