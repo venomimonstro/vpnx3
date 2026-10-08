@@ -57,7 +57,8 @@ with os.fdopen(fd,"w") as f:
 os.replace(tmp,path)
 PY
 
-cat >/etc/vpnx3-runtime-updater.env <<EOF
+install -d -m 0700 -o root -g root /etc/vpnx3-runtime-updater
+cat >"/etc/vpnx3-runtime-updater/$TARGET.env" <<EOF
 VPNX3_CONTROL_URL=$CONTROL_URL
 VPNX3_TRUST_ROOT_PUBLIC_KEY=$TRUST_ROOT
 VPNX3_RELEASE_SOURCES=$RELEASE_SOURCES
@@ -65,9 +66,9 @@ VPNX3_UPDATE_TARGET=$TARGET
 VPNX3_UPDATE_STATE_PATH=$STATE
 VPNX3_UPDATE_HEALTH_URL=$HEALTH_URL
 EOF
-chmod 0600 /etc/vpnx3-runtime-updater.env
+chmod 0600 "/etc/vpnx3-runtime-updater/$TARGET.env"
 
-cat >/etc/systemd/system/vpnx3-runtime-updater.service <<'EOF'
+cat >/etc/systemd/system/vpnx3-runtime-updater@.service <<'EOF'
 [Unit]
 Description=VPNX3 Signed Runtime Update Check
 After=network-online.target
@@ -77,7 +78,7 @@ Wants=network-online.target
 Type=oneshot
 User=root
 Group=root
-EnvironmentFile=/etc/vpnx3-runtime-updater.env
+EnvironmentFile=/etc/vpnx3-runtime-updater/%i.env
 ExecStart=/usr/local/bin/vpnx3-runtime-updater
 NoNewPrivileges=true
 PrivateTmp=true
@@ -93,7 +94,7 @@ ReadWritePaths=/usr/local/bin /var/lib/vpnx3-updater
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 EOF
 
-cat >/etc/systemd/system/vpnx3-runtime-updater.timer <<EOF
+cat >/etc/systemd/system/vpnx3-runtime-updater@.timer <<EOF
 [Unit]
 Description=VPNX3 Signed Runtime Update Timer
 [Timer]
@@ -101,11 +102,11 @@ OnBootSec=5min
 OnUnitActiveSec=$INTERVAL min
 RandomizedDelaySec=5min
 Persistent=true
-Unit=vpnx3-runtime-updater.service
+Unit=vpnx3-runtime-updater@%i.service
 [Install]
 WantedBy=timers.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now vpnx3-runtime-updater.timer
+systemctl enable --now "vpnx3-runtime-updater@$TARGET.timer"
 echo "VPNX3 runtime updater enabled for $TARGET from baseline $CURRENT_VERSION"
