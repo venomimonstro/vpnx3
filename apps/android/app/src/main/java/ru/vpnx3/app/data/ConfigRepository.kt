@@ -9,9 +9,10 @@ class ConfigRepository(
     private val api: ControlApi,
     private val state: LocalState,
     publicKey: String,
-    bootstrapUrls: String = ""
+    bootstrapUrls: String = "",
+    private val trustRepository:TrustRepository? = null
 ) {
-    private val verifier = ConfigVerifier(publicKey)
+    private val legacyVerifier = publicKey.takeIf{it.isNotBlank()}?.let(::ConfigVerifier)
     private val bootstrap = bootstrapUrls
         .split(',', ';')
         .map { it.trim() }
@@ -41,19 +42,25 @@ class ConfigRepository(
         val cached = state.configEnvelope
             ?: throw IllegalStateException("No valid configuration available", lastError)
 
-        return verifier.verify(
-            rawEnvelope = cached,
-            minimumVersion = state.highestConfigVersion,
-            now = now
-        )
+        return verifyEnvelope(cached,state.highestConfigVersion,now)
     }
 
     private fun accept(raw:String,minimum:Long,now:Instant):VerifiedConfig {
-        val verified=verifier.verify(raw,minimum,now)
+        val verified=verifyEnvelope(raw,minimum,now)
         state.configEnvelope=raw
         state.highestConfigVersion=maxOf(minimum,verified.version)
         state.configMirrorUrls=extractMirrorUrls(verified.payload)
         return verified
+    }
+
+    private fun verifyEnvelope(raw:String,minimum:Long,now:Instant):VerifiedConfig {
+        val trust=trustRepository?.refreshOrFallback(now)
+        if(trust!=null){
+            return ConfigVerifier.verifyWithKeys(
+                raw,minimum,now,trust.verificationKeys("config")
+            )
+        }
+        return requireNotNull(legacyVerifier){"No configuration trust source"}.verify(raw,minimum,now)
     }
 
     private fun extractMirrorUrls(payload:JSONObject):List<String> {

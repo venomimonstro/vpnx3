@@ -53,6 +53,18 @@ class LocalState(context: Context) {
         get() = prefs.getString("config_envelope", null)
         set(value) { prefs.edit().putString("config_envelope", value).apply() }
 
+    var trustBundleEnvelope: String?
+        get() = prefs.getString("trust_bundle_envelope", null)
+        set(value) { prefs.edit().putString("trust_bundle_envelope", value).apply() }
+
+    var highestTrustBundleVersion: Long
+        get() = prefs.getLong("highest_trust_bundle_version", 0L)
+        set(value) {
+            check(prefs.edit().putLong("highest_trust_bundle_version", value).commit()) {
+                "Unable to persist trust bundle version"
+            }
+        }
+
     var highestConfigVersion: Long
         get() = prefs.getLong("highest_config_version", 0L)
         set(value) { prefs.edit().putLong("highest_config_version", value).apply() }

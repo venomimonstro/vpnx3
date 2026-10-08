@@ -47,6 +47,10 @@ android {
             .orElse(providers.environmentVariable("VPNX3_CONFIG_PUBLIC_KEY"))
             .orElse("")
             .get()
+        val trustRootPublicKey = providers.gradleProperty("VPNX3_TRUST_ROOT_PUBLIC_KEY")
+            .orElse(providers.environmentVariable("VPNX3_TRUST_ROOT_PUBLIC_KEY"))
+            .orElse("")
+            .get()
         val releasePublicKey = providers.gradleProperty("VPNX3_RELEASE_PUBLIC_KEY")
             .orElse(providers.environmentVariable("VPNX3_RELEASE_PUBLIC_KEY"))
             .orElse("")
@@ -61,6 +65,7 @@ android {
 
         buildConfigField("String", "CONTROL_URL", "\"$controlUrl\"")
         buildConfigField("String", "CONFIG_PUBLIC_KEY", "\"$configPublicKey\"")
+        buildConfigField("String", "TRUST_ROOT_PUBLIC_KEY", "\"$trustRootPublicKey\"")
         buildConfigField("String", "RELEASE_PUBLIC_KEY", "\"$releasePublicKey\"")
         buildConfigField(
             "String",
@@ -72,8 +77,8 @@ android {
             require(controlUrl.startsWith("https://") && !controlUrl.contains("127.0.0.1")) {
                 "Release build requires VPNX3_CLIENT_CONTROL_URL or VPNX3_CONTROL_URL with public HTTPS endpoint"
             }
-            require(configPublicKey.isNotBlank()) {
-                "Release build requires VPNX3_CONFIG_PUBLIC_KEY"
+            require(trustRootPublicKey.isNotBlank() || configPublicKey.isNotBlank()) {
+                "Release build requires VPNX3_TRUST_ROOT_PUBLIC_KEY or legacy VPNX3_CONFIG_PUBLIC_KEY"
             }
             require(bootstrapList.all {
                 it.startsWith("https://") &&

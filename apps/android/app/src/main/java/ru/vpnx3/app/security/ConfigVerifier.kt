@@ -24,14 +24,26 @@ class ConfigVerifier(publicKeyBase64Url: String) {
         require(publicKey.size == 32) { "Configuration public key must contain 32 bytes" }
     }
 
-    fun verify(rawEnvelope: String, minimumVersion: Long, now: Instant): VerifiedConfig {
+    fun verify(rawEnvelope: String, minimumVersion: Long, now: Instant): VerifiedConfig =
+        verifyWithKeys(rawEnvelope,minimumVersion,now,mapOf(keyId to Base64.getUrlEncoder().withoutPadding().encodeToString(publicKey)))
+
+    companion object {
+        fun verifyWithKeys(
+            rawEnvelope:String,
+            minimumVersion:Long,
+            now:Instant,
+            authorizedKeys:Map<String,String>
+        ):VerifiedConfig {
+        require(authorizedKeys.isNotEmpty()) { "No authorized configuration keys" }
         val envelope = JSONObject(rawEnvelope)
         val envelopeKeyId = envelope.getString("key_id")
-        require(envelopeKeyId == keyId) { "Unexpected configuration signing key" }
-
+        val authorized=authorizedKeys[envelopeKeyId]
+            ?: throw IllegalArgumentException("Unexpected configuration signing key")
+        val authorizedRaw=Base64.getUrlDecoder().decode(authorized)
+        require(authorizedRaw.size==32)
         val payload = Base64.getUrlDecoder().decode(envelope.getString("payload"))
         val signature = Base64.getUrlDecoder().decode(envelope.getString("signature"))
-        verifier.verify(signature, payload)
+        Ed25519Verify(authorizedRaw).verify(signature,payload)
 
         val json = JSONObject(payload.toString(Charsets.UTF_8))
         require(json.getInt("schema_version") == 1) { "Unsupported configuration schema" }
@@ -50,5 +62,6 @@ class ConfigVerifier(publicKeyBase64Url: String) {
             expiresAt = expiresAt,
             payload = json
         )
+        }
     }
 }

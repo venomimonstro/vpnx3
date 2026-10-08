@@ -110,6 +110,9 @@ class ControlApi(
         )
     }
 
+    fun trustBundle(): String =
+        request("GET", "/api/v1/trust/bundle", null, emptyMap())
+
     fun latestConfig(): String =
         request("GET", "/api/v1/config/latest", null, emptyMap())
 
