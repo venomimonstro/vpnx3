@@ -674,3 +674,52 @@ Ed25519 Configuration Manifest, exact payload bytes, version/expiry, rollback pr
 5. отключить Control Plane, оставить mirror и проверить продолжение обновлений;
 6. отключить все sources, проверить degraded → hard-expiry → fail-closed;
 7. восстановить source и проверить автоматическое возвращение без ручной очистки state.
+
+
+## Спринт 21 — ротация криптографических ключей: КОДОВАЯ ОСНОВА ЗАВЕРШЕНА
+
+Цель: Configuration/Access/Release signing keys должны заменяться без массового ручного обновления клиентов и без хранения долгоживущего root private key на production-инфраструктуре.
+
+Реализовано:
+
+- offline Ed25519 Root of Trust; root seed не размещается на Control Plane, worker, ingress, mirror или клиентах;
+- root-signed versioned trust bundle;
+- отдельные purpose: config, access, release;
+- состояния ключей active / next / retired;
+- монотонная версия bundle и rollback protection;
+- ограниченный срок действия bundle;
+- exactly-one active config/access signer;
+- Control Plane в production fail-closed проверяет root-signed bundle при старте;
+- active runtime signer обязан совпадать с ключом, разрешённым bundle;
+- launch readiness предупреждает менее чем за 7 дней до expiry и становится failed после expiry;
+- Config Mirror проверяет root bundle и зеркалирует trust/config/revocations;
+- Android хранит pinned root, signed bundle LKG и проверяет config/release через active+retired keyring;
+- iOS хранит pinned root, device-only trust LKG и проверяет config/release через active+retired keyring;
+- Chrome/Firefox хранят signed trust bundle в local storage и используют active+retired config/release keys;
+- worker и browser ingress получают access/revocation/proxy keyring из root-signed bundle;
+- worker/ingress обновляют keyring live без рестарта;
+- worker/ingress имеют persisted signed LKG trust bundle;
+- после trust bundle expiry новые lease fail-closed;
+- installers worker/ingress принимают trust root и optional trust mirrors;
+- legacy single-key режим сохранён только для миграционного перехода;
+- unit test покрывает overlap old+new → удаление retired → fail-closed после expiry.
+
+Безопасная последовательность ротации:
+
+1. создать новый operational key;
+2. опубликовать его как next в bundle версии N+1;
+3. дождаться распространения bundle по клиентам/worker/ingress/mirror;
+4. выпустить bundle N+2: новый ключ active, предыдущий retired;
+5. переключить runtime signer;
+6. выдержать bounded compatibility window;
+7. выпустить bundle N+3 без предыдущего retired key;
+8. проверить readiness и telemetry отказов подписи.
+
+Физическая приёмка:
+
+1. выполнить полную ротацию config key на staging без обновления приложений;
+2. выполнить access key rotation при активных VPN/proxy sessions;
+3. подтвердить, что старые lease работают только в overlap;
+4. удалить retired key и подтвердить отказ старой подписи;
+5. искусственно просрочить test bundle и подтвердить fail-closed;
+6. отключить Control Plane и проверить получение trust bundle через Config Mirror.
