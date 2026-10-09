@@ -88,6 +88,7 @@ def current_profiles(conf):
             "id": identifier,
             "name": row.get("name", "Личный ключ" if item.get("email") == "personal-admin" else item.get("email", "Устройство")),
             "created_at": row.get("created_at"),
+            "mode": "vision" if item.get("flow") == "xtls-rprx-vision" else "ios",
         })
     return result
 
@@ -99,8 +100,13 @@ def uri_for(client_id, name, conf):
     sid = reality["shortIds"][0]
     pbk = existing_public_key()
     port = inbound["port"]
+    client = next((item for item in inbound["settings"]["clients"] if item["id"] == client_id), None)
+    if client is None:
+        raise ValueError("VLESS profile not found")
+    flow = client.get("flow", "")
+    flow_param = "&flow=xtls-rprx-vision" if flow == "xtls-rprx-vision" else ""
     return (f"vless://{client_id}@{ADDRESS}:{port}"
-            "?encryption=none&flow=xtls-rprx-vision&security=reality&type=tcp"
+            f"?encryption=none{flow_param}&security=reality&type=tcp"
             f"&sni={quote(sni)}&fp=chrome&pbk={quote(pbk)}"
             f"&sid={sid}&spx=%2F#{quote(name)}")
 
@@ -191,7 +197,7 @@ def _recv_exact(conn, length):
     return data
 
 
-def test_personal_vless():
+def test_personal_vless(profile_id=""):
     """Perform actual Xray client REALITY handshake and HTTPS through the local server.
 
     This is an end-to-end localhost test, not a claim of external reachability.
@@ -201,7 +207,10 @@ def test_personal_vless():
     profiles = current_profiles(conf)
     if not profiles:
         raise ValueError("Create a VLESS profile before testing")
-    first = profiles[0]
+    first = next((p for p in profiles if p["id"] == profile_id), None) if profile_id else profiles[0]
+    if first is None:
+        raise ValueError("VLESS profile not found")
+    started_at = time.monotonic()
     inbound = conf["inbounds"][0]
     r = inbound["streamSettings"]["realitySettings"]
     pbk = existing_public_key()
@@ -221,7 +230,7 @@ def test_personal_vless():
             "settings": {"vnext": [{
                 "address": "127.0.0.1", "port": inbound["port"],
                 "users": [{"id": first["id"], "encryption": "none",
-                           "flow": "xtls-rprx-vision"}]
+                           "flow": "xtls-rprx-vision" if first["mode"] == "vision" else ""}]
             }]},
             "streamSettings": {"network": "tcp", "security": "reality",
                                "realitySettings": {
@@ -279,6 +288,8 @@ def test_personal_vless():
                 if not data.startswith(b"HTTP/"):
                     raise RuntimeError("No valid HTTPS response over VLESS tunnel")
         return {"ok": True, "verified": True, "check": "REALITY+VLESS+HTTPS",
+                "profile_id": first["id"], "mode": first["mode"],
+                "local_test_ms": round((time.monotonic() - started_at) * 1000),
                 "note": "Подключение проверено локально с реальным Xray-клиентом; внешняя доступность IP не проверяется"}
     finally:
         if started:
@@ -286,12 +297,12 @@ def test_personal_vless():
         path.unlink(missing_ok=True)
 
 
-def manage(action, name="", identifier=""):
+def manage(action, name="", identifier="", mode="vision"):
     with LOCK:
         if action == "status":
             return get_status()
         if action == "check":
-            return test_personal_vless()
+            return test_personal_vless(identifier)
         if action not in {"create", "revoke"}:
             raise ValueError("Unknown action")
         if not CONFIG.exists():
@@ -305,11 +316,16 @@ def manage(action, name="", identifier=""):
         if action == "create":
             if not isinstance(name, str) or not name.strip() or len(name) > 64 or any(ord(c) < 32 for c in name):
                 raise ValueError("Invalid profile name")
+            if mode not in ("vision", "ios"):
+                raise ValueError("Invalid VLESS compatibility mode")
             if len(clients) >= 20:
                 raise ValueError("Maximum 20 personal devices")
             identifier = str(uuid.uuid4())
-            clients.append({"id": identifier, "flow": "xtls-rprx-vision", "email": "personal-" + identifier})
-            profiles.append({"id": identifier, "name": name.strip(),
+            user = {"id": identifier, "email": "personal-" + identifier}
+            if mode == "vision":
+                user["flow"] = "xtls-rprx-vision"
+            clients.append(user)
+            profiles.append({"id": identifier, "name": name.strip(), "mode": mode,
                              "created_at": dt.datetime.now(dt.timezone.utc).isoformat()})
         else:
             if not isinstance(identifier, str) or not UUID_RE.fullmatch(identifier):
@@ -338,7 +354,7 @@ class Handler(socketserver.StreamRequestHandler):
             if not line or len(line) > 8192:
                 raise ValueError("Request too large")
             request = json.loads(line)
-            response = manage(request.get("action"), request.get("name", ""), request.get("id", ""))
+            response = manage(request.get("action"), request.get("name", ""), request.get("id", ""), request.get("mode", "vision"))
         except Exception as exc:
             response = {"ok": False, "error": str(exc)[:220]}
         self.wfile.write((json.dumps(response, ensure_ascii=False, separators=(",", ":")) + "\n").encode())
