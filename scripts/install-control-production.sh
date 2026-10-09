@@ -104,7 +104,7 @@ command -v docker >/dev/null || fail "Установите Docker Engine + Compo
 docker compose version >/dev/null || fail "Нужен docker compose v2."
 info "Проверка конфигурации и сборка..."
 docker compose --env-file "$SECRETS_FILE" -f "$COMPOSE_FILE" config --quiet
-docker compose --env-file "$SECRETS_FILE" -f "$COMPOSE_FILE" build migrate controlplane
+docker compose --env-file "$SECRETS_FILE" -f "$COMPOSE_FILE" build controlplane
 info "Применение миграций и запуск..."
 docker compose --env-file "$SECRETS_FILE" -f "$COMPOSE_FILE" up -d --wait postgres
 docker compose --env-file "$SECRETS_FILE" -f "$COMPOSE_FILE" run --rm migrate
