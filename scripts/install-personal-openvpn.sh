@@ -109,16 +109,17 @@ WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
   systemctl enable --now vpnx3-openvpn-firewall.service
-  openvpn --config "$CONF" --test-crypto >/dev/null 2>&1 || true
   systemctl enable --now "$UNIT"
   systemctl restart "$UNIT"
   sleep 2
   systemctl is-active --quiet "$UNIT" || { journalctl -u "$UNIT" --no-pager -n 30; die "OpenVPN failed"; }
+  ss -lun | grep -q ":$PORT " || die "OpenVPN UDP port is not listening"
   echo "[OpenVPN] Server active on UDP $PORT; permit port in provider firewall."
   echo "[OpenVPN] Create profile: sudo bash scripts/install-personal-openvpn.sh create iphone"
 }
 create_client(){
   need_install; valid_name "$NAME"
+  source "$ROOT/network.env"
   [[ ! -f "$CLIENTS/$NAME.ovpn" ]] || die "Profile exists. Choose different name."
   [[ ! -f "$PKI/issued/$NAME.crt" ]] || die "Certificate name already used."
   EASYRSA_CERT_EXPIRE=365 easy build-client-full "$NAME" nopass
