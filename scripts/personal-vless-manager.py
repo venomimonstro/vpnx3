@@ -342,8 +342,51 @@ def test_personal_vless(profile_id=""):
         path.unlink(missing_ok=True)
 
 
+
+OPENVPN_SCRIPT = "/opt/vpnx3/scripts/install-personal-openvpn.sh"
+OPENVPN_PROFILES = Path("/etc/openvpn/vpnx3/clients")
+OPENVPN_SERVER = Path("/etc/openvpn/server/vpnx3.conf")
+OPENVPN_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,39}$")
+
+
+def manage_openvpn(action, name=""):
+    if action == "openvpn_status":
+        installed = OPENVPN_SERVER.exists()
+        active = run("systemctl", "is-active", "--quiet", "openvpn-server@vpnx3",
+                     check=False, timeout=5).returncode == 0 if installed else False
+        names = sorted(path.stem for path in OPENVPN_PROFILES.glob("*.ovpn")
+                       if OPENVPN_NAME.fullmatch(path.stem)) if installed else []
+        return {"ok": True, "installed": installed, "running": active,
+                "profiles": [{"name": n} for n in names], "port": 1194,
+                "protocol": "udp"}
+    if action not in {"openvpn_create", "openvpn_download", "openvpn_revoke"}:
+        raise ValueError("invalid OpenVPN action")
+    if not OPENVPN_NAME.fullmatch(name):
+        raise ValueError("invalid OpenVPN profile name")
+    if not OPENVPN_SERVER.exists():
+        raise ValueError("OpenVPN server not installed; run install-personal-openvpn.sh install")
+    destination = OPENVPN_PROFILES / (name + ".ovpn")
+    if action == "openvpn_create":
+        if destination.exists():
+            raise ValueError("OpenVPN profile already exists")
+        run("bash", OPENVPN_SCRIPT, "create", name, timeout=30)
+        return {"ok": True, "name": name}
+    if not destination.is_file():
+        raise ValueError("OpenVPN profile not found")
+    if action == "openvpn_download":
+        raw = destination.read_bytes()
+        if len(raw) > 96*1024:
+            raise ValueError("OpenVPN profile too large")
+        import base64
+        return {"ok": True, "name": name, "content_base64": base64.b64encode(raw).decode("ascii")}
+    run("bash", OPENVPN_SCRIPT, "revoke", name, timeout=30)
+    return {"ok": True, "name": name}
+
+
 def manage(action, name="", identifier="", mode="vision"):
     with LOCK:
+        if action.startswith("openvpn_"):
+            return manage_openvpn(action, name)
         if action == "status":
             return get_status()
         if action == "enable_alternate_port":
