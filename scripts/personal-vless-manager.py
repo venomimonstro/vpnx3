@@ -187,6 +187,8 @@ def manage(action, name="", identifier=""):
         if not CONFIG.exists():
             raise ValueError("Personal VLESS must be installed first")
         config = load_config()
+        # Preserve the REALITY public key before any legacy URI can be revoked.
+        existing_public_key()
         profiles = current_profiles(config)
         config = copy.deepcopy(config)
         clients = config["inbounds"][0]["settings"]["clients"]
