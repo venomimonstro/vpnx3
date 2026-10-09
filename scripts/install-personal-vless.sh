@@ -56,12 +56,12 @@ f'&sid={os.environ["SHORT_ID"]}&spx=%2F#VPNX3-Personal')
 PY
   chmod 600 "$ROOT/config.json" "$ROOT/client.txt"
 fi
-docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+docker run --rm --network none --user 0:0 --read-only --cap-drop ALL --security-opt no-new-privileges \
   -v "$ROOT/config.json:/etc/xray/config.json:ro" --entrypoint xray "$IMAGE" \
   run -test -config /etc/xray/config.json
 if ! docker inspect "$NAME" >/dev/null 2>&1; then
   docker run -d --name "$NAME" --restart unless-stopped \
-    --read-only --cap-drop ALL --security-opt no-new-privileges \
+    --user 0:0 --read-only --cap-drop ALL --security-opt no-new-privileges \
     --memory=128m --cpus=0.5 -p "$PORT:$PORT/tcp" \
     -v "$ROOT/config.json:/etc/xray/config.json:ro" \
     --entrypoint xray "$IMAGE" run -config /etc/xray/config.json >/dev/null
