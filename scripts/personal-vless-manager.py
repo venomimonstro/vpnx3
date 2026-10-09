@@ -144,7 +144,7 @@ def get_status():
 def start_container(port):
     run("docker", "run", "-d", "--name", CONTAINER, "--restart", "unless-stopped",
         "--user", "0:0", "--read-only", "--cap-drop", "ALL",
-        "--security-opt", "no-new-privileges", "--memory=128m", "--cpus=0.5",
+        "--security-opt", "no-new-privileges", "--memory=192m", "--cpu-shares=512",
         "-p", f"{port}:{port}/tcp",
         "-v", f"{CONFIG}:/etc/xray/config.json:ro",
         "--entrypoint", "xray", IMAGE, "run", "-config", "/etc/xray/config.json",
