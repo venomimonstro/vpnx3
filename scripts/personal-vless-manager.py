@@ -25,6 +25,7 @@ SOCKET = CONTROL / "manager.sock"
 CONFIG = ROOT / "config.json"
 PROFILES = ROOT / "profiles.json"
 LEGACY = ROOT / "client.txt"
+PUBLIC = ROOT / "public-key.txt"
 IMAGE = "ghcr.io/xtls/xray-core:26.9.30"
 CONTAINER = "vpnx3-personal-vless"
 ADDRESS = os.environ.get("VPNX3_PERSONAL_VLESS_IP", "194.146.223.104")
@@ -56,13 +57,18 @@ def load_config():
 
 
 def existing_public_key():
-    if not LEGACY.exists():
-        raise ValueError("Existing VLESS public key URI not found in client.txt")
-    raw = LEGACY.read_text().strip()
-    uri = urlsplit(raw)
-    key = parse_qs(uri.query).get("pbk", [""])[0]
+    if PUBLIC.exists():
+        key = PUBLIC.read_text().strip()
+    elif LEGACY.exists():
+        raw = LEGACY.read_text().strip()
+        uri = urlsplit(raw)
+        key = parse_qs(uri.query).get("pbk", [""])[0]
+        if re.fullmatch(r"[A-Za-z0-9_-]{43}", key):
+            atomic_write(PUBLIC, key + "\\n")
+    else:
+        raise ValueError("VLESS public key not found")
     if not re.fullmatch(r"[A-Za-z0-9_-]{43}", key):
-        raise ValueError("Invalid VLESS public key URI")
+        raise ValueError("Invalid VLESS public key")
     return key
 
 
