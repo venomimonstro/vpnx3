@@ -20,6 +20,7 @@ type personalVLESSRequest struct {
 	Action string `json:"action"`
 	Name   string `json:"name,omitempty"`
 	ID     string `json:"id,omitempty"`
+	Mode   string `json:"mode,omitempty"`
 }
 
 func personalVLESSCall(req personalVLESSRequest) (map[string]any, error) {
@@ -70,14 +71,30 @@ func (s *Server) handlePersonalVLESS(w http.ResponseWriter, r *http.Request) {
 			req.Action = "check"
 			break
 		}
-		var body struct{ Name string `json:"name"` }
+		if id := r.PathValue("id"); id != "" && strings.HasSuffix(r.URL.Path, "/check") {
+			if !personalVLESSUUID.MatchString(id) {
+				writeError(w, http.StatusBadRequest, "invalid_profile_id")
+				return
+			}
+			req.Action, req.ID = "check", id
+			break
+		}
+		var body struct{
+			Name string `json:"name"`
+			Mode string `json:"mode"`
+		}
 		if err := decodeJSON(w, r, &body); err != nil { return }
 		body.Name = strings.TrimSpace(body.Name)
 		if body.Name == "" || len([]rune(body.Name)) > 64 || strings.ContainsAny(body.Name, "\x00\r\n") {
 			writeError(w, http.StatusBadRequest, "invalid_profile_name")
 			return
 		}
-		req.Action, req.Name = "create", body.Name
+		if body.Mode == "" { body.Mode = "vision" }
+		if body.Mode != "vision" && body.Mode != "ios" {
+			writeError(w, http.StatusBadRequest, "invalid_profile_mode")
+			return
+		}
+		req.Action, req.Name, req.Mode = "create", body.Name, body.Mode
 	case http.MethodDelete:
 		id := r.PathValue("id")
 		if !personalVLESSUUID.MatchString(id) {
@@ -95,7 +112,7 @@ func (s *Server) handlePersonalVLESS(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "personal_vless_unavailable", "detail": err.Error()})
 		return
 	}
-	if req.Action != "status" {
+	if req.Action == "create" || req.Action == "revoke" {
 		admin, _ := adminFromContext(r.Context())
 		_ = s.store.WriteAudit(r.Context(), "admin", admin.ID, "personal_vless."+req.Action, "personal_vless", req.ID,
 			requestIDFromContext(r.Context()), ipString(clientIP(r)), "success")
