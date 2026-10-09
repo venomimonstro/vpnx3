@@ -49,3 +49,8 @@ textarea[readonly]{resize:vertical}
 .readiness-check p{margin:10px 0}
 @media(max-width:1050px){.readiness-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:760px){.readiness-overall{grid-template-columns:1fr}.readiness-grid{grid-template-columns:1fr}}
+
+/* Device-specific VLESS profile controls */
+.toolbar input,.toolbar select{min-height:39px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);color:var(--text);max-width:100%}
+.toolbar select{min-width:245px}
+@media(max-width:760px){.toolbar input,.toolbar select{width:100%}}
