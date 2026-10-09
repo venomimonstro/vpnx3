@@ -66,6 +66,10 @@ func (s *Server) handlePersonalVLESS(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		req.Action = "status"
 	case http.MethodPost:
+		if r.URL.Path == "/api/v1/admin/personal-vless/check" {
+			req.Action = "check"
+			break
+		}
 		var body struct{ Name string `json:"name"` }
 		if err := decodeJSON(w, r, &body); err != nil { return }
 		body.Name = strings.TrimSpace(body.Name)
