@@ -23,9 +23,7 @@ services:
       - internal
 
   migrate:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile.controlplane
+    image: vpnx3-controlplane:local
     network_mode: "service:postgres"
     entrypoint: ["/migrate"]
     env_file: .env.production
@@ -37,6 +35,7 @@ services:
       - no-new-privileges:true
 
   controlplane:
+    image: vpnx3-controlplane:local
     build:
       context: .
       dockerfile: deploy/Dockerfile.controlplane
