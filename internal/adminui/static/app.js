@@ -1166,6 +1166,11 @@ async function personalVless(){
       badge(healthy?"active":"failed"),
       $("span",{class:"mono"},(d.address||"194.146.223.104")+":"+(d.port||8443)),
       $("button",{class:"btn",onclick:()=>renderSection()},"Обновить состояние"),
+      $("button",{class:"btn",onclick:async()=>{
+        if(!confirm("Добавить резервный публичный VLESS-порт 2053/TCP? Xray кратковременно перезапустится, ключи сохранятся."))return;
+        try{await api("/api/v1/admin/personal-vless/alternate-port",{method:"POST"});renderSection()}
+        catch(e){alert("Не удалось открыть резервный порт: "+e.message)}
+      }},"Включить порт 2053"),
       testButton
     ),
     $("p",{class:"muted"},healthy
@@ -1217,6 +1222,17 @@ async function personalVless(){
       }},"Тест ключа"),
       $("button",{class:"btn",onclick:()=>navigator.clipboard.writeText(p.uri).then(()=>alert("Ссылка скопирована")).catch(()=>showPersonalVless(p))},"Скопировать"),
       $("button",{class:"btn",onclick:()=>showPersonalVless(p)},"Показать ссылку"),
+      ...(p.alternate_uri?[ $("button",{class:"btn primary",onclick:()=>{
+        const content=$("div",{class:"stack"},
+          $("p",{class:"muted"},"Резервный адрес 2053/TCP. Важно: порт должен быть открыт у хостинга. После импорта проверьте подключение с iPhone."),
+          $("textarea",{rows:"5",readonly:"",class:"mono",style:"width:100%"})
+        );
+        content.querySelector("textarea").value=p.alternate_uri;
+        modal("Резервный ключ iPhone · 2053",content,[
+          {label:"Закрыть",onclick:d=>d.close()},
+          {label:"Копировать",primary:true,onclick:()=>navigator.clipboard.writeText(p.alternate_uri)}
+        ]);
+      }},"Резервный ключ 2053") ]:[]),
       $("button",{class:"btn primary",onclick:()=>{
         // INCY's documented native direct-import route. No third-party API receives this key.
         if(typeof p.uri!=="string"||!p.uri.startsWith("vless://")){alert("Некорректный ключ");return}
