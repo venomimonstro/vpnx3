@@ -70,7 +70,33 @@ if ! docker inspect "$NAME" >/dev/null 2>&1; then
 else
   docker start "$NAME" >/dev/null 2>&1 || true
 fi
+# Admin management is available only over a local Unix socket.
+# Control Plane sees neither the Xray REALITY private key nor the Docker socket.
+CONTROL="$ROOT/control"
+install -d -m 0750 -o root -g 65532 "$CONTROL"
+cat >/etc/systemd/system/vpnx3-personal-vless-manager.service <<'UNIT'
+[Unit]
+Description=VPNX3 personal VLESS management (local Unix socket only)
+Requires=docker.service
+After=docker.service
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/python3 /opt/vpnx3/scripts/personal-vless-manager.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now vpnx3-personal-vless-manager.service
+systemctl restart vpnx3-personal-vless-manager.service
+systemctl is-active --quiet vpnx3-personal-vless-manager.service || fail "VLESS manager service did not start"
 docker ps --filter name="^/$NAME$"
+echo "[VLESS] Admin manager: active; restricted Unix socket at $CONTROL/manager.sock"
 echo "[VLESS] Import this profile into Happ / v2ray-compatible clients (keep secret):"
 cat "$ROOT/client.txt"
 echo "[VLESS] Ensure inbound TCP port $PORT is allowed by the provider firewall."
