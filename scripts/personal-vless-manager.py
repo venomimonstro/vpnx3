@@ -148,10 +148,16 @@ def enable_alternate_port():
         return get_status()
     if not port_free_for_fallback():
         raise RuntimeError(f"alternate_port_{ALT_PORT}_already_used")
-    restart_container(port, alternate=True)
-    if not alternate_port_published() or not container_running():
-        restart_container(port, alternate=False)
-        raise RuntimeError("alternate port not published; original listener restored")
+    try:
+        restart_container(port, alternate=True)
+        if not alternate_port_published() or not container_running():
+            raise RuntimeError("alternate port not published")
+    except Exception as error:
+        try:
+            restart_container(port, alternate=False)
+        except Exception as rollback_error:
+            raise RuntimeError(f"alternate port failed and rollback failed: {rollback_error}") from error
+        raise RuntimeError(f"alternate port unavailable; original listener restored: {error}") from error
     return get_status()
 
 
