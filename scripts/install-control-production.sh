@@ -120,7 +120,7 @@ import os,pathlib
 p=pathlib.Path(os.environ["SECRETS_FILE"])
 lines=p.read_text().splitlines()
 lines=[line for line in lines if not line.startswith("VPNX3_BOOTSTRAP_OWNER_PASSWORD=")]
-p.write_text("\\n".join(lines)+"\\n")
+p.write_text("\n".join(lines)+"\n")
 p.chmod(0o600)
 PY
     exit 0
