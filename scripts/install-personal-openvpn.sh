@@ -128,7 +128,12 @@ EOF
   ss -lun | grep -q ":$PORT " || die "OpenVPN UDP port is not listening"
   echo "[OpenVPN] Server active on UDP $PORT; firewall INPUT/FORWARD/NAT verified."
   echo "[OpenVPN] Note: provider firewall and mobile-network reachability are not verified."
-  echo "[OpenVPN] Create profile: sudo bash scripts/install-personal-openvpn.sh create iphone"
+  if ! compgen -G "$CLIENTS/*.ovpn" >/dev/null; then
+    echo "[OpenVPN] No client profile exists. Create one in /admin/ -> OpenVPN and download .ovpn."
+  else
+    echo "[OpenVPN] Client profile files present: $(find "$CLIENTS" -maxdepth 1 -type f -name '*.ovpn' | wc -l)"
+  fi
+  echo "[OpenVPN] Diagnostics: sudo python3 scripts/diagnose-personal-openvpn.py --watch"
 }
 create_client(){
   need_install; valid_name "$NAME"
