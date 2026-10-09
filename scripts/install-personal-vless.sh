@@ -96,21 +96,34 @@ systemctl daemon-reload
 systemctl enable --now vpnx3-personal-vless-manager.service
 systemctl restart vpnx3-personal-vless-manager.service
 systemctl is-active --quiet vpnx3-personal-vless-manager.service || fail "VLESS manager service did not start"
-for i in 1 2 3 4 5; do
-  [[ -S "$CONTROL/manager.sock" ]] && break
-  sleep 1
-done
-[[ -S "$CONTROL/manager.sock" ]] || fail "VLESS manager socket did not start"
 python3 - <<'PY'
-import json,socket
-s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
-s.settimeout(5)
-s.connect("/opt/vpnx3/private/personal-vless/control/manager.sock")
-s.sendall(b'{"action":"status"}\n')
-data=s.recv(65536)
-result=json.loads(data)
-assert result.get("ok") and result.get("running"),result.get("error","Xray is not running")
-print("[VLESS] Admin management health check OK")
+import json,socket,time
+path="/opt/vpnx3/private/personal-vless/control/manager.sock"
+last=None
+for i in range(20):
+    try:
+        with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as s:
+            s.settimeout(3)
+            s.connect(path)
+            s.sendall(b'{"action":"status"}\\n')
+            data=b""
+            while not data.endswith(b"\\n"):
+                part=s.recv(65536)
+                if not part:
+                    raise ConnectionError("Manager disconnected")
+                data+=part
+                if len(data)>262144:
+                    raise ValueError("Manager response too large")
+            result=json.loads(data)
+            if not result.get("ok") or not result.get("running"):
+                raise RuntimeError(result.get("error","Xray is not running"))
+            print("[VLESS] Admin management health check OK")
+            break
+    except (OSError,ValueError,RuntimeError) as exc:
+        last=exc
+        time.sleep(0.5)
+else:
+    raise SystemExit(f"[VLESS] Manager not ready: {last}")
 PY
 docker ps --filter name="^/$NAME$"
 echo "[VLESS] Admin manager: active; restricted Unix socket at $CONTROL/manager.sock"
