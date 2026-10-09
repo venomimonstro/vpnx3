@@ -10,6 +10,8 @@ import json
 import os
 from pathlib import Path
 import re
+import ssl
+import time
 import socket
 import socketserver
 import struct
@@ -178,10 +180,118 @@ def apply_change(conf, profiles):
         candidate.unlink(missing_ok=True)
 
 
+
+def _recv_exact(conn, length):
+    data = b""
+    while len(data) < length:
+        part = conn.recv(length - len(data))
+        if not part:
+            raise RuntimeError("SOCKS connection closed during REALITY test")
+        data += part
+    return data
+
+
+def test_personal_vless():
+    """Perform actual Xray client REALITY handshake and HTTPS through the local server.
+
+    This is an end-to-end localhost test, not a claim of external reachability.
+    It does not require container Docker socket exposure to the web application.
+    """
+    conf = load_config()
+    profiles = current_profiles(conf)
+    if not profiles:
+        raise ValueError("Create a VLESS profile before testing")
+    first = profiles[0]
+    inbound = conf["inbounds"][0]
+    r = inbound["streamSettings"]["realitySettings"]
+    pbk = existing_public_key()
+    # Reserve a random loopback port. Xray binds immediately after the reservation closes.
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        local_port = reservation.getsockname()[1]
+    ident = uuid.uuid4().hex[:12]
+    name = "vpnx3-vless-check-" + ident
+    path = ROOT / ("check-" + ident + ".json")
+    client = {
+        "log": {"loglevel": "warning"},
+        "inbounds": [{"listen": "127.0.0.1", "port": local_port,
+                      "protocol": "socks", "settings": {"auth": "noauth", "udp": False}}],
+        "outbounds": [{
+            "protocol": "vless",
+            "settings": {"vnext": [{
+                "address": "127.0.0.1", "port": inbound["port"],
+                "users": [{"id": first["id"], "encryption": "none",
+                           "flow": "xtls-rprx-vision"}]
+            }]},
+            "streamSettings": {"network": "tcp", "security": "reality",
+                               "realitySettings": {
+                                   "serverName": r["serverNames"][0],
+                                   "fingerprint": "chrome",
+                                   "password": pbk,
+                                   "shortId": r["shortIds"][0],
+                                   "spiderX": "/"
+                               }}
+        }]
+    }
+    atomic_write(path, json.dumps(client, separators=(",", ":")) + "\n")
+    started = False
+    try:
+        run("docker", "run", "-d", "--name", name, "--network", "host",
+            "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+            "--memory=128m", "--cpus=0.5",
+            "-v", f"{path}:/etc/xray/config.json:ro",
+            "--entrypoint", "xray", IMAGE, "run", "-config", "/etc/xray/config.json",
+            timeout=12)
+        started = True
+        last = None
+        for attempt in range(20):
+            try:
+                conn = socket.create_connection(("127.0.0.1", local_port), timeout=1)
+                break
+            except OSError as error:
+                last = error
+                time.sleep(0.25)
+        else:
+            raise RuntimeError(f"Xray test client could not start: {last}")
+        with conn:
+            conn.settimeout(12)
+            conn.sendall(b"\x05\x01\x00")
+            if _recv_exact(conn, 2) != b"\x05\x00":
+                raise RuntimeError("SOCKS test negotiation failed")
+            host = b"example.com"
+            conn.sendall(b"\x05\x01\x00\x03" + bytes([len(host)]) + host + (443).to_bytes(2, "big"))
+            head = _recv_exact(conn, 4)
+            if head[1] != 0:
+                raise RuntimeError(f"SOCKS test connect failed: code {head[1]}")
+            if head[3] == 1:
+                _recv_exact(conn, 6)
+            elif head[3] == 4:
+                _recv_exact(conn, 18)
+            elif head[3] == 3:
+                _recv_exact(conn, _recv_exact(conn, 1)[0] + 2)
+            else:
+                raise RuntimeError("Invalid SOCKS test response")
+            tls = ssl.create_default_context()
+            with tls.wrap_socket(conn, server_hostname="example.com") as secure:
+                secure.settimeout(12)
+                secure.sendall(b"HEAD / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
+                data = secure.recv(256)
+                if not data.startswith(b"HTTP/"):
+                    raise RuntimeError("No valid HTTPS response over VLESS tunnel")
+        return {"ok": True, "verified": True, "check": "REALITY+VLESS+HTTPS",
+                "note": "Подключение проверено локально с реальным Xray-клиентом; внешняя доступность IP не проверяется"}
+    finally:
+        if started:
+            run("docker", "rm", "-f", name, check=False, timeout=12)
+        path.unlink(missing_ok=True)
+
+
 def manage(action, name="", identifier=""):
     with LOCK:
         if action == "status":
             return get_status()
+        if action == "check":
+            return test_personal_vless()
         if action not in {"create", "revoke"}:
             raise ValueError("Unknown action")
         if not CONFIG.exists():
