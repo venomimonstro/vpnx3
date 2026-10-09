@@ -64,7 +64,7 @@ def existing_public_key():
         uri = urlsplit(raw)
         key = parse_qs(uri.query).get("pbk", [""])[0]
         if re.fullmatch(r"[A-Za-z0-9_-]{43}", key):
-            atomic_write(PUBLIC, key + "\\n")
+            atomic_write(PUBLIC, key + "\n")
     else:
         raise ValueError("VLESS public key not found")
     if not re.fullmatch(r"[A-Za-z0-9_-]{43}", key):
