@@ -150,8 +150,7 @@ func (s *Server) releaseGate(ctx context.Context,releaseID string)(releaseGateRe
 		CheckedAt:time.Now().UTC(),
 	}
 	add:=func(message string,critical bool){
-		if critical&&result.Enforced{result.Blockers=append(result.Blockers,message)}
-		else{result.Warnings=append(result.Warnings,message)}
+		if critical&&result.Enforced{result.Blockers=append(result.Blockers,message)}else{result.Warnings=append(result.Warnings,message)}
 	}
 
 	data,err:=s.store.LaunchReadiness(ctx)
