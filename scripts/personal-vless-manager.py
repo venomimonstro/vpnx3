@@ -32,6 +32,7 @@ IMAGE = "ghcr.io/xtls/xray-core:26.9.30"
 CONTAINER = "vpnx3-personal-vless"
 ADDRESS = os.environ.get("VPNX3_PERSONAL_VLESS_IP", "194.146.223.104")
 UID_CONTROLPLANE = 65532
+ALT_PORT = 2053
 LOCK = threading.RLock()
 UUID_RE = re.compile(r"^[a-fA-F0-9]{8}-(?:[a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12}$")
 
@@ -93,13 +94,13 @@ def current_profiles(conf):
     return result
 
 
-def uri_for(client_id, name, conf):
+def uri_for(client_id, name, conf, external_port=None):
     inbound = conf["inbounds"][0]
     reality = inbound["streamSettings"]["realitySettings"]
     sni = reality["serverNames"][0]
     sid = reality["shortIds"][0]
     pbk = existing_public_key()
-    port = inbound["port"]
+    port = external_port or inbound["port"]
     client = next((item for item in inbound["settings"]["clients"] if item["id"] == client_id), None)
     if client is None:
         raise ValueError("VLESS profile not found")
@@ -124,36 +125,74 @@ def local_listening(port):
         return False
 
 
+def alternate_port_published():
+    info = run("docker", "port", CONTAINER, timeout=4, check=False)
+    if info.returncode != 0:
+        return False
+    return any(line.strip().endswith(f":{ALT_PORT}") for line in info.stdout.splitlines())
+
+
+def port_free_for_fallback():
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("0.0.0.0", ALT_PORT))
+        return True
+    except OSError:
+        return False
+
+
+def enable_alternate_port():
+    config = load_config()
+    port = int(config["inbounds"][0]["port"])
+    if ALT_PORT == port or alternate_port_published():
+        return get_status()
+    if not port_free_for_fallback():
+        raise RuntimeError(f"alternate_port_{ALT_PORT}_already_used")
+    restart_container(port, alternate=True)
+    if not alternate_port_published() or not container_running():
+        restart_container(port, alternate=False)
+        raise RuntimeError("alternate port not published; original listener restored")
+    return get_status()
+
+
 def get_status():
     if not CONFIG.exists():
         return {"ok": True, "configured": False, "running": False,
                 "local_port_listening": False, "profiles": [], "message": "VLESS not installed"}
     config = load_config()
     profiles = current_profiles(config)
+    alternative = alternate_port_published()
     for p in profiles:
         p["uri"] = uri_for(p["id"], p["name"], config)
+        if alternative:
+            p["alternate_uri"] = uri_for(p["id"], p["name"], config, ALT_PORT)
     port = int(config["inbounds"][0]["port"])
     running = container_running()
     return {"ok": True, "configured": True, "running": running,
             "local_port_listening": local_listening(port) if running else False,
-            "address": ADDRESS, "port": port, "profiles": profiles,
+            "address": ADDRESS, "port": port, "alternate_port": ALT_PORT if alternative else None, "profiles": profiles,
             "checked_at": dt.datetime.now(dt.timezone.utc).isoformat(),
             "connection_note": "Local port check only; internet reachability is not verified"}
 
 
-def start_container(port):
+def start_container(port, alternate=False):
+    ports = ["-p", f"{port}:{port}/tcp"]
+    if alternate and port != ALT_PORT:
+        ports += ["-p", f"{ALT_PORT}:{port}/tcp"]
     run("docker", "run", "-d", "--name", CONTAINER, "--restart", "unless-stopped",
         "--user", "0:0", "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges", "--memory=192m", "--cpu-shares=512",
-        "-p", f"{port}:{port}/tcp",
+        *ports,
         "-v", f"{CONFIG}:/etc/xray/config.json:ro",
         "--entrypoint", "xray", IMAGE, "run", "-config", "/etc/xray/config.json",
         timeout=18)
 
 
-def restart_container(port):
+def restart_container(port, alternate=None):
+    if alternate is None:
+        alternate = alternate_port_published()
     run("docker", "rm", "-f", CONTAINER, timeout=15, check=False)
-    start_container(port)
+    start_container(port, alternate=alternate)
     if not container_running():
         raise RuntimeError("Xray failed to start")
 
@@ -301,6 +340,8 @@ def manage(action, name="", identifier="", mode="vision"):
     with LOCK:
         if action == "status":
             return get_status()
+        if action == "enable_alternate_port":
+            return enable_alternate_port()
         if action == "check":
             return test_personal_vless(identifier)
         if action not in {"create", "revoke"}:
