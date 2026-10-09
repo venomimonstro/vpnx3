@@ -73,6 +73,7 @@ fi
 # Admin management is available only over a local Unix socket.
 # Control Plane sees neither the Xray REALITY private key nor the Docker socket.
 CONTROL="$ROOT/control"
+python3 -m py_compile /opt/vpnx3/scripts/personal-vless-manager.py || fail "VLESS manager syntax invalid"
 install -d -m 0750 -o root -g 65532 "$CONTROL"
 cat >/etc/systemd/system/vpnx3-personal-vless-manager.service <<'UNIT'
 [Unit]
@@ -95,6 +96,22 @@ systemctl daemon-reload
 systemctl enable --now vpnx3-personal-vless-manager.service
 systemctl restart vpnx3-personal-vless-manager.service
 systemctl is-active --quiet vpnx3-personal-vless-manager.service || fail "VLESS manager service did not start"
+for i in 1 2 3 4 5; do
+  [[ -S "$CONTROL/manager.sock" ]] && break
+  sleep 1
+done
+[[ -S "$CONTROL/manager.sock" ]] || fail "VLESS manager socket did not start"
+python3 - <<'PY'
+import json,socket
+s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect("/opt/vpnx3/private/personal-vless/control/manager.sock")
+s.sendall(b'{"action":"status"}\\n')
+data=s.recv(65536)
+result=json.loads(data)
+assert result.get("ok") and result.get("running"),result.get("error","Xray is not running")
+print("[VLESS] Admin management health check OK")
+PY
 docker ps --filter name="^/$NAME$"
 echo "[VLESS] Admin manager: active; restricted Unix socket at $CONTROL/manager.sock"
 echo "[VLESS] Import this profile into Happ / v2ray-compatible clients (keep secret):"
