@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bufio"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -122,4 +123,58 @@ func (s *Server) handlePersonalVLESS(w http.ResponseWriter, r *http.Request) {
 			requestIDFromContext(r.Context()), ipString(clientIP(r)), "success")
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handlePersonalOpenVPN(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store, private")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	req := personalVLESSRequest{}
+	name := r.PathValue("name")
+	if name != "" && !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,39}$`).MatchString(name) {
+		writeError(w, http.StatusBadRequest, "invalid_openvpn_name")
+		return
+	}
+	req.Name = name
+	switch {
+	case r.Method == http.MethodGet && name == "":
+		req.Action = "openvpn_status"
+	case r.Method == http.MethodPost && name == "":
+		var body struct { Name string `json:"name"` }
+		if err := decodeJSON(w, r, &body); err != nil { return }
+		if !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,39}$`).MatchString(body.Name) {
+			writeError(w, http.StatusBadRequest, "invalid_openvpn_name")
+			return
+		}
+		req.Action, req.Name = "openvpn_create", body.Name
+	case r.Method == http.MethodGet && name != "":
+		req.Action = "openvpn_download"
+	case r.Method == http.MethodDelete && name != "":
+		req.Action = "openvpn_revoke"
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+		return
+	}
+	result, err := personalVLESSCall(req)
+	if err != nil {
+		s.logger.Warn("OpenVPN manager operation failed", "action", req.Action, "error", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error":"openvpn_operation_failed", "detail":err.Error()})
+		return
+	}
+	if req.Action == "openvpn_download" {
+		encoded, ok := result["content_base64"].(string)
+		if !ok { writeError(w, http.StatusBadGateway, "openvpn_profile_missing"); return }
+		data, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil || len(data)>96*1024 { writeError(w, http.StatusBadGateway, "invalid_openvpn_profile"); return }
+		w.Header().Set("Content-Type", "application/x-openvpn-profile")
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+name+".ovpn\"")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+	} else {
+		writeJSON(w, http.StatusOK, result)
+	}
+	if req.Action == "openvpn_create" || req.Action == "openvpn_revoke" || req.Action == "openvpn_download" {
+		admin, _ := adminFromContext(r.Context())
+		_ = s.store.WriteAudit(r.Context(), "admin", admin.ID, req.Action, "openvpn_profile", req.Name,
+			requestIDFromContext(r.Context()), ipString(clientIP(r)), "success")
+	}
 }
