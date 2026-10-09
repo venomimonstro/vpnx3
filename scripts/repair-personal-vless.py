@@ -6,7 +6,6 @@ runs a REAL VLESS+REALITY+HTTPS client test and restores the old state on failur
 Must run as root on the VPS with the host-only VLESS manager stopped.
 """
 import argparse
-import base64
 import importlib.util
 import json
 import os
@@ -31,7 +30,7 @@ def real_public_key(private):
         capture_output=True, text=True, check=True, timeout=15
     )
     for line in result.stdout.splitlines():
-        if re.match(r"^(?:Password(?: \\(PublicKey\\))?|Public key|PublicKey):", line):
+        if line.partition(":")[0].strip() in ("Password", "Password (PublicKey)", "Public key", "PublicKey"):
             value = line.split(":", 1)[1].strip()
             if re.fullmatch(r"[A-Za-z0-9_-]{43}", value):
                 return value
