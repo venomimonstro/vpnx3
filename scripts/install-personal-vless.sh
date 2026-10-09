@@ -25,9 +25,11 @@ docker image inspect "$IMAGE" >/dev/null 2>&1 || docker pull "$IMAGE"
 if [[ ! -f "$ROOT/config.json" ]]; then
   # Xray CLI produces the exact REALITY-compatible X25519 key representation.
   KEY_OUTPUT="$(docker run --rm --network none --entrypoint xray "$IMAGE" x25519)"
-  PRIVATE="$(printf '%s\n' "$KEY_OUTPUT" | sed -nE 's/^(Private key|PrivateKey|Private):[[:space:]]*//p' | head -1)"
-  PUBLIC="$(printf '%s\n' "$KEY_OUTPUT" | sed -nE 's/^(Public key|PublicKey|Password|Password key):[[:space:]]*//p' | head -1)"
-  [[ -n "$PRIVATE" && -n "$PUBLIC" ]] || fail "Could not parse Xray x25519 output: inspect 'docker run --rm --entrypoint xray $IMAGE x25519'"
+  # Xray 26.x prints "Password (PublicKey)" instead of "Public key".
+  # Accept both legacy and modern CLI labels, but never accept Hash32 as the public key.
+  PRIVATE="$(printf '%s\n' "$KEY_OUTPUT" | sed -nE 's/^[[:space:]]*(Private key|PrivateKey|Private):[[:space:]]*([A-Za-z0-9_-]{43})[[:space:]]*$/\\2/p' | head -1)"
+  PUBLIC="$(printf '%s\n' "$KEY_OUTPUT" | sed -nE 's/^[[:space:]]*(Public key|PublicKey|Password|Password key|Password \\([Pp]ublic[Kk]ey\\)):[[:space:]]*([A-Za-z0-9_-]{43})[[:space:]]*$/\\2/p' | head -1)"
+  [[ "$PRIVATE" =~ ^[A-Za-z0-9_-]{43}$ && "$PUBLIC" =~ ^[A-Za-z0-9_-]{43}$ ]] || fail "Xray x25519 key output not recognized (no configuration created)"
   UUID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
   SHORT_ID="$(openssl rand -hex 8)"
   export PRIVATE PUBLIC UUID SHORT_ID ROOT PORT ADDRESS SNI DEST
