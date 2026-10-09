@@ -96,6 +96,7 @@ const sections=[
   ["httpmetrics","HTTP метрики","analytics.read"],
   ["issues","Требует внимания","analytics.read"],
   ["nodes","Сеть","nodes.read"],
+  ["personalvless","Личный VPN","admin.manage"],
   ["probes","Наблюдение","nodes.read"],
   ["telemetry","Клиентская диагностика","analytics.read"],
   ["users","Пользователи","users.read"],
@@ -1141,11 +1142,69 @@ async function createAdmin(){
   ]);
 }
 
+async function personalVless(){
+  const d=await api("/api/v1/admin/personal-vless");
+  const healthy=!!(d.running&&d.local_port_listening);
+  const status=$( "div",{class:"card"},
+    $("h2",{},"Личный VPN · VLESS + REALITY"),
+    $("div",{class:"toolbar"},
+      badge(healthy?"active":"failed"),
+      $("span",{class:"mono"},(d.address||"194.146.223.104")+":"+(d.port||8443)),
+      $("button",{class:"btn",onclick:()=>renderSection()},"Обновить состояние")
+    ),
+    $("p",{class:"muted"},healthy
+      ?"Xray работает, TCP-порт отвечает локально. Внешнее соединение необходимо проверить в Happ/v2ray."
+      :"Xray остановлен или порт недоступен локально. Проверьте сервис personal-vless-manager и Docker."),
+    $("p",{class:"muted"},"Ключи видны только администраторам. Отзыв ключа отключает устройство и перезапускает Xray на несколько секунд.")
+  );
+  const actions=$("div",{class:"toolbar"});
+  const newName=$("input",{placeholder:"Например: Ноутбук, телефон",maxlength:"64",style:"min-width:200px"});
+  actions.append(newName,$("button",{class:"btn primary",onclick:async()=>{
+    const name=newName.value.trim();
+    if(!name){alert("Укажите имя устройства");return}
+    try{
+      await api("/api/v1/admin/personal-vless",{method:"POST",body:JSON.stringify({name})});
+      renderSection()
+    }catch(err){alert("Не удалось создать ключ: "+err.message)}
+  }},"Создать VLESS-ключ"));
+  const profiles=d.profiles||[];
+  const rows=profiles.map(p=>[
+    $("div",{},$("strong",{},p.name||"Устройство"),$("div",{class:"muted mono"},p.id)),
+    badge(healthy?"active":"warning"),
+    $("div",{class:"row-actions"},
+      $("button",{class:"btn",onclick:()=>navigator.clipboard.writeText(p.uri).then(()=>alert("Ссылка скопирована")).catch(()=>showPersonalVless(p))},"Скопировать"),
+      $("button",{class:"btn",onclick:()=>showPersonalVless(p)},"Показать ссылку"),
+      $("button",{class:"btn danger",onclick:async()=>{
+        if(!confirm("Отозвать ключ устройства «"+p.name+"»? Подключение перестанет работать."))return;
+        try{await api("/api/v1/admin/personal-vless/"+encodeURIComponent(p.id),{method:"DELETE"});renderSection()}
+        catch(err){alert("Ошибка отзыва: "+err.message)}
+      }},"Отозвать")
+    )
+  ]);
+  return sectionFrame("Личный VPN", $("div",{class:"stack"},status,
+    $("div",{class:"card"},$("h2",{},"Мои устройства"),actions,
+      profiles.length?table(["Устройство","Статус сервера","Ключ и управление"],rows)
+       :$("div",{class:"empty"},"Ключи ещё не созданы")
+    )
+  ));
+}
+function showPersonalVless(p){
+  const content=$("div",{class:"stack"},
+    $("p",{class:"muted"},"Импортируйте эту ссылку в Happ, v2rayNG или другой клиент с поддержкой VLESS + REALITY."),
+    $("textarea",{readonly:"",rows:"5",class:"mono",style:"width:100%;word-break:break-all"})
+  );
+  content.querySelector("textarea").value=p.uri||"";
+  modal("Ключ: "+p.name,content,[
+    {label:"Закрыть",onclick:d=>d.close()},
+    {label:"Копировать",primary:true,onclick:()=>navigator.clipboard.writeText(p.uri)}
+  ]);
+}
+
 async function renderSection(){
   const target=document.getElementById("section");if(!target)return;
   target.replaceChildren($("div",{class:"card"},"Загрузка…"));
   try{
-    const fn={dashboard,referrals,networkrisk,fleet,readiness,httpmetrics:httpMetrics,issues,nodes,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
+    const fn={dashboard,referrals,networkrisk,fleet,readiness,httpmetrics:httpMetrics,issues,nodes,personalvless:personalVless,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
     target.replaceChildren(await fn());
   }catch(e){target.replaceChildren(sectionError("VPNX3",e))}
 }
