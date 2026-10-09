@@ -106,7 +106,7 @@ import json,socket
 s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
 s.settimeout(5)
 s.connect("/opt/vpnx3/private/personal-vless/control/manager.sock")
-s.sendall(b'{"action":"status"}\\n')
+s.sendall(b'{"action":"status"}\n')
 data=s.recv(65536)
 result=json.loads(data)
 assert result.get("ok") and result.get("running"),result.get("error","Xray is not running")
