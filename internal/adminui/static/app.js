@@ -1145,7 +1145,7 @@ async function createAdmin(){
 async function personalVless(){
   const d=await api("/api/v1/admin/personal-vless");
   const healthy=!!(d.running&&d.local_port_listening);
-  const checkResult=$("p",{class:"muted"},"TCP-статус не подтверждает работу REALITY. Выполните проверку VPN.");
+  const checkResult=$("p",{class:"muted"},"Локальный TCP-порт не гарантирует доступ с мобильного оператора. Проверьте ключ и затем устройство.");
   const testButton=$("button",{class:"btn primary",onclick:async()=>{
     testButton.disabled=true;
     checkResult.textContent="Проверяется реальный VLESS / REALITY / HTTPS...";
@@ -1175,20 +1175,31 @@ async function personalVless(){
     $("p",{class:"muted"},"Ключи видны только администраторам. Отзыв ключа отключает устройство и перезапускает Xray на несколько секунд.")
   );
   const actions=$("div",{class:"toolbar"});
-  const newName=$("input",{placeholder:"Например: Ноутбук, телефон",maxlength:"64",style:"min-width:200px"});
-  actions.append(newName,$("button",{class:"btn primary",onclick:async()=>{
+  const newName=$("input",{placeholder:"Например: iPhone, Android",maxlength:"64",style:"min-width:200px"});
+  const mode=$("select",{},
+    $("option",{value:"vision"},"Android / ПК · XTLS Vision"),
+    $("option",{value:"ios"},"iPhone / iPad · Совместимый REALITY")
+  );
+  actions.append(newName,mode,$("button",{class:"btn primary",onclick:async()=>{
     const name=newName.value.trim();
     if(!name){alert("Укажите имя устройства");return}
     try{
-      await api("/api/v1/admin/personal-vless",{method:"POST",body:JSON.stringify({name})});
+      await api("/api/v1/admin/personal-vless",{method:"POST",body:JSON.stringify({name,mode:mode.value})});
       renderSection()
     }catch(err){alert("Не удалось создать ключ: "+err.message)}
   }},"Создать VLESS-ключ"));
   const profiles=d.profiles||[];
   const rows=profiles.map(p=>[
     $("div",{},$("strong",{},p.name||"Устройство"),$("div",{class:"muted mono"},p.id)),
-    $("span",{class:"muted"},healthy?"Порт открыт":"Порт недоступен"),
+    $("div",{},$("div",{},p.mode==="ios"?"iOS · REALITY":"Vision · Android/ПК"),
+      $("span",{class:"muted"},healthy?"Локальный порт отвечает":"Порт недоступен")),
     $("div",{class:"row-actions"},
+      $("button",{class:"btn",onclick:async()=>{
+        try{
+          const result=await api("/api/v1/admin/personal-vless/"+encodeURIComponent(p.id)+"/check",{method:"POST"});
+          alert("Профиль "+p.name+": VLESS + REALITY + HTTPS работают на сервере. Время локального теста: "+result.local_test_ms+" мс. Это не измерение скорости мобильной сети.");
+        }catch(e){alert("Проверка ключа не прошла: "+e.message)}
+      }},"Тест ключа"),
       $("button",{class:"btn",onclick:()=>navigator.clipboard.writeText(p.uri).then(()=>alert("Ссылка скопирована")).catch(()=>showPersonalVless(p))},"Скопировать"),
       $("button",{class:"btn",onclick:()=>showPersonalVless(p)},"Показать ссылку"),
       $("button",{class:"btn danger",onclick:async()=>{
@@ -1200,6 +1211,7 @@ async function personalVless(){
   ]);
   return sectionFrame("Личный VPN", $("div",{class:"stack"},status,
     $("div",{class:"card"},$("h2",{},"Мои устройства"),actions,
+      $("p",{class:"muted"},"Для iOS создавайте отдельный профиль: он использует VLESS + REALITY без XTLS Vision. Не удаляйте старый профиль Android до успешной проверки. При долгом соединении попробуйте мобильный интернет и Wi-Fi, убедитесь что 8443/TCP разрешён у хостера."),
       profiles.length?table(["Устройство","Статус сервера","Ключ и управление"],rows)
        :$("div",{class:"empty"},"Ключи ещё не созданы")
     )
