@@ -78,6 +78,7 @@ fi
 # Control Plane sees neither the Xray REALITY private key nor the Docker socket.
 CONTROL="$ROOT/control"
 python3 -m py_compile /opt/vpnx3/scripts/personal-vless-manager.py || fail "VLESS manager syntax invalid"
+python3 /opt/vpnx3/scripts/tests/test_personal_vless.py -q || fail "VLESS compatibility profile self-tests failed"
 install -d -m 0750 -o root -g 65532 "$CONTROL"
 cat >/etc/systemd/system/vpnx3-personal-vless-manager.service <<'UNIT'
 [Unit]
