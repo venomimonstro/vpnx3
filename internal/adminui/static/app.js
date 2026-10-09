@@ -1172,6 +1172,8 @@ async function personalVless(){
       ?"Xray работает, TCP-порт отвечает локально. Внешнее соединение необходимо проверить в Happ/v2ray."
       :"Xray остановлен или порт недоступен локально. Проверьте сервис personal-vless-manager и Docker."),
     checkResult,
+    $("p",{class:"muted"},"INCY поддерживает VLESS + REALITY. На iPhone проверьте в настройках iOS разрешение VPN, выключите второй VPN/Private Relay для диагностики, проверьте профиль на Wi-Fi и мобильной сети. Наличие ключа в INCY ещё не подтверждает работу сети."),
+    $("p",{class:"muted"},"Если локальный тест ключа успешен, а iPhone не подключается, необходимо проверить внешнюю доступность TCP-порта у хостинга и оператора."),
     $("p",{class:"muted"},"Ключи видны только администраторам. Отзыв ключа отключает устройство и перезапускает Xray на несколько секунд.")
   );
   const actions=$("div",{class:"toolbar"});
@@ -1202,6 +1204,11 @@ async function personalVless(){
       }},"Тест ключа"),
       $("button",{class:"btn",onclick:()=>navigator.clipboard.writeText(p.uri).then(()=>alert("Ссылка скопирована")).catch(()=>showPersonalVless(p))},"Скопировать"),
       $("button",{class:"btn",onclick:()=>showPersonalVless(p)},"Показать ссылку"),
+      $("button",{class:"btn primary",onclick:()=>{
+        // INCY's documented native direct-import route. No third-party API receives this key.
+        if(typeof p.uri!=="string"||!p.uri.startsWith("vless://")){alert("Некорректный ключ");return}
+        window.location.href="incy://add/"+p.uri;
+      }},"Открыть в INCY"),
       $("button",{class:"btn danger",onclick:async()=>{
         if(!confirm("Отозвать ключ устройства «"+p.name+"»? Подключение перестанет работать."))return;
         try{await api("/api/v1/admin/personal-vless/"+encodeURIComponent(p.id),{method:"DELETE"});renderSection()}
