@@ -1181,7 +1181,7 @@ async function personalVless(){
             window.location.href="incy://routing/off";
           }
         }},"INCY: отключить split-маршрутизацию"),
-        $("button",{class:"btn",onclick:()=>GenUI.openUrl("https://docs.incy.cc/routing/")},"Документация INCY")
+        $("button",{class:"btn",onclick:()=>window.open("https://docs.incy.cc/routing/","_blank","noopener,noreferrer")},"Документация INCY")
       ),
       $("p",{class:"muted"},"После переключения полностью отключите и включите VPN в INCY, закройте и снова откройте Telegram. Для проверки сравните Wi-Fi и мобильный интернет. Это не гарантирует доступность Telegram при блокировках в сети.")
     ),
