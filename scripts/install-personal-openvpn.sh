@@ -113,13 +113,21 @@ EOF
   if command -v ufw >/dev/null && ufw status | grep -q '^Status: active'; then
     ufw allow "$PORT/udp" comment 'VPNX3 OpenVPN'
   fi
-  systemctl enable --now vpnx3-openvpn-firewall.service
+  systemctl enable vpnx3-openvpn-firewall.service
+  # RemainAfterExit=yes means enable --now will NOT re-run changed firewall rules.
+  # Restart on each install to apply INPUT/FORWARD/NAT immediately and idempotently.
+  systemctl restart vpnx3-openvpn-firewall.service
+  systemctl is-active --quiet vpnx3-openvpn-firewall.service || die "OpenVPN firewall service failed"
+  iptables -C INPUT -p udp --dport "$PORT" -j ACCEPT || die "Firewall INPUT rule not installed"
+  iptables -C FORWARD -s 10.86.0.0/24 -j ACCEPT || die "VPN forward rule not installed"
+  iptables -t nat -C POSTROUTING -s 10.86.0.0/24 -o "$WAN" -j MASQUERADE || die "VPN NAT rule not installed"
   systemctl enable --now "$UNIT"
   systemctl restart "$UNIT"
   sleep 2
   systemctl is-active --quiet "$UNIT" || { journalctl -u "$UNIT" --no-pager -n 30; die "OpenVPN failed"; }
   ss -lun | grep -q ":$PORT " || die "OpenVPN UDP port is not listening"
-  echo "[OpenVPN] Server active on UDP $PORT; permit port in provider firewall."
+  echo "[OpenVPN] Server active on UDP $PORT; firewall INPUT/FORWARD/NAT verified."
+  echo "[OpenVPN] Note: provider firewall and mobile-network reachability are not verified."
   echo "[OpenVPN] Create profile: sudo bash scripts/install-personal-openvpn.sh create iphone"
 }
 create_client(){
