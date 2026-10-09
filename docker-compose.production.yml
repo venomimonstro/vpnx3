@@ -48,6 +48,7 @@ services:
     volumes:
       - ${VPNX3_ARTIFACT_HOST_DIR:?set artifact directory}:/var/lib/vpnx3/artifacts
       - ${VPNX3_TRUST_BUNDLE_HOST_FILE:?set trust bundle file}:/etc/vpnx3/trust-bundle.json:ro
+      - ${VPNX3_PERSONAL_VLESS_CONTROL_DIR:-/opt/vpnx3/private/personal-vless/control}:/run/vpnx3-personal-vless:ro
     security_opt:
       - no-new-privileges:true
 
