@@ -67,6 +67,10 @@ func (s *Server) handlePersonalVLESS(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		req.Action = "status"
 	case http.MethodPost:
+		if r.URL.Path == "/api/v1/admin/personal-vless/alternate-port" {
+			req.Action = "enable_alternate_port"
+			break
+		}
 		if r.URL.Path == "/api/v1/admin/personal-vless/check" {
 			req.Action = "check"
 			break
