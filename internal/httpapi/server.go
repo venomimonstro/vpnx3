@@ -120,6 +120,7 @@ func NewServer(
 	mux.HandleFunc("POST /api/v1/webhooks/yookassa",s.handleYooKassaWebhook)
 	mux.Handle("GET /api/v1/admin/personal-vless",s.requireAdmin(requirePermission("admin.manage",http.HandlerFunc(s.handlePersonalVLESS))))
 	mux.Handle("POST /api/v1/admin/personal-vless",s.requireAdmin(requirePermission("admin.manage",http.HandlerFunc(s.handlePersonalVLESS))))
+	mux.Handle("POST /api/v1/admin/personal-vless/check",s.requireAdmin(requirePermission("admin.manage",http.HandlerFunc(s.handlePersonalVLESS))))
 	mux.Handle("DELETE /api/v1/admin/personal-vless/{id}",s.requireAdmin(requirePermission("admin.manage",http.HandlerFunc(s.handlePersonalVLESS))))
 	mux.Handle("GET /api/v1/admin/me",s.requireAdmin(http.HandlerFunc(s.handleAdminMe)))
 	mux.Handle("GET /api/v1/admin/dashboard",s.requireAdmin(requirePermission("analytics.read",http.HandlerFunc(s.handleDashboard))))
