@@ -95,7 +95,7 @@ func Load() (Config, error) {
 		DatabaseIdleTxTimeout:    duration("VPNX3_DATABASE_IDLE_TX_TIMEOUT",15*time.Second),
 		LogLevel:               parseLogLevel(env("VPNX3_LOG_LEVEL", "info")),
 		ReadTimeout:            duration("VPNX3_HTTP_READ_TIMEOUT", 10*time.Second),
-		WriteTimeout:           duration("VPNX3_HTTP_WRITE_TIMEOUT", 15*time.Second),
+		WriteTimeout:           duration("VPNX3_HTTP_WRITE_TIMEOUT", 45*time.Second),
 		IdleTimeout:            duration("VPNX3_HTTP_IDLE_TIMEOUT", 60*time.Second),
 		DrainDelay:             duration("VPNX3_DRAIN_DELAY", 5*time.Second),
 		ShutdownTimeout:        duration("VPNX3_SHUTDOWN_TIMEOUT", 20*time.Second),
