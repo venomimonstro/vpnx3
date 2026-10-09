@@ -1145,16 +1145,33 @@ async function createAdmin(){
 async function personalVless(){
   const d=await api("/api/v1/admin/personal-vless");
   const healthy=!!(d.running&&d.local_port_listening);
+  const checkResult=$("p",{class:"muted"},"TCP-статус не подтверждает работу REALITY. Выполните проверку VPN.");
+  const testButton=$("button",{class:"btn primary",onclick:async()=>{
+    testButton.disabled=true;
+    checkResult.textContent="Проверяется реальный VLESS / REALITY / HTTPS...";
+    try{
+      const result=await api("/api/v1/admin/personal-vless/check",{method:"POST"});
+      checkResult.className="success";
+      checkResult.textContent=result.verified
+        ?"Подключение VLESS + REALITY и HTTPS работают (локальный тест сервера)."
+        :"Не удалось подтвердить VPN-подключение.";
+    }catch(err){
+      checkResult.className="error";
+      checkResult.textContent="VPN-проверка не прошла: "+err.message;
+    }finally{testButton.disabled=false}
+  }},"Проверить VPN-подключение");
   const status=$( "div",{class:"card"},
     $("h2",{},"Личный VPN · VLESS + REALITY"),
     $("div",{class:"toolbar"},
       badge(healthy?"active":"failed"),
       $("span",{class:"mono"},(d.address||"194.146.223.104")+":"+(d.port||8443)),
-      $("button",{class:"btn",onclick:()=>renderSection()},"Обновить состояние")
+      $("button",{class:"btn",onclick:()=>renderSection()},"Обновить состояние"),
+      testButton
     ),
     $("p",{class:"muted"},healthy
       ?"Xray работает, TCP-порт отвечает локально. Внешнее соединение необходимо проверить в Happ/v2ray."
       :"Xray остановлен или порт недоступен локально. Проверьте сервис personal-vless-manager и Docker."),
+    checkResult,
     $("p",{class:"muted"},"Ключи видны только администраторам. Отзыв ключа отключает устройство и перезапускает Xray на несколько секунд.")
   );
   const actions=$("div",{class:"toolbar"});
@@ -1170,7 +1187,7 @@ async function personalVless(){
   const profiles=d.profiles||[];
   const rows=profiles.map(p=>[
     $("div",{},$("strong",{},p.name||"Устройство"),$("div",{class:"muted mono"},p.id)),
-    badge(healthy?"active":"warning"),
+    $("span",{class:"muted"},healthy?"Порт открыт":"Порт недоступен"),
     $("div",{class:"row-actions"},
       $("button",{class:"btn",onclick:()=>navigator.clipboard.writeText(p.uri).then(()=>alert("Ссылка скопирована")).catch(()=>showPersonalVless(p))},"Скопировать"),
       $("button",{class:"btn",onclick:()=>showPersonalVless(p)},"Показать ссылку"),
