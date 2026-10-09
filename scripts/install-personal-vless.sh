@@ -114,6 +114,9 @@ print("[VLESS] Admin management health check OK")
 PY
 docker ps --filter name="^/$NAME$"
 echo "[VLESS] Admin manager: active; restricted Unix socket at $CONTROL/manager.sock"
-echo "[VLESS] Import this profile into Happ / v2ray-compatible clients (keep secret):"
-cat "$ROOT/client.txt"
+echo "[VLESS] Copy the import URI from /admin/ -> Личный VPN."
+if [[ "${VPNX3_SHOW_PERSONAL_URI:-0}" == "1" ]]; then
+  echo "[VLESS] Sensitive client URI:"
+  cat "$ROOT/client.txt"
+fi
 echo "[VLESS] Ensure inbound TCP port $PORT is allowed by the provider firewall."
