@@ -66,6 +66,7 @@ func (p *Publisher) Run(ctx context.Context){
 					break drainLoop
 				}
 			}
+		}
 	}
 }
 
