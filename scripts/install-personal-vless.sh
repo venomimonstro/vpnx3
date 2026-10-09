@@ -105,9 +105,9 @@ for i in range(20):
         with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as s:
             s.settimeout(3)
             s.connect(path)
-            s.sendall(b'{"action":"status"}\\n')
+            s.sendall(b'{"action":"status"}\n')
             data=b""
-            while not data.endswith(b"\\n"):
+            while not data.endswith(b"\n"):
                 part=s.recv(65536)
                 if not part:
                     raise ConnectionError("Manager disconnected")
