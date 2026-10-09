@@ -133,3 +133,19 @@ func (s *Store) DeviceEntitlement(ctx context.Context,deviceID string,now time.T
 	}
 	return Entitlement{},fmt.Errorf("no active entitlement")
 }
+
+func validateDeviceInput(platform, displayName, algorithm string, publicKey []byte) error {
+	if platform == "" || len(platform) > 32 {
+		return fmt.Errorf("invalid device platform")
+	}
+	if len(strings.TrimSpace(displayName)) > 120 {
+		return fmt.Errorf("device display name too long")
+	}
+	if algorithm == "" || len(algorithm) > 64 {
+		return fmt.Errorf("invalid device identity algorithm")
+	}
+	if len(publicKey) == 0 || len(publicKey) > 4096 {
+		return fmt.Errorf("invalid device identity public key")
+	}
+	return nil
+}
