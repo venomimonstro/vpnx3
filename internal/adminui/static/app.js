@@ -97,6 +97,7 @@ const sections=[
   ["issues","Требует внимания","analytics.read"],
   ["nodes","Сеть","nodes.read"],
   ["personalvless","Личный VPN","admin.manage"],
+  ["personalopenvpn","OpenVPN","admin.manage"],
   ["probes","Наблюдение","nodes.read"],
   ["telemetry","Клиентская диагностика","analytics.read"],
   ["users","Пользователи","users.read"],
@@ -1265,11 +1266,51 @@ function showPersonalVless(p){
   ]);
 }
 
+async function personalOpenVPN(){
+  const data=await api("/api/v1/admin/personal-openvpn");
+  const status=$("div",{class:"card"},
+    $("h2",{},"OpenVPN · профили устройств"),
+    $("div",{class:"toolbar"},badge(data.running?"active":"failed"),$("span",{},data.running?"Сервер запущен":"Сервер не запущен")),
+    $("p",{class:"muted"},data.installed
+      ?"OpenVPN установлен. Профили содержат приватные ключи — храните файлы только на своих устройствах."
+      :"OpenVPN ещё не установлен на сервере. Выполните sudo bash scripts/install-personal-openvpn.sh install. Порт 1194/UDP должен быть открыт у хостинга.")
+  );
+  const input=$("input",{placeholder:"Например: iphone",maxlength:"40",autocomplete:"off"});
+  const create=$("button",{class:"btn primary",onclick:async()=>{
+    const name=input.value.trim();
+    if(!/^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(name)){alert("Имя: латинские буквы, цифры, _ и -");return}
+    create.disabled=true;
+    try{await api("/api/v1/admin/personal-openvpn",{method:"POST",body:JSON.stringify({name})});renderSection()}
+    catch(e){alert("Создание OpenVPN-профиля: "+e.message)}
+    finally{create.disabled=false}
+  }},"Создать профиль");
+  const rows=(data.profiles||[]).map(p=>[
+    $("strong",{},p.name),
+    $("div",{class:"row-actions"},
+      $("button",{class:"btn primary",onclick:async()=>{
+        try{await downloadAuthenticated("/api/v1/admin/personal-openvpn/"+encodeURIComponent(p.name))}
+        catch(e){alert("Ошибка скачивания: "+e.message)}
+      }},"Скачать .ovpn"),
+      $("button",{class:"btn danger",onclick:async()=>{
+        if(!confirm("Отозвать сертификат "+p.name+"? Устройство потеряет доступ."))return;
+        try{await api("/api/v1/admin/personal-openvpn/"+encodeURIComponent(p.name),{method:"DELETE"});renderSection()}
+        catch(e){alert("Ошибка отзыва: "+e.message)}
+      }},"Отозвать")
+    )
+  ]);
+  return sectionFrame("OpenVPN", $("div",{class:"stack"},status,$("div",{class:"card"},
+    $("h2",{},"Сертификаты и устройства"),
+    $("div",{class:"toolbar"},input,create),
+    rows.length?table(["Устройство","Действия"],rows):$("p",{class:"muted"},"Нет созданных профилей"),
+    $("p",{class:"muted"},"Файл .ovpn импортируется в OpenVPN Connect на iOS или Android. Работа в конкретной мобильной сети требует отдельной проверки.")
+  )));
+}
+
 async function renderSection(){
   const target=document.getElementById("section");if(!target)return;
   target.replaceChildren($("div",{class:"card"},"Загрузка…"));
   try{
-    const fn={dashboard,referrals,networkrisk,fleet,readiness,httpmetrics:httpMetrics,issues,nodes,personalvless:personalVless,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
+    const fn={dashboard,referrals,networkrisk,fleet,readiness,httpmetrics:httpMetrics,issues,nodes,personalvless:personalVless,personalopenvpn:personalOpenVPN,probes,telemetry,users,billing,incidents,releases,audit,admins}[state.section]||dashboard;
     target.replaceChildren(await fn());
   }catch(e){target.replaceChildren(sectionError("VPNX3",e))}
 }
