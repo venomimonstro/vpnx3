@@ -17,8 +17,7 @@ func Canonical(method,path,timestamp string,body []byte) []byte {
 		path,
 		timestamp,
 		fmt.Sprintf("%x",sum[:]),
-	},"
-"))
+	},"\n"))
 }
 
 func Verify(publicKey []byte, method,path,timestamp,signature string,body []byte,now time.Time) error {
