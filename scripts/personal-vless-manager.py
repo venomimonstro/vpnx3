@@ -237,7 +237,7 @@ def test_personal_vless():
     started = False
     try:
         run("docker", "run", "-d", "--name", name, "--network", "host",
-            "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+            "--user", "0:0", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "--memory=128m", "--cpus=0.5",
             "-v", f"{path}:/etc/xray/config.json:ro",
             "--entrypoint", "xray", IMAGE, "run", "-config", "/etc/xray/config.json",
