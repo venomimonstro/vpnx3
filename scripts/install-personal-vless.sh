@@ -64,11 +64,15 @@ docker run --rm --network none --user 0:0 --read-only --cap-drop ALL --security-
 if ! docker inspect "$NAME" >/dev/null 2>&1; then
   docker run -d --name "$NAME" --restart unless-stopped \
     --user 0:0 --read-only --cap-drop ALL --security-opt no-new-privileges \
-    --memory=128m --cpus=0.5 -p "$PORT:$PORT/tcp" \
+    --memory=192m --cpu-shares=512 -p "$PORT:$PORT/tcp" \
     -v "$ROOT/config.json:/etc/xray/config.json:ro" \
     --entrypoint xray "$IMAGE" run -config /etc/xray/config.json >/dev/null
 else
   docker start "$NAME" >/dev/null 2>&1 || true
+  # Old installations imposed a 0.5 vCPU quota: remove the artificial
+  # throttling on 1-vCPU VPS without restarting or rotating existing keys.
+  docker update --cpus=1 --cpu-shares=512 --memory=192m "$NAME" >/dev/null || \
+    echo "[VLESS] WARNING: Docker resource update failed; existing keys remain intact" >&2
 fi
 # Admin management is available only over a local Unix socket.
 # Control Plane sees neither the Xray REALITY private key nor the Docker socket.
