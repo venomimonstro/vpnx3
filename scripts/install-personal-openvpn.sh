@@ -81,11 +81,13 @@ source /etc/openvpn/vpnx3/network.env
 IPT=/usr/sbin/iptables
 case "${1:-start}" in
 start)
+  $IPT -C INPUT -p udp --dport "$PORT" -j ACCEPT 2>/dev/null || $IPT -I INPUT 1 -p udp --dport "$PORT" -j ACCEPT
   $IPT -C FORWARD -s 10.86.0.0/24 -j ACCEPT 2>/dev/null || $IPT -I FORWARD 1 -s 10.86.0.0/24 -j ACCEPT
   $IPT -C FORWARD -d 10.86.0.0/24 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || $IPT -I FORWARD 1 -d 10.86.0.0/24 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
   $IPT -t nat -C POSTROUTING -s 10.86.0.0/24 -o "$WAN" -j MASQUERADE 2>/dev/null || $IPT -t nat -A POSTROUTING -s 10.86.0.0/24 -o "$WAN" -j MASQUERADE
   ;;
 stop)
+  $IPT -D INPUT -p udp --dport "$PORT" -j ACCEPT 2>/dev/null || true
   $IPT -D FORWARD -s 10.86.0.0/24 -j ACCEPT 2>/dev/null || true
   $IPT -D FORWARD -d 10.86.0.0/24 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
   $IPT -t nat -D POSTROUTING -s 10.86.0.0/24 -o "$WAN" -j MASQUERADE 2>/dev/null || true
@@ -108,6 +110,9 @@ ExecStop=/usr/local/sbin/vpnx3-openvpn-firewall stop
 WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
+  if command -v ufw >/dev/null && ufw status | grep -q '^Status: active'; then
+    ufw allow "$PORT/udp" comment 'VPNX3 OpenVPN'
+  fi
   systemctl enable --now vpnx3-openvpn-firewall.service
   systemctl enable --now "$UNIT"
   systemctl restart "$UNIT"
