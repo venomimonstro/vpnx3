@@ -8,5 +8,6 @@ bash -n scripts/install-personal-vless.sh scripts/install-personal-openvpn.sh sc
 python3 -m py_compile scripts/personal-vless-manager.py scripts/vpn-acceptance.py \
   scripts/diagnose-personal-vless.py scripts/diagnose-personal-openvpn.py
 python3 scripts/tests/test_personal_vless.py -q
+python3 scripts/tests/test_vpn_deployment_safety.py -q
 echo "[VPNX3] Actual tunnel acceptance checks"
 python3 scripts/vpn-acceptance.py --russia
