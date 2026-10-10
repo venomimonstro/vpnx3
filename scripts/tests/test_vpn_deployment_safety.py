@@ -40,6 +40,20 @@ class DeploymentSafety(unittest.TestCase):
         self.assertIn('TEMP_PROFILE="$(mktemp "$CLIENTS/.client.XXXXXXXX.ovpn")"', script)
         self.assertIn('mv -f "$TEMP_PROFILE" "$CLIENTS/$NAME.ovpn"', script)
 
+    def test_openvpn_custom_interface_has_explicit_tun_type(self):
+        installer = source("scripts/install-personal-openvpn.sh")
+        self.assertIn("dev vpnx3tun0\\ndev-type tun\\ntopology subnet", installer)
+        self.assertIn('cp -p "$PREVIOUS_CONF" "$CONF"', installer)
+
+    def test_acceptance_never_reuses_user_certificate(self):
+        acceptance = source("scripts/vpn-acceptance.py")
+        installer = source("scripts/install-personal-openvpn.sh")
+        manager = source("scripts/personal-vless-manager.py")
+        self.assertIn('OVPN_CLIENTS / "vpnx3-health.ovpn"', acceptance)
+        self.assertIn('create_client "vpnx3-health"', installer)
+        self.assertIn('name == "vpnx3-health"', manager)
+        self.assertIn("summarize_openvpn_client_failure", acceptance)
+
     def test_crl_renewal_timer_installed(self):
         installer = source("scripts/install-personal-openvpn.sh")
         self.assertIn('OnCalendar=weekly', installer)
