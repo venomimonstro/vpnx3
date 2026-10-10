@@ -1146,6 +1146,7 @@ async function createAdmin(){
 async function personalVless(){
   const d=await api("/api/v1/admin/personal-vless");
   const healthy=!!(d.running&&d.local_port_listening);
+  const primaryPort=d.https_443_available?443:(d.port||8443);
   const checkResult=$("p",{class:"muted"},"Локальный TCP-порт не гарантирует доступ с мобильного оператора. Проверьте ключ и затем устройство.");
   const testButton=$("button",{class:"btn primary",onclick:async()=>{
     testButton.disabled=true;
@@ -1165,7 +1166,8 @@ async function personalVless(){
     $("h2",{},"Личный VPN · VLESS + REALITY"),
     $("div",{class:"toolbar"},
       badge(healthy?"active":"failed"),
-      $("span",{class:"mono"},(d.address||"194.146.223.104")+":"+(d.port||8443)),
+      $("span",{class:"mono"},(d.address||"194.146.223.104")+":"+primaryPort),
+      d.https_443_available?$("span",{class:"muted"},"443 · основной, 8443 · резервный"):$("span",{class:"muted"},"Ожидается внешний тест доступности из РФ"),
       $("button",{class:"btn",onclick:()=>renderSection()},"Обновить состояние"),
       $("button",{class:"btn",onclick:async()=>{
         if(!confirm("Добавить резервный публичный VLESS-порт 2053/TCP? Xray кратковременно перезапустится, ключи сохранятся."))return;
@@ -1225,6 +1227,7 @@ async function personalVless(){
       }},"Тест ключа"),
       $("button",{class:"btn",disabled:!p.uri,onclick:()=>navigator.clipboard.writeText(p.uri).then(()=>alert("Ссылка скопирована")).catch(()=>showPersonalVless(p))},"Скопировать"),
       $("button",{class:"btn",disabled:!p.uri,onclick:()=>showPersonalVless(p)},"Показать ссылку"),
+      ...(p.fallback_uri?[ $("button",{class:"btn",onclick:()=>navigator.clipboard.writeText(p.fallback_uri).then(()=>alert("Резервный VLESS 8443 скопирован"))},"Резервный 8443") ]:[]),
       ...(p.https_uri?[ $("button",{class:"btn primary",onclick:()=>{
         const content=$("div",{class:"stack"},
           $("p",{class:"muted"},"TLS-порт 443 — общий с админкой. Импортируйте эту ссылку в совместимый VLESS-клиент. Ключ не публикуйте."),
@@ -1261,7 +1264,7 @@ async function personalVless(){
   ]);
   return sectionFrame("Личный VPN", $("div",{class:"stack"},status,
     $("div",{class:"card"},$("h2",{},"Мои устройства"),actions,
-      $("p",{class:"muted"},"Для iOS создавайте отдельный профиль: он использует VLESS + REALITY без XTLS Vision. Не удаляйте старый профиль Android до успешной проверки. При долгом соединении попробуйте мобильный интернет и Wi-Fi, убедитесь что 8443/TCP разрешён у хостера."),
+      $("p",{class:"muted"},"Для iOS создавайте отдельный профиль REALITY без XTLS Vision. После активации общего шлюза новый импорт автоматически использует порт 443; старый 8443 остаётся резервным. Проверяйте реальное подключение через мобильную сеть и Wi-Fi."),
       profiles.length?table(["Устройство","Статус сервера","Ключ и управление"],rows)
        :$("div",{class:"empty"},"Ключи ещё не созданы")
     )
