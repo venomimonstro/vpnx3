@@ -52,6 +52,28 @@ class CompatibilityTests(TestCase):
         self.assertEqual(q["sid"], ["abcdef0123456789"])
         self.assertEqual(q["fp"], ["chrome"])
 
+    def test_generated_links_match_live_reality_parameters(self):
+        for uid, label in ((VISION_ID, "Android"), (IOS_ID, "iPhone")):
+            link = manager.uri_for(uid, label, self.conf)
+            verdict = manager.inspect_vless_import_link(link, self.conf, uid, 8443)
+            self.assertEqual(verdict, {"valid": True, "issues": []})
+
+    def test_corrupted_links_cannot_be_issued(self):
+        link = manager.uri_for(IOS_ID, "iPhone", self.conf)
+        cases = (
+            (link.replace("sid=abcdef0123456789", "sid=bad-id"), "invalid_short_id"),
+            (link.replace("sni=dl.google.com", "sni=example.org"), "invalid_sni"),
+            (link.replace("pbk=" + "A" * 43, "pbk=" + "B" * 43), "stale_public_key"),
+            (link.replace(":8443", ":443"), "incorrect_public_endpoint"),
+            (link.replace("security=reality", "security=tls"), "incorrect_security"),
+            (link + "&flow=xtls-rprx-vision", "incorrect_flow"),
+        )
+        for broken, expected in cases:
+            with self.subTest(issue=expected):
+                result = manager.inspect_vless_import_link(broken, self.conf, IOS_ID, 8443)
+                self.assertFalse(result["valid"])
+                self.assertIn(expected, result["issues"])
+
     def test_modes_derive_from_server_configuration(self):
         devices = manager.current_profiles(self.conf)
         self.assertEqual([p["mode"] for p in devices], ["vision", "ios"])
