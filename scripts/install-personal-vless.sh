@@ -18,8 +18,11 @@ chmod 700 "$ROOT"
 # Admin manager runs as a separate systemd service. Persist the public endpoint
 # so admin-generated links use the same hostname as this installer's initial link.
 if [[ "${1:-install}" == "install" ]]; then
-  printf '%s\n' "$ADDRESS" >"$ROOT/public-address.txt"
-  chmod 600 "$ROOT/public-address.txt"
+  if [[ ! -f "$ROOT/public-address.txt" || -n "${VPNX3_PERSONAL_VLESS_IP:-}" ]]; then
+    [[ "$ADDRESS" =~ ^[A-Za-z0-9.-]+$ ]] || fail "Invalid public address"
+    printf '%s\n' "$ADDRESS" >"$ROOT/public-address.txt"
+    chmod 600 "$ROOT/public-address.txt"
+  fi
 fi
 if [[ "${1:-install}" == "status" ]]; then
   docker ps --filter name="^/$NAME$"
