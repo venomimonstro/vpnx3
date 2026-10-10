@@ -73,6 +73,12 @@ case "$ACTION" in
   *) echo "Usage: sudo bash scripts/enable-vless-443.sh enable|disable|status"; exit 2;;
 esac
 
+# Critical safety guard: the old implementation edits a Caddyfile inside a
+# published Docker container, which does NOT release the Docker host port 443.
+# It also connects to 127.0.0.1:9443 from the host, while Caddy's loopback
+# inside the container is not the host loopback. Fail closed instead of
+# taking a working admin HTTPS endpoint offline.
+die "Shared TCP/443 cutover is disabled: existing Docker/Caddy port binding and network namespaces are not safely handled by this installer. Keep ports 8443/2053 until a topology-aware gateway deployment is validated."
 [[ -f "$CADDY" ]] || die "Caddyfile not found; no changes made"
 docker inspect "$ADMIN_CONTAINER" >/dev/null 2>&1 || die "Caddy admin proxy container missing"
 docker inspect vpnx3-personal-vless >/dev/null 2>&1 || die "Personal VLESS container missing"
