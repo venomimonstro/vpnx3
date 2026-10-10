@@ -114,3 +114,26 @@ The final acceptance emits `PASS`, `FAIL`, `INCOMPLETE` and `UNAVAILABLE` distin
 * [INCY developer documentation: deep links and routing](https://docs.incy.cc/deep-links/)
 * [OpenVPN Connect iOS profile import](https://openvpn.net/connect-docs/ios-installation-guide.html)
 * [Globalping API: MTR from chosen locations](https://blog.globalping.io/run-mtr-with-http-using-globalping-api/)
+
+## Дополнение: безопасная единая точка входа 443 на текущем VPS
+
+Предыдущее замечание ниже о **заблокированном** скрипте 443 относится к
+старой реализации, которая пыталась перенастроить Docker/Caddy. В main
+добавлен новый `scripts/enable-reality-on-443.sh`: публичный TCP/443
+перенаправляется на отдельный HAProxy (10443) в TCP-SNI режиме через
+приоритетное NAT PREROUTING правило только для входящего WAN. При SNI
+REALITY запрос идёт в Xray на 8443, иначе — в существующий Caddy на 443.
+Docker-публикация, админка и ключи не меняются.
+
+Шлюз **не применяется автоматически**: оператор выполняет
+`sudo bash scripts/enable-reality-on-443.sh enable`. До изменения WAN NAT
+он проверяет HTTPS админки и реальный REALITY/VLESS→telegram.org через
+внутренний шлюз. При неудаче переключения публичный HTTPS должен остаться
+на Caddy; systemd guard с ExecStopPost очищает правила при остановке.
+`disable` возвращает прямой доступ к Caddy. В админке новый основной
+импорт использует 443, а 8443 остаётся резервным.
+
+Так как переключение ещё не подтверждено на VPS, фактическую работу
+iptables-nft, Docker conntrack и доступность 443 из российских сетей
+необходимо проверить отдельно; нельзя объявлять VPN исправным по одному
+локальному тесту.
