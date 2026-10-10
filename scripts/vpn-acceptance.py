@@ -197,9 +197,10 @@ def external_ru_port_test():
                     if country not in ("RU","Russia","Russian Federation"):
                         print("RU probe: UNAVAILABLE (returned probe is not in Russia)")
                         return None
-                print("RU probe: completed TCP MTR toward VPS; this does NOT authenticate VPN.")
-                print("RU probe: inspect result at https://globalping.io? (measurement ID:",identifier,")")
-                return True
+                print("RU probe: TCP MTR completed from RF; reachability of the service is not confirmed.")
+                print("RU probe measurement ID:", identifier)
+                print("RU probe: use authenticated testing from a real RF client to confirm the VPN.")
+                return None
         print("RU probe: UNAVAILABLE (measurement timed out)")
         return None
     except (OSError,URLError,HTTPError,ValueError) as exc:
@@ -216,8 +217,13 @@ def main():
     result_ru=external_ru_port_test() if args.russia else None
     print("\nACCEPTANCE: local VLESS=",result_vless,
           "local OpenVPN=",result_ovpn,"RU TCP measurement=",result_ru)
-    print("A real end-to-end VPN test FROM RUSSIA additionally requires an actual RF client/probe with credentials.")
-    return 1 if result_vless is False or result_ovpn is False else 0
+    print("An end-to-end VPN test FROM RUSSIA requires a real RF client/probe with credentials.")
+    if result_vless is False or result_ovpn is False:
+        return 1
+    if result_vless is None or result_ovpn is None:
+        print("INCOMPLETE: at least one VPN protocol was not tested through its client.")
+        return 2
+    return 0
 
 if __name__=="__main__":
     sys.exit(main())
