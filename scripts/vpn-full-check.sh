@@ -12,4 +12,6 @@ python3 scripts/tests/test_vpn_deployment_safety.py -q
 echo "[VPNX3] Runtime security, ports and certificate audit"
 python3 scripts/audit-vpn-runtime.py
 echo "[VPNX3] Actual tunnel acceptance checks"
-python3 scripts/vpn-acceptance.py --russia
+# RF measurement provider returned HTTP 403 in the observed production run.
+# Keep the optional probe opt-in, never conflate its API error with VPN failure.
+python3 scripts/vpn-acceptance.py "${@}"
