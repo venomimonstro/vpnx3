@@ -173,7 +173,9 @@ def get_status():
     config = load_config()
     profiles = current_profiles(config)
     alternative = alternate_port_published()
-    tls443 = HTTPS443_FLAG.is_file() and local_listening(443)
+    tls443 = (HTTPS443_FLAG.is_file() and
+              run("systemctl", "is-active", "--quiet", "vpnx3-sni-gateway.service",
+                  timeout=3, check=False).returncode == 0 and local_listening(443))
     for p in profiles:
         p["uri"] = uri_for(p["id"], p["name"], config)
         if tls443:
