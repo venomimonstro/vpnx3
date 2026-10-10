@@ -17,6 +17,7 @@ import secrets
 import shutil
 import signal
 import subprocess
+import tempfile
 import sys
 import time
 from urllib.request import Request, urlopen
@@ -57,6 +58,42 @@ def vless_tests():
     print("VLESS caveat: these probes originate on the VPS, NOT inside Russia.", flush=True)
     return success
 
+def summarize_openvpn_client_failure(log_file, proc):
+    """Classify client handshake errors; NEVER return raw logs containing IPs/keys."""
+    if log_file is None:
+        return "client did not start"
+    try:
+        log_file.flush()
+        log_file.seek(0)
+        lines=log_file.read(64*1024).lower()
+    except (OSError,ValueError):
+        return "client logs unavailable"
+    reasons=(
+        ("options error", "unsupported client profile directive"),
+        ("unrecognized option", "unsupported client profile directive"),
+        ("permission denied", "permission denied creating tunnel or route"),
+        ("cannot open tun", "TUN interface unavailable"),
+        ("cannot ioctl tun", "TUN interface unavailable"),
+        ("tls key negotiation failed", "TLS handshake timed out"),
+        ("tls error", "TLS negotiation error"),
+        ("verify error", "certificate validation failed"),
+        ("certificate has expired", "certificate expired"),
+        ("auth_failed", "server rejected authentication"),
+        ("tls-crypt unwrap error", "tls-crypt mismatch"),
+        ("network is unreachable", "client namespace cannot route to server"),
+        ("no route to host", "client namespace cannot reach server"),
+        ("rtnetlink answers", "route installation failed"),
+        ("route addition failed", "route installation failed"),
+        ("initialization sequence completed", "client initialized but expected full-tunnel routes were absent"),
+    )
+    for pattern,desc in reasons:
+        if pattern in lines:
+            return desc
+    code=proc.poll() if proc else None
+    return ("client exited (see journalctl -u openvpn-server@vpnx3)" if code is not None
+            else "no tunnel after timeout (inspect server TLS logs)")
+
+
 def openvpn_test():
     """Client namespace has an isolated route table; VPS main routes are unchanged."""
     if os.geteuid() != 0:
@@ -70,6 +107,13 @@ def openvpn_test():
         if not shutil.which(executable):
             print(f"OpenVPN: SKIP ({executable} missing)", flush=True)
             return None
+    # Avoid a false 23-second timeout caused by a stale OpenVPN installation.
+    # Operator logs have shown 'dev tun' + missing FORWARD rules although
+    # the repository installer already configures vpnx3tun0.
+    server_file = Path("/etc/openvpn/server/vpnx3.conf")
+    if not server_file.is_file() or not re.search(r"(?m)^dev vpnx3tun0\\s*$",server_file.read_text()):
+        print("OpenVPN: FAIL (stale server configuration: run sudo bash scripts/install-personal-openvpn.sh install)",flush=True)
+        return False
     config = profiles[0]
     if config.stat().st_size > 100*1024:
         print("OpenVPN: FAIL (oversized profile)", flush=True)
@@ -86,6 +130,8 @@ def openvpn_test():
         return None
     created = False
     proc = None
+    log_file = None
+    log_stage = "not_started"
     try:
         call("ip", "netns", "add", ns)
         created = True
@@ -100,13 +146,15 @@ def openvpn_test():
         dns = Path("/etc/netns") / ns
         dns.mkdir(parents=True, mode=0o700, exist_ok=True)
         (dns/"resolv.conf").write_text("nameserver 1.1.1.1\nnameserver 9.9.9.9\n")
+        log_file = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
         proc = subprocess.Popen(
             ["ip","netns","exec",ns,"openvpn","--config",str(config),
-             "--connect-retry-max","1","--verb","2"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+             "--connect-retry-max","2","--verb","3"],
+            stdout=log_file, stderr=subprocess.STDOUT
         )
+        log_stage = "handshake"
         ready = False
-        for _ in range(45):
+        for _ in range(80):
             if proc.poll() is not None:
                 break
             status = call("ip", "-n", ns, "route", "show", check=False)
@@ -115,7 +163,9 @@ def openvpn_test():
                 break
             time.sleep(0.5)
         if not ready:
-            print("OpenVPN: FAIL (client tunnel routes not established within 23s)", flush=True)
+            detail = summarize_openvpn_client_failure(log_file, proc)
+            print("OpenVPN: FAIL (client tunnel routes not established within 40s; "+detail+")",flush=True)
+            print("OpenVPN: check server listener, certificate validity, tls-crypt and local namespace routes. No credentials are printed.",flush=True)
             return False
         good = True
         for host in ("example.com", "telegram.org", "web.telegram.org"):
@@ -146,6 +196,8 @@ def openvpn_test():
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait(timeout=4)
+        if log_file is not None:
+            log_file.close()
         if created:
             call("ip", "netns", "del", ns, check=False)
             # Rarely a veth can remain after namespace teardown.
