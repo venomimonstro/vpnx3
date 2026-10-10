@@ -99,9 +99,9 @@ def openvpn_test():
     if os.geteuid() != 0:
         print("OpenVPN: SKIP (run as root for netns)", flush=True)
         return None
-    profiles = sorted(OVPN_CLIENTS.glob("*.ovpn")) if OVPN_CLIENTS.exists() else []
-    if not profiles:
-        print("OpenVPN: SKIP (create a profile via VPNX3 admin first)", flush=True)
+    config = OVPN_CLIENTS / "vpnx3-health.ovpn"
+    if not config.is_file():
+        print("OpenVPN: INCOMPLETE (dedicated health certificate missing; run sudo bash scripts/install-personal-openvpn.sh install)",flush=True)
         return None
     for executable in ("ip", "openvpn", "curl"):
         if not shutil.which(executable):
@@ -114,7 +114,6 @@ def openvpn_test():
     if not server_file.is_file() or not re.search(r"(?m)^dev vpnx3tun0\\s*$",server_file.read_text()):
         print("OpenVPN: FAIL (stale server configuration: run sudo bash scripts/install-personal-openvpn.sh install)",flush=True)
         return False
-    config = profiles[0]
     if config.stat().st_size > 100*1024:
         print("OpenVPN: FAIL (oversized profile)", flush=True)
         return False
