@@ -47,12 +47,21 @@ on(){
   touch "$MARKER"; chmod 600 "$MARKER"
 }
 admin(){
-  code="$(curl -k -sS --connect-timeout 3 --max-time 8 --resolve '194.146.223.104:443:127.0.0.1' -o /dev/null -w '%{http_code}' 'https://194.146.223.104/admin/' || :)"
+  # A TLS alert from IP-only HTTPS is expected if Caddy requires a DNS SNI.
+  # Probe the actual admin hostname when explicitly configured.
+  local name="${VPNX3_ADMIN_TLS_HOST:-194.146.223.104}"
+  [[ "$name" =~ ^[A-Za-z0-9.-]{1,253}$ ]] || die "Invalid VPNX3_ADMIN_TLS_HOST"
+  code="$(curl --noproxy '*' -k -sS --connect-timeout 3 --max-time 8 \
+    --resolve "$name:443:127.0.0.1" -o /dev/null -w '%{http_code}' \
+    "https://$name/admin/" 2>/dev/null || :)"
   [[ "$code" =~ ^[234][0-9][0-9]$ ]]
 }
 ready(){
   gateway || return 1
-  code="$(curl -k -sS --connect-timeout 3 --max-time 8 --connect-to '194.146.223.104:443:127.0.0.1:10443' -o /dev/null -w '%{http_code}' 'https://194.146.223.104/admin/' || :)"
+  local name="${VPNX3_ADMIN_TLS_HOST:-194.146.223.104}"
+  code="$(curl --noproxy '*' -k -sS --connect-timeout 3 --max-time 8 \
+    --connect-to "$name:443:127.0.0.1:10443" \
+    -o /dev/null -w '%{http_code}' "https://$name/admin/" 2>/dev/null || :)"
   [[ "$code" =~ ^[234][0-9][0-9]$ ]] || return 1
   python3 - <<'PY'
 import importlib.util
@@ -89,7 +98,7 @@ enable)
   [[ -f "$ROOT/config.json" ]] || die "Install VLESS first"
   [[ -f "$ROOT/public-key.txt" ]] || die "REALITY public key missing"
   wan
-  admin || die "Admin HTTPS/443 not healthy; no changes made"
+  admin || die "No verified local admin HTTPS on 443 for SNI ${VPNX3_ADMIN_TLS_HOST:-194.146.223.104}; public 443 unchanged. First inspect: sudo ss -lntp '( sport = :443 )' and curl -vk https://127.0.0.1/admin/"
   [[ "$(docker inspect -f '{{.State.Running}}' vpnx3-personal-vless 2>/dev/null || :)" == true ]] || die "Xray not running"
   info "Keeping Caddy and Xray Docker ports and keys unchanged"
   sni_port="$(python3 - "$ROOT/config.json" <<'PY'
