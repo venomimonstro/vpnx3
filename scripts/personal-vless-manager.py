@@ -117,6 +117,61 @@ def uri_for(client_id, name, conf, external_port=None):
             f"&sid={sid}&spx=%2F#{quote(name)}")
 
 
+def inspect_vless_import_link(uri, conf, expected_id, expected_port):
+    """Legacy Private-line inspired fail-closed check; never prints secrets.
+
+    Validate a generated link against the ACTUAL Xray config before offering it
+    to a user. This detects wrong public port, stale X25519 public key, malformed
+    SNI/short ID, accidental mode conversion, and truncated links.
+    """
+    issues = []
+    try:
+        parsed = urlsplit(uri)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        inbound = conf["inbounds"][0]
+        reality = inbound["streamSettings"]["realitySettings"]
+        client = next((v for v in inbound["settings"]["clients"]
+                       if v["id"] == expected_id), None)
+        if client is None:
+            return {"valid": False, "issues": ["profile_not_found"]}
+        if parsed.scheme != "vless" or parsed.username != expected_id:
+            issues.append("incorrect_protocol_or_client")
+        if parsed.hostname != ADDRESS.lower() or parsed.port != expected_port:
+            issues.append("incorrect_public_endpoint")
+        def param(key):
+            values = query.get(key, [])
+            if len(values) != 1:
+                issues.append("invalid_" + key)
+                return ""
+            return values[0]
+        for key, value in (("encryption", "none"), ("type", "tcp"),
+                           ("security", "reality"), ("fp", "chrome")):
+            if param(key) != value:
+                issues.append("incorrect_" + key)
+        if param("pbk") != existing_public_key():
+            issues.append("stale_public_key")
+        sni = param("sni")
+        server_names = reality.get("serverNames", [])
+        if (sni not in server_names or not re.fullmatch(
+                r"(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?", sni
+        )):
+            issues.append("invalid_sni")
+        sid = param("sid")
+        if (sid not in reality.get("shortIds", [])
+                or len(sid) > 16 or len(sid) % 2
+                or not re.fullmatch(r"[a-fA-F0-9]*", sid)):
+            issues.append("invalid_short_id")
+        desired_flow = client.get("flow", "")
+        current_flow = query.get("flow", [""])
+        if len(current_flow) != 1 or current_flow[0] != desired_flow:
+            issues.append("incorrect_flow")
+        if param("spx") != "/":
+            issues.append("incorrect_spiderx")
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError):
+        issues.append("malformed_import_link")
+    return {"valid": not issues, "issues": sorted(set(issues))}
+
+
 def container_running():
     result = run("docker", "inspect", "-f", "{{.State.Running}}", CONTAINER, timeout=4, check=False)
     return result.returncode == 0 and result.stdout.strip() == "true"
@@ -176,13 +231,21 @@ def get_status():
     tls443 = (HTTPS443_FLAG.is_file() and
               run("systemctl", "is-active", "--quiet", "vpnx3-sni-gateway.service",
                   timeout=3, check=False).returncode == 0 and local_listening(443))
-    for p in profiles:
-        p["uri"] = uri_for(p["id"], p["name"], config)
-        if tls443:
-            p["https_uri"] = uri_for(p["id"], p["name"], config, 443)
-        if alternative:
-            p["alternate_uri"] = uri_for(p["id"], p["name"], config, ALT_PORT)
     port = int(config["inbounds"][0]["port"])
+    for p in profiles:
+        original_link = uri_for(p["id"], p["name"], config)
+        status = inspect_vless_import_link(original_link, config, p["id"], port)
+        p["validation"] = status
+        if status["valid"]:
+            p["uri"] = original_link
+        if tls443:
+            link443 = uri_for(p["id"], p["name"], config, 443)
+            if inspect_vless_import_link(link443, config, p["id"], 443)["valid"]:
+                p["https_uri"] = link443
+        if alternative:
+            alternate_link = uri_for(p["id"], p["name"], config, ALT_PORT)
+            if inspect_vless_import_link(alternate_link, config, p["id"], ALT_PORT)["valid"]:
+                p["alternate_uri"] = alternate_link
     running = container_running()
     return {"ok": True, "configured": True, "running": running,
             "local_port_listening": local_listening(port) if running else False,
@@ -218,6 +281,12 @@ def apply_change(conf, profiles):
     original = CONFIG.read_text()
     candidate = ROOT / "config.candidate.json"
     port = int(conf["inbounds"][0]["port"])
+    # Never commit a client configuration whose generated link is malformed.
+    for profile in profiles:
+        link = uri_for(profile["id"], profile["name"], conf)
+        result = inspect_vless_import_link(link, conf, profile["id"], port)
+        if not result["valid"]:
+            raise ValueError("invalid VLESS import profile: " + ",".join(result["issues"]))
     atomic_write(candidate, json.dumps(conf, ensure_ascii=False, indent=2) + "\n")
     try:
         run("docker", "run", "--rm", "--network", "none", "--user", "0:0",
