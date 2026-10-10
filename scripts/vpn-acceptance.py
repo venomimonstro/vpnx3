@@ -167,7 +167,7 @@ def external_ru_port_test():
     except ValueError:
         print("RU probe: SKIP (target is not an IP)")
         return None
-    port=int(cfg["inbounds"][0]["port"])
+    port=443 if vless.HTTPS443_FLAG.is_file() and vless.local_listening(443) else int(cfg["inbounds"][0]["port"])
     body={"type":"mtr","target":ip,"locations":[{"country":"RU","limit":1}],
           "measurementOptions":{"protocol":"TCP","port":port,"packets":3}}
     headers={"Content-Type":"application/json","Accept":"application/json",
