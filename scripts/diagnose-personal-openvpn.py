@@ -61,7 +61,7 @@ def report():
         iface = ""
     for label, args in (
         ("INPUT UDP allow", ("iptables", "-C", "INPUT", "-p", "udp", "--dport", str(port), "-j", "ACCEPT")),
-        ("VPN FORWARD allow", ("iptables", "-C", "FORWARD", "-i", "vpnx3tun0", "-s", "10.86.0.0/24", "-j", "ACCEPT")),
+        ("VPN FORWARD allow", ("iptables", "-C", "FORWARD", "-i", "vpnx3tun0", "-o", iface, "-s", "10.86.0.0/24", "-j", "ACCEPT")),
         ("VPN NAT masquerade", ("iptables", "-t", "nat", "-C", "POSTROUTING", "-s", "10.86.0.0/24",
                               "-o", iface, "-j", "MASQUERADE") if iface else ("false",))
     ):
@@ -69,7 +69,7 @@ def report():
         print(label + ":", "OK" if result is not None and result.returncode == 0 else "MISSING")
     docker_user = run("iptables", "-n", "-L", "DOCKER-USER")
     if docker_user and docker_user.returncode == 0:
-        rule = run("iptables", "-C", "DOCKER-USER", "-i", "vpnx3tun0",
+        rule = run("iptables", "-C", "DOCKER-USER", "-i", "vpnx3tun0", "-o", iface,
                    "-s", "10.86.0.0/24", "-j", "ACCEPT")
         print("Docker forwarding bypass:", "OK" if rule and rule.returncode == 0 else "MISSING")
     forwarding = Path("/proc/sys/net/ipv4/ip_forward").read_text().strip()
