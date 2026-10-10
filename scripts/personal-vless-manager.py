@@ -30,7 +30,11 @@ LEGACY = ROOT / "client.txt"
 PUBLIC = ROOT / "public-key.txt"
 IMAGE = "ghcr.io/xtls/xray-core:26.9.30"
 CONTAINER = "vpnx3-personal-vless"
-ADDRESS = os.environ.get("VPNX3_PERSONAL_VLESS_IP", "194.146.223.104")
+ENDPOINT_FILE = ROOT / "public-address.txt"
+ADDRESS = os.environ.get("VPNX3_PERSONAL_VLESS_IP") or (
+    ENDPOINT_FILE.read_text().strip() if ENDPOINT_FILE.is_file()
+    else "194.146.223.104"
+)
 UID_CONTROLPLANE = 65532
 ALT_PORT = 2053
 HTTPS443_FLAG = ROOT / "443-enabled"
@@ -363,8 +367,16 @@ def manage_openvpn(action, name=""):
                      check=False, timeout=5).returncode == 0 if installed else False
         names = sorted(path.stem for path in OPENVPN_PROFILES.glob("*.ovpn")
                        if OPENVPN_NAME.fullmatch(path.stem)) if installed else []
+        port = 1194
+        if installed:
+            for line in OPENVPN_SERVER.read_text().splitlines():
+                if line.startswith("port "):
+                    candidate = line.split(None, 1)[1].strip()
+                    if candidate.isdecimal() and 1 <= int(candidate) <= 65535:
+                        port = int(candidate)
+                    break
         return {"ok": True, "installed": installed, "running": active,
-                "profiles": [{"name": n} for n in names], "port": 1194,
+                "profiles": [{"name": n} for n in names], "port": port,
                 "protocol": "udp"}
     if action not in {"openvpn_create", "openvpn_download", "openvpn_revoke"}:
         raise ValueError("invalid OpenVPN action")
@@ -376,7 +388,7 @@ def manage_openvpn(action, name=""):
     if action == "openvpn_create":
         if destination.exists():
             raise ValueError("OpenVPN profile already exists")
-        run("bash", OPENVPN_SCRIPT, "create", name, timeout=30)
+        run("bash", OPENVPN_SCRIPT, "create", name, timeout=90)
         return {"ok": True, "name": name}
     if not destination.is_file():
         raise ValueError("OpenVPN profile not found")
@@ -386,7 +398,7 @@ def manage_openvpn(action, name=""):
             raise ValueError("OpenVPN profile too large")
         import base64
         return {"ok": True, "name": name, "content_base64": base64.b64encode(raw).decode("ascii")}
-    run("bash", OPENVPN_SCRIPT, "revoke", name, timeout=30)
+    run("bash", OPENVPN_SCRIPT, "revoke", name, timeout=90)
     return {"ok": True, "name": name}
 
 
@@ -445,7 +457,7 @@ class Handler(socketserver.StreamRequestHandler):
             _pid, uid, _gid = struct.unpack("3i", credentials)
             if uid not in (UID_CONTROLPLANE, 0):
                 return
-        self.request.settimeout(30)
+        self.request.settimeout(100)
         try:
             line = self.rfile.readline(8193)
             if not line or len(line) > 8192:
