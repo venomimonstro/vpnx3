@@ -33,7 +33,7 @@ func personalVLESSCall(req personalVLESSRequest) (map[string]any, error) {
 		return nil, fmt.Errorf("vless_manager_unavailable: %w", err)
 	}
 	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(35 * time.Second)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(105 * time.Second)); err != nil {
 		return nil, err
 	}
 	if err := json.NewEncoder(conn).Encode(req); err != nil {
