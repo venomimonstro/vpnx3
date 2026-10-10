@@ -278,7 +278,7 @@ def main():
     print("An end-to-end VPN test FROM RUSSIA requires a real RF client/probe with credentials.")
     if result_vless is False or result_ovpn is False:
         return 1
-    if result_vless is None or result_ovpn is None:
+    if result_vless is None or (not args.skip_openvpn and result_ovpn is None):
         print("INCOMPLETE: at least one VPN protocol was not tested through its client.")
         return 2
     return 0
