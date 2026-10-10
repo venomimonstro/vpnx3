@@ -31,9 +31,9 @@ class DeploymentSafety(unittest.TestCase):
     def test_openvpn_has_scoped_firewall_and_docker_hook(self):
         script = source("scripts/install-personal-openvpn.sh")
         self.assertIn('dev vpnx3tun0', script)
-        self.assertIn('rule_add FORWARD -i "$VPN_IF" -s "$VPN_NET" -j ACCEPT', script)
-        self.assertIn('rule_add DOCKER-USER -i "$VPN_IF" -s "$VPN_NET" -j ACCEPT', script)
-        self.assertIn('iptables -C FORWARD -i vpnx3tun0', script)
+        self.assertIn('rule_add FORWARD -i "$VPN_IF" -o "$WAN" -s "$VPN_NET" -j ACCEPT', script)
+        self.assertIn('rule_add DOCKER-USER -i "$VPN_IF" -o "$WAN" -s "$VPN_NET" -j ACCEPT', script)
+        self.assertIn('iptables -C FORWARD -i vpnx3tun0 -o "$WAN"', script)
 
     def test_openvpn_export_is_atomic(self):
         script = source("scripts/install-personal-openvpn.sh")
