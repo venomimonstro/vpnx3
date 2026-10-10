@@ -22,6 +22,39 @@ Date: 2026-10-10. Scope: repository main and operator-provided VPS logs, not dir
 | Test quality | An unavailable OpenVPN client was `SKIP` but test exit code could still report success; completed RF MTR was counted as VPN success. | Exit 2 for incomplete client acceptance; external TCP traceroute is explicitly inconclusive about the VPN handshake. |
 | Tests/diagnostics | No single runtime inspection of port ownership, Docker, OpenVPN PKI, profile drift and NAT. | Added read-only `scripts/audit-vpn-runtime.py` and manual safety regressions. |
 
+## 2026-10-10 runtime evidence and additional P0 fix
+
+Operator logs: VLESS in both Vision and iOS modes reached HTTPS
+`example.com`, `telegram.org`, and `web.telegram.org` through a real
+local Xray client. OpenVPN's daemon was active and UDP/1194 bound, but the
+isolated OpenVPN client failed to establish routes.
+
+**Confirmed critical configuration error:** `dev vpnx3tun0` is an arbitrary
+OpenVPN device name (does not begin with tun/tap). The OpenVPN 2.6 manual
+requires the additional `dev-type tun` directive for this. Without that
+directive a newly generated config can fail on daemon start. The installer
+now includes that directive, safeguards the prior config on restart failure,
+and has a regression test for it.
+
+The observed runtime config was *old* (`dev tun`, missing scoped rules
+and CRL timer). Running only the control-plane deployment does not update
+the host-level OpenVPN service. The operator must run
+`sudo bash scripts/install-personal-openvpn.sh install` after pulling main.
+
+The prior acceptance test reused the first user's `.ovpn` key; this can
+displace a live client with the same certificate CN. It now requires
+a separate root-only `vpnx3-health` certificate provisioned by the
+installer and kept out of the admin device list.
+
+OpenVPN test logs are now captured in an isolated temporary file, summarized
+by error category without emitting server IPs or certificate contents.
+When a test fails, inspect its named failure first instead of rotating keys.
+
+The optional Globalping probe returned HTTP 403: **this is an unavailable
+external probing service, not evidence that the VPN or Russia is blocked.**
+
+Reference: [OpenVPN manual: --dev and --dev-type](https://openvpn.net/community-docs/community-articles/openvpn-2-6-manual.html).
+
 ## Still not proven or intentionally not changed
 
 1. **RF mobile network**. No live authenticated VLESS/OpenVPN client is under our control in a Russian access network. Globalping probes can test some upstream connectivity, not iOS/TG app VPN usability. Need user-owned or explicitly authorized real RF device/probe in at least two independent networks.
