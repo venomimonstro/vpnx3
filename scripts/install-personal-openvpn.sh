@@ -51,6 +51,7 @@ install_server(){
 port $PORT
 proto udp4
 dev vpnx3tun0
+dev-type tun
 topology subnet
 server 10.86.0.0 255.255.255.0
 ca $PKI/ca.crt
@@ -196,6 +197,7 @@ UNIT
   iptables -C FORWARD -i vpnx3tun0 -o "$WAN" -s 10.86.0.0/24 -j ACCEPT || die "VPN forward rule not installed"
   iptables -t nat -C POSTROUTING -s 10.86.0.0/24 -o "$WAN" -j MASQUERADE || die "VPN NAT rule not installed"
   systemctl enable --now "$UNIT"
+  grep -Fxq "dev-type tun" "$CONF" || die "Missing OpenVPN device type"
   systemctl restart "$UNIT"
   sleep 2
   systemctl is-active --quiet "$UNIT" || { journalctl -u "$UNIT" --no-pager -n 30; die "OpenVPN failed"; }
