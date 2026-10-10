@@ -1223,6 +1223,17 @@ async function personalVless(){
       }},"Тест ключа"),
       $("button",{class:"btn",onclick:()=>navigator.clipboard.writeText(p.uri).then(()=>alert("Ссылка скопирована")).catch(()=>showPersonalVless(p))},"Скопировать"),
       $("button",{class:"btn",onclick:()=>showPersonalVless(p)},"Показать ссылку"),
+      ...(p.https_uri?[ $("button",{class:"btn primary",onclick:()=>{
+        const content=$("div",{class:"stack"},
+          $("p",{class:"muted"},"TLS-порт 443 — общий с админкой. Импортируйте эту ссылку в совместимый VLESS-клиент. Ключ не публикуйте."),
+          $("textarea",{rows:"5",readonly:"",class:"mono",style:"width:100%"})
+        );
+        content.querySelector("textarea").value=p.https_uri;
+        modal("VPN через 443/TCP · "+p.name,content,[
+          {label:"Закрыть",onclick:d=>d.close()},
+          {label:"Копировать",primary:true,onclick:()=>navigator.clipboard.writeText(p.https_uri)}
+        ]);
+      }},"VPN 443 · основной") ]:[]),
       ...(p.alternate_uri?[ $("button",{class:"btn primary",onclick:()=>{
         const content=$("div",{class:"stack"},
           $("p",{class:"muted"},"Резервный адрес 2053/TCP. Важно: порт должен быть открыт у хостинга. После импорта проверьте подключение с iPhone."),
