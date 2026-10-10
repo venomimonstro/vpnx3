@@ -1213,7 +1213,9 @@ async function personalVless(){
   const rows=profiles.map(p=>[
     $("div",{},$("strong",{},p.name||"Устройство"),$("div",{class:"muted mono"},p.id)),
     $("div",{},$("div",{},p.mode==="ios"?"iOS · REALITY":"Vision · Android/ПК"),
-      $("span",{class:"muted"},healthy?"Локальный порт отвечает":"Порт недоступен")),
+      $("span",{class:"muted"},p.validation?.valid
+        ?(healthy?"Ссылка проверена · порт отвечает локально":"Ссылка проверена · сервер недоступен")
+        :"ОШИБКА ССЫЛКИ: "+(p.validation?.issues||["unknown"]).join(", "))),
     $("div",{class:"row-actions"},
       $("button",{class:"btn",onclick:async()=>{
         try{
@@ -1221,8 +1223,8 @@ async function personalVless(){
           alert("Профиль "+p.name+": VLESS + REALITY + HTTPS работают на сервере. Время локального теста: "+result.local_test_ms+" мс. Это не измерение скорости мобильной сети.");
         }catch(e){alert("Проверка ключа не прошла: "+e.message)}
       }},"Тест ключа"),
-      $("button",{class:"btn",onclick:()=>navigator.clipboard.writeText(p.uri).then(()=>alert("Ссылка скопирована")).catch(()=>showPersonalVless(p))},"Скопировать"),
-      $("button",{class:"btn",onclick:()=>showPersonalVless(p)},"Показать ссылку"),
+      $("button",{class:"btn",disabled:!p.uri,onclick:()=>navigator.clipboard.writeText(p.uri).then(()=>alert("Ссылка скопирована")).catch(()=>showPersonalVless(p))},"Скопировать"),
+      $("button",{class:"btn",disabled:!p.uri,onclick:()=>showPersonalVless(p)},"Показать ссылку"),
       ...(p.https_uri?[ $("button",{class:"btn primary",onclick:()=>{
         const content=$("div",{class:"stack"},
           $("p",{class:"muted"},"TLS-порт 443 — общий с админкой. Импортируйте эту ссылку в совместимый VLESS-клиент. Ключ не публикуйте."),
@@ -1245,7 +1247,7 @@ async function personalVless(){
           {label:"Копировать",primary:true,onclick:()=>navigator.clipboard.writeText(p.alternate_uri)}
         ]);
       }},"Резервный ключ 2053") ]:[]),
-      $("button",{class:"btn primary",onclick:()=>{
+      $("button",{class:"btn primary",disabled:!p.uri,onclick:()=>{
         // INCY's documented native direct-import route. No third-party API receives this key.
         if(typeof p.uri!=="string"||!p.uri.startsWith("vless://")){alert("Некорректный ключ");return}
         window.location.href="incy://add/"+p.uri;
