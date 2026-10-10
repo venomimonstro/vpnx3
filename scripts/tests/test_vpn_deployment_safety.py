@@ -59,7 +59,7 @@ class DeploymentSafety(unittest.TestCase):
 
     def test_openvpn_custom_interface_has_explicit_tun_type(self):
         installer = source("scripts/install-personal-openvpn.sh")
-        self.assertIn("dev vpnx3tun0\\ndev-type tun\\ntopology subnet", installer)
+        self.assertIn("dev vpnx3tun0\ndev-type tun\ntopology subnet", installer)
         self.assertIn('cp -p "$PREVIOUS_CONF" "$CONF"', installer)
 
     def test_acceptance_never_reuses_user_certificate(self):
