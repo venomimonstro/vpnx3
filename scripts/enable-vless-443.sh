@@ -6,7 +6,7 @@ set -Eeuo pipefail
 umask 077
 cd /opt/vpnx3
 [[ $EUID -eq 0 ]] || { echo "[443] Run with sudo" >&2; exit 1; }
-ACTION="$1"
+ACTION="${1:-status}"
 PUBLIC_IP="194.146.223.104"
 PROXY="/opt/vpnx3/proxy"
 CADDY="$PROXY/Caddyfile"
@@ -42,6 +42,11 @@ restore(){
   if [[ -f "$BACKUP" ]]; then
     cp -p "$BACKUP" "$CADDY"
     docker restart "$ADMIN_CONTAINER" >/dev/null
+    if check_admin; then
+      rm -f "$BACKUP"
+    else
+      echo "[443] WARNING: admin health check after rollback failed; original Caddy config retained" >&2
+    fi
   fi
   rm -f "$MARKER"
   echo "[443] Rollback finished; verify admin at https://$PUBLIC_IP/admin/" >&2
@@ -61,6 +66,7 @@ case "$ACTION" in
     docker restart "$ADMIN_CONTAINER" >/dev/null
     rm -f "$MARKER"
     check_admin
+    rm -f "$BACKUP"
     echo "[443] Restored original admin 443 endpoint; VPN remains on 8443/2053"
     exit 0;;
   enable) ;;
