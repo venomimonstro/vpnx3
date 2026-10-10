@@ -375,9 +375,30 @@ def manage_openvpn(action, name=""):
                     if candidate.isdecimal() and 1 <= int(candidate) <= 65535:
                         port = int(candidate)
                     break
+        port_list = run("ss", "-H", "-uln", timeout=4, check=False) if installed else None
+        listening = bool(port_list and port_list.returncode == 0 and
+                         re.search(r":" + str(port) + r"\\s", port_list.stdout))
+        certificate = run("openssl", "x509", "-checkend", "0", "-noout",
+                          "-in", "/etc/openvpn/vpnx3/pki/issued/server.crt",
+                          timeout=4, check=False) if installed else None
+        certificate_valid = certificate is not None and certificate.returncode == 0
+        crl_valid = False
+        if installed:
+            crl_info = run("openssl", "crl", "-noout", "-nextupdate",
+                           "-in", "/etc/openvpn/vpnx3/pki/crl.pem",
+                           timeout=4, check=False)
+            if crl_info.returncode == 0 and "=" in crl_info.stdout:
+                try:
+                    from email.utils import parsedate_to_datetime
+                    expiry = parsedate_to_datetime(crl_info.stdout.split("=", 1)[1].strip())
+                    crl_valid = expiry > dt.datetime.now(dt.timezone.utc)
+                except (ValueError, TypeError):
+                    pass
         return {"ok": True, "installed": installed, "running": active,
+                "listener_open": listening, "certificate_valid": certificate_valid,
+                "crl_valid": crl_valid,
                 "profiles": [{"name": n} for n in names], "port": port,
-                "protocol": "udp"}
+                "protocol": "udp", "ready": active and listening and certificate_valid and crl_valid}
     if action not in {"openvpn_create", "openvpn_download", "openvpn_revoke"}:
         raise ValueError("invalid OpenVPN action")
     if not OPENVPN_NAME.fullmatch(name):
