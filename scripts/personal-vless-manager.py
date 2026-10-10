@@ -377,7 +377,7 @@ def manage_openvpn(action, name=""):
                     break
         port_list = run("ss", "-H", "-uln", timeout=4, check=False) if installed else None
         listening = bool(port_list and port_list.returncode == 0 and
-                         re.search(r":" + str(port) + r"\\s", port_list.stdout))
+                         re.search(r":" + str(port) + r"\s", port_list.stdout))
         certificate = run("openssl", "x509", "-checkend", "0", "-noout",
                           "-in", "/etc/openvpn/vpnx3/pki/issued/server.crt",
                           timeout=4, check=False) if installed else None
