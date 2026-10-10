@@ -162,6 +162,13 @@ def openvpn_test():
                 break
             time.sleep(0.5)
         if not ready:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=4)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=3)
             detail = summarize_openvpn_client_failure(log_file, proc)
             print("OpenVPN: FAIL (client tunnel routes not established within 40s; "+detail+")",flush=True)
             print("OpenVPN: check server listener, certificate validity, tls-crypt and local namespace routes. No credentials are printed.",flush=True)
@@ -169,7 +176,7 @@ def openvpn_test():
         good = True
         for host in ("example.com", "telegram.org", "web.telegram.org"):
             try:
-                result = call("ip","netns","exec",ns,"curl","--ipv4","-L","-sS",
+                result = call("ip","netns","exec",ns,"curl","--ipv4","--noproxy","*","-L","-sS",
                     "--max-time","12","--connect-timeout","6",
                     "-o","/dev/null","-w","%{http_code}",
                     f"https://{host}/", timeout=15)
