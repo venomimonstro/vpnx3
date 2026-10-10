@@ -69,6 +69,8 @@ def main():
         dev_match=re.search(r"(?m)^dev\s+(\S+)$",text)
         report("OpenVPN device", "OK" if dev_match and dev_match.group(1)=="vpnx3tun0" else "WARN",
                dev_match.group(1) if dev_match else "missing")
+        report("OpenVPN device type", "OK" if re.search(r"(?m)^dev-type tun$",text)
+               else "WARN", "required for custom vpnx3tun0 name")
         active=run("systemctl","is-active","openvpn-server@vpnx3")
         report("OpenVPN service", "OK" if active and active.stdout.strip()=="active" else "FAIL")
         ss=run("ss","-H","-uln")
