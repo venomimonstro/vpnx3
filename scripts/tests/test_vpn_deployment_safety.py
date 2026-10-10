@@ -12,11 +12,18 @@ def source(path):
     return (ROOT / path).read_text(encoding="utf-8")
 
 class DeploymentSafety(unittest.TestCase):
-    def test_unsafe_443_topology_fails_closed(self):
-        script = source("scripts/enable-vless-443.sh")
-        self.assertIn('die "Shared TCP/443 cutover is disabled:', script)
-        self.assertLess(script.index('die "Shared TCP/443 cutover is disabled:'),
-                        script.index('[[ -f "$CADDY" ]] || die'))
+    def test_shared_443_gateway_preserves_existing_admin_and_keys(self):
+        compat = source("scripts/enable-vless-443.sh")
+        gateway = source("scripts/enable-reality-on-443.sh")
+        self.assertIn("enable-reality-on-443.sh", compat)
+        self.assertIn("req.ssl_sni -i $sni", gateway)
+        self.assertIn("127.0.0.1:8443 check", gateway)
+        self.assertIn("127.0.0.1:443 check", gateway)
+        self.assertIn("PREROUTING 1", gateway)
+        self.assertIn("ExecStopPost=", gateway)
+        self.assertIn("failback", gateway.lower()) if "failback" in gateway.lower() else self.assertIn("restores public", gateway.lower())
+        self.assertNotIn("docker restart vpnx3-admin-proxy", gateway)
+        self.assertNotIn('cp -p "$BACKUP" "$CADDY"', gateway)
 
     def test_vless_status_never_prints_secret_link(self):
         script = source("scripts/install-personal-vless.sh")
