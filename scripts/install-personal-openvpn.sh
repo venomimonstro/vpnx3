@@ -186,6 +186,14 @@ UNIT
   sleep 2
   systemctl is-active --quiet "$UNIT" || { journalctl -u "$UNIT" --no-pager -n 30; die "OpenVPN failed"; }
   ss -lun | grep -q ":$PORT " || die "OpenVPN UDP port is not listening"
+  # Never run acceptance with a user's device certificate: OpenVPN can
+  # disconnect an existing session sharing that certificate's common name.
+  if [[ ! -f "$CLIENTS/vpnx3-health.ovpn" ]]; then
+    if [[ -f "$PKI/issued/vpnx3-health.crt" ]]; then
+      die "Health certificate exists but its profile is missing; restore it from backup or revoke and rotate it"
+    fi
+    create_client "vpnx3-health"
+  fi
   echo "[OpenVPN] Server active on UDP $PORT; firewall INPUT/FORWARD/NAT verified."
   echo "[OpenVPN] Note: provider firewall and mobile-network reachability are not verified."
   if ! compgen -G "$CLIENTS/*.ovpn" >/dev/null; then
@@ -196,6 +204,7 @@ UNIT
   echo "[OpenVPN] Diagnostics: sudo python3 scripts/diagnose-personal-openvpn.py --watch"
 }
 create_client(){
+  local NAME="${1:-$NAME}"
   need_install; valid_name "$NAME"
   source "$ROOT/network.env"
   [[ ! -f "$CLIENTS/$NAME.ovpn" ]] || die "Profile exists. Choose different name."
