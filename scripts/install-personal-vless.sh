@@ -11,7 +11,7 @@ SNI="${VPNX3_REALITY_SNI:-dl.google.com}"
 DEST="${SNI}:443"
 fail(){ echo "[VLESS] ERROR: $*" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || fail "Run as root"
-[[ $PORT =~ ^[0-9]+$ ]] && (( PORT>=1024 && PORT<=65535 )) || fail "Invalid port"
+[[ $PORT =~ ^[0-9]+$ ]] && (( (PORT>=1024 && PORT<=65535) || PORT==443 )) || fail "Invalid port (allowed: 443 or 1024..65535)"
 command -v docker >/dev/null || fail "Docker required"
 mkdir -p "$ROOT"
 chmod 700 "$ROOT"
