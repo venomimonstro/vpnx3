@@ -74,15 +74,25 @@ def main():
         ss=run("ss","-H","-uln")
         udp=bool(ss and re.search(r":"+str(port)+r"\s",ss.stdout))
         report("OpenVPN UDP listener", "OK" if udp else "FAIL",f"UDP/{port}")
+        network_env=Path("/etc/openvpn/vpnx3/network.env")
+        wan=""
+        if network_env.exists():
+            for line in network_env.read_text().splitlines():
+                if line.startswith("WAN="):
+                    candidate=line[4:].strip()
+                    if re.fullmatch(r"[a-zA-Z0-9_.:-]+",candidate):
+                        wan=candidate
+                    break
+        report("WAN interface", "OK" if wan else "WARN", wan if wan else "not saved")
         for desc,args in (
             ("Input firewall rule",("iptables","-C","INPUT","-p","udp","--dport",str(port),"-j","ACCEPT")),
-            ("Scoped VPN forward rule",("iptables","-C","FORWARD","-i","vpnx3tun0","-s","10.86.0.0/24","-j","ACCEPT"))
+            ("Scoped VPN forward rule",("iptables","-C","FORWARD","-i","vpnx3tun0","-o",wan,"-s","10.86.0.0/24","-j","ACCEPT") if wan else ("false",))
         ):
             p=run(*args)
             report(desc,"OK" if p and p.returncode==0 else "WARN")
         p=run("iptables","-n","-L","DOCKER-USER")
         if p and p.returncode==0:
-            q=run("iptables","-C","DOCKER-USER","-i","vpnx3tun0","-s","10.86.0.0/24","-j","ACCEPT")
+            q=run("iptables","-C","DOCKER-USER","-i","vpnx3tun0","-o",wan,"-s","10.86.0.0/24","-j","ACCEPT") if wan else None
             report("Docker forwarding hook","OK" if q and q.returncode==0 else "WARN")
         cert=run("openssl","x509","-checkend","2592000","-noout",
                  "-in","/etc/openvpn/vpnx3/pki/issued/server.crt")
