@@ -242,12 +242,14 @@ def _recv_exact(conn, length):
     return data
 
 
-def test_personal_vless(profile_id=""):
+def test_personal_vless(profile_id="", target_host="example.com"):
     """Perform actual Xray client REALITY handshake and HTTPS through the local server.
 
     This is an end-to-end localhost test, not a claim of external reachability.
     It does not require container Docker socket exposure to the web application.
     """
+    if target_host not in ("example.com", "telegram.org", "web.telegram.org", "core.telegram.org"):
+        raise ValueError("unsupported acceptance-test target")
     conf = load_config()
     profiles = current_profiles(conf)
     if not profiles:
@@ -312,7 +314,7 @@ def test_personal_vless(profile_id=""):
             conn.sendall(b"\x05\x01\x00")
             if _recv_exact(conn, 2) != b"\x05\x00":
                 raise RuntimeError("SOCKS test negotiation failed")
-            host = b"example.com"
+            host = target_host.encode("ascii")
             conn.sendall(b"\x05\x01\x00\x03" + bytes([len(host)]) + host + (443).to_bytes(2, "big"))
             head = _recv_exact(conn, 4)
             if head[1] != 0:
@@ -326,14 +328,14 @@ def test_personal_vless(profile_id=""):
             else:
                 raise RuntimeError("Invalid SOCKS test response")
             tls = ssl.create_default_context()
-            with tls.wrap_socket(conn, server_hostname="example.com") as secure:
+            with tls.wrap_socket(conn, server_hostname=target_host) as secure:
                 secure.settimeout(12)
-                secure.sendall(b"HEAD / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
+                secure.sendall(("HEAD / HTTP/1.1\r\nHost: "+target_host+"\r\nConnection: close\r\n\r\n").encode("ascii"))
                 data = secure.recv(256)
                 if not data.startswith(b"HTTP/"):
                     raise RuntimeError("No valid HTTPS response over VLESS tunnel")
         return {"ok": True, "verified": True, "check": "REALITY+VLESS+HTTPS",
-                "profile_id": first["id"], "mode": first["mode"],
+                "profile_id": first["id"], "mode": first["mode"], "target": target_host,
                 "local_test_ms": round((time.monotonic() - started_at) * 1000),
                 "note": "Подключение проверено локально с реальным Xray-клиентом; внешняя доступность IP не проверяется"}
     finally:
