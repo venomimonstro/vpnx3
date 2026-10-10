@@ -33,6 +33,7 @@ CONTAINER = "vpnx3-personal-vless"
 ADDRESS = os.environ.get("VPNX3_PERSONAL_VLESS_IP", "194.146.223.104")
 UID_CONTROLPLANE = 65532
 ALT_PORT = 2053
+HTTPS443_FLAG = ROOT / "443-enabled"
 LOCK = threading.RLock()
 UUID_RE = re.compile(r"^[a-fA-F0-9]{8}-(?:[a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12}$")
 
@@ -168,15 +169,19 @@ def get_status():
     config = load_config()
     profiles = current_profiles(config)
     alternative = alternate_port_published()
+    tls443 = HTTPS443_FLAG.is_file() and local_listening(443)
     for p in profiles:
         p["uri"] = uri_for(p["id"], p["name"], config)
+        if tls443:
+            p["https_uri"] = uri_for(p["id"], p["name"], config, 443)
         if alternative:
             p["alternate_uri"] = uri_for(p["id"], p["name"], config, ALT_PORT)
     port = int(config["inbounds"][0]["port"])
     running = container_running()
     return {"ok": True, "configured": True, "running": running,
             "local_port_listening": local_listening(port) if running else False,
-            "address": ADDRESS, "port": port, "alternate_port": ALT_PORT if alternative else None, "profiles": profiles,
+            "address": ADDRESS, "port": port, "alternate_port": ALT_PORT if alternative else None,
+            "https_443_available": tls443, "profiles": profiles,
             "checked_at": dt.datetime.now(dt.timezone.utc).isoformat(),
             "connection_note": "Local port check only; internet reachability is not verified"}
 
@@ -242,7 +247,7 @@ def _recv_exact(conn, length):
     return data
 
 
-def test_personal_vless(profile_id="", target_host="example.com"):
+def test_personal_vless(profile_id="", target_host="example.com", port_override=None):
     """Perform actual Xray client REALITY handshake and HTTPS through the local server.
 
     This is an end-to-end localhost test, not a claim of external reachability.
@@ -275,7 +280,7 @@ def test_personal_vless(profile_id="", target_host="example.com"):
         "outbounds": [{
             "protocol": "vless",
             "settings": {"vnext": [{
-                "address": "127.0.0.1", "port": inbound["port"],
+                "address": "127.0.0.1", "port": port_override or inbound["port"],
                 "users": [{"id": first["id"], "encryption": "none",
                            "flow": "xtls-rprx-vision" if first["mode"] == "vision" else ""}]
             }]},
