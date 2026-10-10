@@ -15,9 +15,15 @@ fail(){ echo "[VLESS] ERROR: $*" >&2; exit 1; }
 command -v docker >/dev/null || fail "Docker required"
 mkdir -p "$ROOT"
 chmod 700 "$ROOT"
+# Admin manager runs as a separate systemd service. Persist the public endpoint
+# so admin-generated links use the same hostname as this installer's initial link.
+if [[ "${1:-install}" == "install" ]]; then
+  printf '%s\n' "$ADDRESS" >"$ROOT/public-address.txt"
+  chmod 600 "$ROOT/public-address.txt"
+fi
 if [[ "${1:-install}" == "status" ]]; then
   docker ps --filter name="^/$NAME$"
-  [[ -f "$ROOT/client.txt" ]] && cat "$ROOT/client.txt"
+  echo "[VLESS] Secret connection links are never printed by status. View them in the authenticated admin UI."
   exit 0
 fi
 [[ "${1:-install}" == "install" ]] || fail "Usage: install|status"
