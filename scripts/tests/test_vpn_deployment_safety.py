@@ -21,7 +21,8 @@ class DeploymentSafety(unittest.TestCase):
         self.assertIn("127.0.0.1:443 check", gateway)
         self.assertIn("PREROUTING 1", gateway)
         self.assertIn("ExecStopPost=", gateway)
-        self.assertIn("failback", gateway.lower()) if "failback" in gateway.lower() else self.assertIn("restores public", gateway.lower())
+        self.assertIn("firewall-off", gateway)
+        self.assertIn('rm -f "$MARKER"', gateway)
         self.assertNotIn("docker restart vpnx3-admin-proxy", gateway)
         self.assertNotIn('cp -p "$BACKUP" "$CADDY"', gateway)
 
