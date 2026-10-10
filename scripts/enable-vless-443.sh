@@ -35,7 +35,7 @@ PY
 }
 restore(){
   echo "[443] Failure detected. Rolling back old admin configuration..." >&2
-  trap - ERR
+  trap - ERR INT TERM
   set +e
   systemctl stop vpnx3-sni-gateway.service >/dev/null 2>&1
   systemctl disable vpnx3-sni-gateway.service >/dev/null 2>&1
@@ -126,7 +126,7 @@ haproxy -c -f "$HAPROXY" || die "HAProxy config invalid"
 # Reject unsupported Caddy container layouts. Existing container must use the Caddyfile path.
 docker inspect -f '{{range .Mounts}}{{println .Source}}{{end}}' "$ADMIN_CONTAINER" | grep -Fxq "$CADDY" || die "Caddy container does not mount expected Caddyfile"
 cp -p "$CADDY" "$BACKUP"
-trap restore ERR
+trap restore ERR INT TERM
 cat >"$CADDY" <<EOF
 https://$PUBLIC_IP:9443 {
   bind 127.0.0.1
@@ -162,7 +162,7 @@ check_admin
 check_vpn
 touch "$MARKER"
 chmod 600 "$MARKER"
-trap - ERR
+trap - ERR INT TERM
 echo "[443] SUCCESS: Admin unchanged at https://$PUBLIC_IP/admin/"
 echo "[443] VLESS REALITY shares public TCP/443 (existing UUIDs, SNI, and keys preserved)."
 echo "[443] Refresh /admin/ -> Личный VPN -> copy new HTTPS 443 key."
