@@ -46,6 +46,12 @@ install_server(){
   [[ -f "$PKI/issued/server.crt" && -f "$PKI/private/server.key" && -f "$ROOT/ta.key" ]] || die "Missing server certificate/key"
   chmod 600 "$PKI/private/server.key" "$ROOT/ta.key"
   chmod 644 "$PKI/crl.pem"
+  # Preserve the previous config until the new daemon has actually started.
+  PREVIOUS_CONF=""
+  if [[ -f "$CONF" ]]; then
+    PREVIOUS_CONF="$(mktemp "$ROOT/.server-backup.XXXXXXXX")"
+    cp -p "$CONF" "$PREVIOUS_CONF"
+  fi
   # All private files remain inaccessible from the Control Plane container.
   cat >"$CONF" <<EOF
 port $PORT
@@ -196,12 +202,24 @@ UNIT
   iptables -C INPUT -p udp --dport "$PORT" -j ACCEPT || die "Firewall INPUT rule not installed"
   iptables -C FORWARD -i vpnx3tun0 -o "$WAN" -s 10.86.0.0/24 -j ACCEPT || die "VPN forward rule not installed"
   iptables -t nat -C POSTROUTING -s 10.86.0.0/24 -o "$WAN" -j MASQUERADE || die "VPN NAT rule not installed"
-  systemctl enable --now "$UNIT"
   grep -Fxq "dev-type tun" "$CONF" || die "Missing OpenVPN device type"
-  systemctl restart "$UNIT"
+  systemctl enable "$UNIT"
+  if ! systemctl restart "$UNIT"; then
+    if [[ -n "$PREVIOUS_CONF" ]]; then
+      cp -p "$PREVIOUS_CONF" "$CONF"
+      systemctl restart "$UNIT" || echo "[OpenVPN] WARNING: rollback restart failed" >&2
+    fi
+    die "OpenVPN startup failed; original server config restored when available"
+  fi
   sleep 2
-  systemctl is-active --quiet "$UNIT" || { journalctl -u "$UNIT" --no-pager -n 30; die "OpenVPN failed"; }
-  ss -lun | grep -q ":$PORT " || die "OpenVPN UDP port is not listening"
+  if ! systemctl is-active --quiet "$UNIT" || ! ss -lun | grep -q ":$PORT "; then
+    if [[ -n "$PREVIOUS_CONF" ]]; then
+      cp -p "$PREVIOUS_CONF" "$CONF"
+      systemctl restart "$UNIT" || echo "[OpenVPN] WARNING: rollback restart failed" >&2
+    fi
+    die "OpenVPN failed health checks; restored previous config where available"
+  fi
+  [[ -z "$PREVIOUS_CONF" ]] || rm -f "$PREVIOUS_CONF"
   # Never run acceptance with a user's device certificate: OpenVPN can
   # disconnect an existing session sharing that certificate's common name.
   if [[ ! -f "$CLIENTS/vpnx3-health.ovpn" ]]; then
