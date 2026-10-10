@@ -33,7 +33,11 @@ func personalVLESSCall(req personalVLESSRequest) (map[string]any, error) {
 		return nil, fmt.Errorf("vless_manager_unavailable: %w", err)
 	}
 	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(105 * time.Second)); err != nil {
+	deadline := 35 * time.Second
+	if req.Action == "openvpn_create" || req.Action == "openvpn_revoke" {
+		deadline = 105 * time.Second
+	}
+	if err := conn.SetDeadline(time.Now().Add(deadline)); err != nil {
 		return nil, err
 	}
 	if err := json.NewEncoder(conn).Encode(req); err != nil {
