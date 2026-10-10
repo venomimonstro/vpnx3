@@ -230,7 +230,10 @@ def get_status():
     alternative = alternate_port_published()
     tls443 = (HTTPS443_FLAG.is_file() and
               run("systemctl", "is-active", "--quiet", "vpnx3-sni-gateway.service",
-                  timeout=3, check=False).returncode == 0 and local_listening(443))
+                  timeout=3, check=False).returncode == 0 and
+              run("docker", "inspect", "-f", "{{.State.Running}}", "vpnx3-sni443",
+                  timeout=3, check=False).stdout.strip() == "true" and
+              local_listening(443))
     port = int(config["inbounds"][0]["port"])
     for p in profiles:
         original_link = uri_for(p["id"], p["name"], config)
@@ -241,6 +244,8 @@ def get_status():
         if tls443:
             link443 = uri_for(p["id"], p["name"], config, 443)
             if inspect_vless_import_link(link443, config, p["id"], 443)["valid"]:
+                p["fallback_uri"] = p["uri"]
+                p["uri"] = link443
                 p["https_uri"] = link443
         if alternative:
             alternate_link = uri_for(p["id"], p["name"], config, ALT_PORT)
@@ -250,7 +255,7 @@ def get_status():
     return {"ok": True, "configured": True, "running": running,
             "local_port_listening": local_listening(port) if running else False,
             "address": ADDRESS, "port": port, "alternate_port": ALT_PORT if alternative else None,
-            "https_443_available": tls443, "profiles": profiles,
+            "https_443_available": tls443, "preferred_port": 443 if tls443 else port, "profiles": profiles,
             "checked_at": dt.datetime.now(dt.timezone.utc).isoformat(),
             "connection_note": "Local port check only; internet reachability is not verified"}
 
