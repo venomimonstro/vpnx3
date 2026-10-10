@@ -48,7 +48,8 @@ path,action,name=sys.argv[1:]
 with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as s:
     s.settimeout(75)
     s.connect(path)
-    s.sendall((json.dumps({"action":action,"name":name,"mode":"ios"})+"\n").encode())
+    actual_action = "status" if action=="link-ios" else action
+    s.sendall((json.dumps({"action":actual_action,"name":name,"mode":"ios"})+"\n").encode())
     data=b""
     while not data.endswith(b"\n"):
         part=s.recv(65536)
@@ -78,7 +79,6 @@ install)
   preflight
   export VPNX3_PERSONAL_VLESS_PORT=443
   export VPNX3_PERSONAL_VLESS_IP="$VPNX3_EDGE_PUBLIC_ADDRESS"
-  sudo -n true 2>/dev/null || true
   bash scripts/install-personal-vless.sh install
   if command -v ufw >/dev/null && ufw status | grep -q '^Status: active'; then
     ufw allow 443/tcp comment "VPNX3 REALITY edge"
@@ -90,7 +90,7 @@ install)
 create-ios)
   [[ -S "$SOCKET" ]] || fail "VPN manager unavailable. Run install first."
   # Do not generate duplicate keys on repeated invocations.
-  python3 - "$SOCKET" <<'PY'
+  if python3 - "$SOCKET" <<'PY'
 import json,socket,sys
 with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as s:
     s.settimeout(10);s.connect(sys.argv[1]);s.sendall(b'{"action":"status"}\n')
@@ -106,9 +106,12 @@ with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as s:
         print("[VPN edge] Existing iOS profile preserved; run 'link-ios'.")
         sys.exit(10)
 PY
-  result=$?
-  if [[ "$result" == "10" ]]; then exit 0; fi
-  manager_request create iPhone
+  then
+    manager_request create iPhone
+  else
+    code=$?
+    [[ "$code" == "10" ]] || exit "$code"
+  fi
   ;;
 link-ios)
   [[ -S "$SOCKET" ]] || fail "Manager unavailable"
