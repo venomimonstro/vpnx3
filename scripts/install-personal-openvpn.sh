@@ -10,6 +10,18 @@ CONF="/etc/openvpn/server/vpnx3.conf"
 CLIENTS="$ROOT/clients"
 PORT="${VPNX3_OPENVPN_PORT:-1194}"
 ADDRESS="${VPNX3_OPENVPN_IP:-194.146.223.104}"
+# Repeat installs must never silently switch existing client profiles
+# to a different advertised port/IP.
+if [[ -f "$ROOT/network.env" ]]; then
+  if [[ -z "${VPNX3_OPENVPN_PORT:-}" ]]; then
+    previous_port="$(sed -nE 's/^PORT=([0-9]+)$/\\1/p' "$ROOT/network.env" | head -1)"
+    [[ -z "$previous_port" ]] || PORT="$previous_port"
+  fi
+  if [[ -z "${VPNX3_OPENVPN_IP:-}" ]]; then
+    previous_ip="$(sed -nE 's/^ADDRESS=([A-Za-z0-9.-]+)$/\\1/p' "$ROOT/network.env" | head -1)"
+    [[ -z "$previous_ip" ]] || ADDRESS="$previous_ip"
+  fi
+fi
 UNIT="openvpn-server@vpnx3"
 die(){ echo "[OpenVPN] ERROR: $*" >&2; exit 1; }
 [[ "$EUID" == 0 ]] || die "Run as root with sudo"
@@ -170,6 +182,8 @@ WantedBy=timers.target
 UNIT
   systemctl daemon-reload
   systemctl enable --now vpnx3-openvpn-crl-renew.timer
+  # Apply CRL renewal immediately, not only when next week's timer fires.
+  bash /opt/vpnx3/scripts/renew-openvpn-crl.sh
   if command -v ufw >/dev/null && ufw status | grep -q '^Status: active'; then
     ufw allow "$PORT/udp" comment 'VPNX3 OpenVPN'
   fi
