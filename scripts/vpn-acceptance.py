@@ -58,6 +58,26 @@ def vless_tests():
     print("VLESS caveat: these probes originate on the VPS, NOT inside Russia.", flush=True)
     return success
 
+def isolate_openvpn_profile(profile, gateway, server_port):
+    """Use the host-side veth gateway, not its public NAT IP, for a LOCAL test.
+
+    The original test reached the server's advertised PUBLIC IP from an isolated
+    namespace. It could fail due to hairpin NAT / provider filtering even when
+    local OpenVPN itself was healthy. Export a temporary 0600 copy of the
+    dedicated diagnostic profile with only its remote directive changed.
+    """
+    raw = profile.read_text(encoding="utf-8")
+    if profile.stat().st_size > 102400:
+        raise ValueError("health profile is oversized")
+    if not re.fullmatch(r"\d{1,5}", str(server_port)) or not 1 <= int(server_port) <= 65535:
+        raise ValueError("invalid local server port")
+    rewrite = "remote " + str(gateway) + " " + str(server_port) + " udp4"
+    modified, count = re.subn(r"(?m)^remote[ \t]+[^\r\n]+$", rewrite, raw)
+    if count != 1:
+        raise ValueError("health profile must contain exactly one remote directive")
+    return modified
+
+
 def summarize_openvpn_client_failure(log_file, proc):
     """Classify client handshake errors; NEVER return raw logs containing IPs/keys."""
     if log_file is None:
@@ -69,8 +89,12 @@ def summarize_openvpn_client_failure(log_file, proc):
     except (OSError,ValueError):
         return "client logs unavailable"
     reasons=(
+        ("error opening configuration file", "client cannot read the temporary profile"),
+        ("error: --", "OpenVPN option rejected by client"),
         ("options error", "unsupported client profile directive"),
         ("unrecognized option", "unsupported client profile directive"),
+        ("no such file or directory", "required file or TUN device unavailable"),
+        ("operation not permitted", "insufficient namespace privileges"),
         ("permission denied", "permission denied creating tunnel or route"),
         ("cannot open tun", "TUN interface unavailable"),
         ("cannot ioctl tun", "TUN interface unavailable"),
@@ -80,6 +104,7 @@ def summarize_openvpn_client_failure(log_file, proc):
         ("certificate has expired", "certificate expired"),
         ("auth_failed", "server rejected authentication"),
         ("tls-crypt unwrap error", "tls-crypt mismatch"),
+        ("connection refused", "UDP/1194 listener or local firewall rejected client"),
         ("network is unreachable", "client namespace cannot route to server"),
         ("no route to host", "client namespace cannot reach server"),
         ("rtnetlink answers", "route installation failed"),
@@ -130,7 +155,7 @@ def openvpn_test():
     created = False
     proc = None
     log_file = None
-    log_stage = "not_started"
+    test_profile_path = None
     try:
         call("ip", "netns", "add", ns)
         created = True
@@ -145,13 +170,24 @@ def openvpn_test():
         dns = Path("/etc/netns") / ns
         dns.mkdir(parents=True, mode=0o700, exist_ok=True)
         (dns/"resolv.conf").write_text("nameserver 1.1.1.1\nnameserver 9.9.9.9\n")
+        # Reach the OpenVPN server through the host-side veth. This bypasses
+        # ambiguous hairpin NAT and makes the test independent of the VPS
+        # public IP being routed back to itself.
+        server_config = server_file.read_text()
+        port_match = re.search(r"(?m)^port[ \t]+([0-9]{1,5})[ \t]*$", server_config)
+        server_port = int(port_match.group(1)) if port_match else 1194
+        temporary_text = isolate_openvpn_profile(config, host_ip, server_port)
+        fd, test_profile_path = tempfile.mkstemp(prefix=".vpnx3-test-", suffix=".ovpn",
+                                                  dir=str(OVPN_CLIENTS))
+        with os.fdopen(fd, "w", encoding="utf-8") as out:
+            os.fchmod(out.fileno(), 0o600)
+            out.write(temporary_text)
         log_file = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
         proc = subprocess.Popen(
-            ["ip","netns","exec",ns,"openvpn","--config",str(config),
+            ["ip","netns","exec",ns,"openvpn","--config",str(test_profile_path),
              "--connect-retry-max","2","--verb","3"],
             stdout=log_file, stderr=subprocess.STDOUT
         )
-        log_stage = "handshake"
         ready = False
         for _ in range(80):
             if proc.poll() is not None:
@@ -204,6 +240,8 @@ def openvpn_test():
                 proc.wait(timeout=4)
         if log_file is not None:
             log_file.close()
+        if test_profile_path is not None:
+            Path(test_profile_path).unlink(missing_ok=True)
         if created:
             call("ip", "netns", "del", ns, check=False)
             # Rarely a veth can remain after namespace teardown.
