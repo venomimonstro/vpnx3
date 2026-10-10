@@ -1281,7 +1281,8 @@ async function personalOpenVPN(){
   const data=await api("/api/v1/admin/personal-openvpn");
   const status=$("div",{class:"card"},
     $("h2",{},"OpenVPN · профили устройств"),
-    $("div",{class:"toolbar"},badge(data.running?"active":"failed"),$("span",{},data.running?"Сервер запущен":"Сервер не запущен")),
+    $("div",{class:"toolbar"},badge(data.ready?"active":"failed"),$("span",{},data.ready?"Сервер и сертификаты готовы":data.running?"Сервер запущен, но есть проблемы готовности":"Сервер не запущен")),
+    $("p",{class:"muted"},"UDP "+(data.port||1194)+": "+(data.listener_open?"слушается":"не прослушивается")+" · Сертификат: "+(data.certificate_valid?"OK":"проблема")+" · Список отзыва (CRL): "+(data.crl_valid?"OK":"проблема")+". Это не подтверждает подключение из России."),
     $("p",{class:"muted"},data.installed
       ?"OpenVPN установлен. Профили содержат приватные ключи — храните файлы только на своих устройствах."
       :"OpenVPN ещё не установлен на сервере. Выполните sudo bash scripts/install-personal-openvpn.sh install. Порт 1194/UDP должен быть открыт у хостинга.")
