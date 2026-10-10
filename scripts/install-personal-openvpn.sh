@@ -137,7 +137,31 @@ ExecStop=/usr/local/sbin/vpnx3-openvpn-firewall stop
 [Install]
 WantedBy=multi-user.target
 EOF
+  # A stale/expired CRL can silently reject every client even while the daemon is active.
+  cat >/etc/systemd/system/vpnx3-openvpn-crl-renew.service <<'UNIT'
+[Unit]
+Description=VPNX3 renew OpenVPN certificate revocation list
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/vpnx3/scripts/renew-openvpn-crl.sh
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+UNIT
+  cat >/etc/systemd/system/vpnx3-openvpn-crl-renew.timer <<'UNIT'
+[Unit]
+Description=VPNX3 automatic OpenVPN CRL renewal
+[Timer]
+OnCalendar=weekly
+RandomizedDelaySec=3h
+Persistent=true
+Unit=vpnx3-openvpn-crl-renew.service
+[Install]
+WantedBy=timers.target
+UNIT
   systemctl daemon-reload
+  systemctl enable --now vpnx3-openvpn-crl-renew.timer
   if command -v ufw >/dev/null && ufw status | grep -q '^Status: active'; then
     ufw allow "$PORT/udp" comment 'VPNX3 OpenVPN'
   fi
@@ -169,6 +193,8 @@ create_client(){
   [[ ! -f "$CLIENTS/$NAME.ovpn" ]] || die "Profile exists. Choose different name."
   [[ ! -f "$PKI/issued/$NAME.crt" ]] || die "Certificate name already used."
   EASYRSA_CERT_EXPIRE=365 easy build-client-full "$NAME" nopass
+  TEMP_PROFILE="$(mktemp "$CLIENTS/.client.XXXXXXXX.ovpn")"
+  trap 'rm -f "${TEMP_PROFILE:-}"' EXIT
   {
   cat <<EOF
 client
@@ -194,8 +220,13 @@ EOF
   printf '</key>\n<tls-crypt>\n'
   cat "$ROOT/ta.key"
   printf '</tls-crypt>\n'
-  } >"$CLIENTS/$NAME.ovpn"
-  chmod 600 "$CLIENTS/$NAME.ovpn"
+  } >"$TEMP_PROFILE"
+  chmod 600 "$TEMP_PROFILE"
+  for tag in ca cert key tls-crypt; do
+    grep -Fq "<$tag>" "$TEMP_PROFILE" && grep -Fq "</$tag>" "$TEMP_PROFILE" || die "Incomplete .ovpn profile"
+  done
+  mv -f "$TEMP_PROFILE" "$CLIENTS/$NAME.ovpn"
+  trap - EXIT
   echo "[OpenVPN] Profile: $CLIENTS/$NAME.ovpn"
   echo "[OpenVPN] Import into OpenVPN Connect; protect this file as a private key."
 }
