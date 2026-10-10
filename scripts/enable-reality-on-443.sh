@@ -143,7 +143,25 @@ EOF
     docker run -d --name "$NAME" --restart unless-stopped --network host --read-only --cap-drop ALL --security-opt no-new-privileges --memory 96m --cpus .5 -v "$CONF:/usr/local/etc/haproxy/haproxy.cfg:ro" --entrypoint haproxy "$IMAGE" -db -f /usr/local/etc/haproxy/haproxy.cfg >/dev/null
   fi
   ready || die "Proxy health check failed BEFORE public redirection. Admin unchanged. Run: docker logs $NAME"
-  cat >"/etc/systemd/system/$UNIT" <<'UNITFILE'
+  ADMIN_TLS_HOST="${VPNX3_ADMIN_TLS_HOST:-194.146.223.104}"
+  [[ "$ADMIN_TLS_HOST" =~ ^[A-Za-z0-9.-]{1,253}$ ]] || die "Invalid admin DNS name"
+  cat >"/etc/systemd/system/$UNIT" <<UNITFILE
+[Unit]
+Description=VPNX3 automatic SNI multiplexer for VLESS and admin on 443
+After=docker.service network-online.target
+Requires=docker.service
+[Service]
+Type=simple
+Environment=VPNX3_ADMIN_TLS_HOST=$ADMIN_TLS_HOST
+ExecStart=/bin/bash /opt/vpnx3/scripts/enable-reality-on-443.sh guard
+ExecStopPost=/bin/bash /opt/vpnx3/scripts/enable-reality-on-443.sh firewall-off
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+[Install]
+WantedBy=multi-user.target
+UNITFILE
+  : <<'OLD_UNITFILE'
 [Unit]
 Description=VPNX3 automatic SNI multiplexer for VLESS and admin on 443
 After=docker.service network-online.target
@@ -157,7 +175,7 @@ RestartSec=10
 NoNewPrivileges=true
 [Install]
 WantedBy=multi-user.target
-UNITFILE
+OLD_UNITFILE
   systemctl daemon-reload
   systemctl enable --now "$UNIT"
   sleep 2
