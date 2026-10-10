@@ -40,6 +40,23 @@ class DeploymentSafety(unittest.TestCase):
         self.assertIn('TEMP_PROFILE="$(mktemp "$CLIENTS/.client.XXXXXXXX.ovpn")"', script)
         self.assertIn('mv -f "$TEMP_PROFILE" "$CLIENTS/$NAME.ovpn"', script)
 
+    def test_dedicated_443_edge_refuses_to_take_admin_port(self):
+        edge = source("scripts/install-vpn-edge-443.sh")
+        self.assertIn("TCP/443 is already in use", edge)
+        self.assertIn('preflight', edge)
+        self.assertIn('export VPNX3_PERSONAL_VLESS_PORT=443', edge)
+        self.assertIn('manager_request link-ios', edge)
+        main = source("scripts/install-personal-vless.sh")
+        self.assertIn('PORT==443', main)
+
+    def test_vless_issuer_refuses_stale_reality_links(self):
+        manager = source("scripts/personal-vless-manager.py")
+        self.assertIn("def inspect_vless_import_link(", manager)
+        self.assertIn("stale_public_key", manager)
+        self.assertIn("incorrect_public_endpoint", manager)
+        self.assertIn("invalid_short_id", manager)
+        self.assertIn("invalid VLESS import profile:", manager)
+
     def test_openvpn_custom_interface_has_explicit_tun_type(self):
         installer = source("scripts/install-personal-openvpn.sh")
         self.assertIn("dev vpnx3tun0\\ndev-type tun\\ntopology subnet", installer)
