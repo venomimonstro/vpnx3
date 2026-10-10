@@ -93,6 +93,11 @@ def summarize_openvpn_client_failure(log_file, proc):
         ("error: --", "OpenVPN option rejected by client"),
         ("options error", "unsupported client profile directive"),
         ("unrecognized option", "unsupported client profile directive"),
+        ("mount --make-rslave", "network namespace mount setup failed"),
+        ("error opening configuration file", "OpenVPN cannot read health profile"),
+        ("cannot load certificate file", "OpenVPN certificate file invalid"),
+        ("cannot load private key file", "OpenVPN client private key invalid"),
+        ("cannot open /dev/net/tun", "TUN device unavailable to namespace"),
         ("no such file or directory", "required file or TUN device unavailable"),
         ("operation not permitted", "insufficient namespace privileges"),
         ("permission denied", "permission denied creating tunnel or route"),
@@ -115,8 +120,10 @@ def summarize_openvpn_client_failure(log_file, proc):
         if pattern in lines:
             return desc
     code=proc.poll() if proc else None
-    return ("client exited (see journalctl -u openvpn-server@vpnx3)" if code is not None
-            else "no tunnel after timeout (inspect server TLS logs)")
+    if code is not None:
+        # Strictly numeric exit code only: never leak raw OpenVPN logs or PEMs.
+        return "unclassified client exit code=" + str(int(code)) + " (inspect local OpenVPN client diagnostics)"
+    return "no tunnel after timeout (inspect server TLS logs)"
 
 
 def openvpn_test():
@@ -314,6 +321,7 @@ def main():
     print("\nACCEPTANCE: local VLESS=",result_vless,
           "local OpenVPN=",result_ovpn,"RU TCP measurement=",result_ru)
     print("An end-to-end VPN test FROM RUSSIA requires a real RF client/probe with credentials.")
+    print("For iPhone arrival: sudo python3 scripts/diagnose-vpn-arrivals.py (reconnect INCY/OpenVPN during the 45s capture)")
     if result_vless is False or result_ovpn is False:
         return 1
     if result_vless is None or (not args.skip_openvpn and result_ovpn is None):
