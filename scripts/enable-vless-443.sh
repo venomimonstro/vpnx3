@@ -103,7 +103,9 @@ PY
 install -d -m 0750 "$PROXY"
 cat >"$HAPROXY" <<EOF
 global
-  maxconn 1024
+  maxconn 512
+  user haproxy
+  group haproxy
 defaults
   mode tcp
   timeout connect 8s
