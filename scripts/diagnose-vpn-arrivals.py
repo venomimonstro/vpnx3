@@ -45,6 +45,14 @@ def ports():
                 match = re.search(r"->\s+[^:]+:(\d+)\s*$", line)
                 if match:
                     tcp.append(int(match.group(1)))
+    # External port 443 may be routed to Xray through the guarded SNI
+    # gateway without appearing in Docker's own 'port' output.
+    marker = Path("/opt/vpnx3/private/personal-vless/443-enabled")
+    if marker.exists():
+        unit = subprocess.run(["systemctl", "is-active", "--quiet", "vpnx3-sni-gateway.service"],
+                              capture_output=True, timeout=5)
+        if unit.returncode == 0:
+            tcp.append(443)
     tcp = sorted({p for p in tcp if 1 <= p <= 65535})
     udp = 1194
     if OVPN_CONFIG.exists():
@@ -76,6 +84,9 @@ def main():
             f" or (udp and dst port {udp}))")
     print(f"WATCH: public interface={iface} | VLESS TCP SYN={tcp} | OpenVPN UDP={udp} | {args.seconds}s", flush=True)
     print("NOW: turn iPhone Wi-Fi off. Reconnect INCY once, then OpenVPN Connect once, using cellular data.", flush=True)
+    if 443 in tcp:
+        print("NOTE: TCP/443 can include ordinary HTTPS to the admin; inbound SYN is not proof of a REALITY handshake.",flush=True)
+    print("Do not press Ctrl+Z (it SUSPENDS capture). Let the timer expire.",flush=True)
     # stderr is not echoed: tcpdump capture itself contains remote public IPs.
     proc = subprocess.run(["timeout", "-s", "INT", str(args.seconds),
                            "tcpdump", "-i", iface, "-nn", "-l", "-q",
