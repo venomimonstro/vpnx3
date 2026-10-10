@@ -368,7 +368,7 @@ def manage_openvpn(action, name=""):
         active = run("systemctl", "is-active", "--quiet", "openvpn-server@vpnx3",
                      check=False, timeout=5).returncode == 0 if installed else False
         names = sorted(path.stem for path in OPENVPN_PROFILES.glob("*.ovpn")
-                       if OPENVPN_NAME.fullmatch(path.stem)) if installed else []
+                       if OPENVPN_NAME.fullmatch(path.stem) and path.stem != "vpnx3-health") if installed else []
         port = 1194
         if installed:
             for line in OPENVPN_SERVER.read_text().splitlines():
@@ -403,8 +403,8 @@ def manage_openvpn(action, name=""):
                 "protocol": "udp", "ready": active and listening and certificate_valid and crl_valid}
     if action not in {"openvpn_create", "openvpn_download", "openvpn_revoke"}:
         raise ValueError("invalid OpenVPN action")
-    if not OPENVPN_NAME.fullmatch(name):
-        raise ValueError("invalid OpenVPN profile name")
+    if not OPENVPN_NAME.fullmatch(name) or name == "vpnx3-health":
+        raise ValueError("invalid or reserved OpenVPN profile name")
     if not OPENVPN_SERVER.exists():
         raise ValueError("OpenVPN server not installed; run install-personal-openvpn.sh install")
     destination = OPENVPN_PROFILES / (name + ".ovpn")
