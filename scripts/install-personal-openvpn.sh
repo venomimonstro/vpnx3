@@ -14,11 +14,11 @@ ADDRESS="${VPNX3_OPENVPN_IP:-194.146.223.104}"
 # to a different advertised port/IP.
 if [[ -f "$ROOT/network.env" ]]; then
   if [[ -z "${VPNX3_OPENVPN_PORT:-}" ]]; then
-    previous_port="$(sed -nE 's/^PORT=([0-9]+)$/\\1/p' "$ROOT/network.env" | head -1)"
+    previous_port="$(sed -nE 's/^PORT=([0-9]+)$/\1/p' "$ROOT/network.env" | head -1)"
     [[ -z "$previous_port" ]] || PORT="$previous_port"
   fi
   if [[ -z "${VPNX3_OPENVPN_IP:-}" ]]; then
-    previous_ip="$(sed -nE 's/^ADDRESS=([A-Za-z0-9.-]+)$/\\1/p' "$ROOT/network.env" | head -1)"
+    previous_ip="$(sed -nE 's/^ADDRESS=([A-Za-z0-9.-]+)$/\1/p' "$ROOT/network.env" | head -1)"
     [[ -z "$previous_ip" ]] || ADDRESS="$previous_ip"
   fi
 fi
