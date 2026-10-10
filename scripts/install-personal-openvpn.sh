@@ -98,11 +98,15 @@ start)
   rule_del FORWARD -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
   rule_add INPUT -p udp --dport "$PORT" -j ACCEPT
   # Interface-scoped forwarding avoids accepting internet-origin source spoofing.
-  rule_add FORWARD -i "$VPN_IF" -s "$VPN_NET" -j ACCEPT
-  rule_add FORWARD -o "$VPN_IF" -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  rule_del FORWARD -i "$VPN_IF" -s "$VPN_NET" -j ACCEPT
+  rule_add FORWARD -i "$VPN_IF" -o "$WAN" -s "$VPN_NET" -j ACCEPT
+  rule_del FORWARD -o "$VPN_IF" -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  rule_add FORWARD -i "$WAN" -o "$VPN_IF" -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
   if has_docker_user; then
-    rule_add DOCKER-USER -i "$VPN_IF" -s "$VPN_NET" -j ACCEPT
-    rule_add DOCKER-USER -o "$VPN_IF" -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    rule_del DOCKER-USER -i "$VPN_IF" -s "$VPN_NET" -j ACCEPT
+    rule_add DOCKER-USER -i "$VPN_IF" -o "$WAN" -s "$VPN_NET" -j ACCEPT
+    rule_del DOCKER-USER -o "$VPN_IF" -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    rule_add DOCKER-USER -i "$WAN" -o "$VPN_IF" -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
   fi
   $IPT -t nat -C POSTROUTING -s "$VPN_NET" -o "$WAN" -j MASQUERADE 2>/dev/null || $IPT -t nat -A POSTROUTING -s "$VPN_NET" -o "$WAN" -j MASQUERADE
   ;;
@@ -112,9 +116,13 @@ stop)
   rule_del FORWARD -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
   rule_del FORWARD -i "$VPN_IF" -s "$VPN_NET" -j ACCEPT
   rule_del FORWARD -o "$VPN_IF" -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  rule_del FORWARD -i "$VPN_IF" -o "$WAN" -s "$VPN_NET" -j ACCEPT
+  rule_del FORWARD -i "$WAN" -o "$VPN_IF" -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
   if has_docker_user; then
     rule_del DOCKER-USER -i "$VPN_IF" -s "$VPN_NET" -j ACCEPT
     rule_del DOCKER-USER -o "$VPN_IF" -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    rule_del DOCKER-USER -i "$VPN_IF" -o "$WAN" -s "$VPN_NET" -j ACCEPT
+    rule_del DOCKER-USER -i "$WAN" -o "$VPN_IF" -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
   fi
   while $IPT -t nat -C POSTROUTING -s "$VPN_NET" -o "$WAN" -j MASQUERADE 2>/dev/null; do
     $IPT -t nat -D POSTROUTING -s "$VPN_NET" -o "$WAN" -j MASQUERADE || break
@@ -171,7 +179,7 @@ UNIT
   systemctl restart vpnx3-openvpn-firewall.service
   systemctl is-active --quiet vpnx3-openvpn-firewall.service || die "OpenVPN firewall service failed"
   iptables -C INPUT -p udp --dport "$PORT" -j ACCEPT || die "Firewall INPUT rule not installed"
-  iptables -C FORWARD -i vpnx3tun0 -s 10.86.0.0/24 -j ACCEPT || die "VPN forward rule not installed"
+  iptables -C FORWARD -i vpnx3tun0 -o "$WAN" -s 10.86.0.0/24 -j ACCEPT || die "VPN forward rule not installed"
   iptables -t nat -C POSTROUTING -s 10.86.0.0/24 -o "$WAN" -j MASQUERADE || die "VPN NAT rule not installed"
   systemctl enable --now "$UNIT"
   systemctl restart "$UNIT"
