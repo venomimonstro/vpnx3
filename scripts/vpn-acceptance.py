@@ -111,8 +111,8 @@ def openvpn_test():
     # Operator logs have shown 'dev tun' + missing FORWARD rules although
     # the repository installer already configures vpnx3tun0.
     server_file = Path("/etc/openvpn/server/vpnx3.conf")
-    if not server_file.is_file() or not re.search(r"(?m)^dev vpnx3tun0\\s*$",server_file.read_text()):
-        print("OpenVPN: FAIL (stale server configuration: run sudo bash scripts/install-personal-openvpn.sh install)",flush=True)
+    if not server_file.is_file() or not re.search(r"(?m)^dev vpnx3tun0\s*$",server_file.read_text()) or not re.search(r"(?m)^dev-type tun$",server_file.read_text()):
+        print("OpenVPN: FAIL (stale or incomplete server TUN configuration: run sudo bash scripts/install-personal-openvpn.sh install)",flush=True)
         return False
     if config.stat().st_size > 100*1024:
         print("OpenVPN: FAIL (oversized profile)", flush=True)
