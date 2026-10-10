@@ -161,21 +161,6 @@ NoNewPrivileges=true
 [Install]
 WantedBy=multi-user.target
 UNITFILE
-  : <<'OLD_UNITFILE'
-[Unit]
-Description=VPNX3 automatic SNI multiplexer for VLESS and admin on 443
-After=docker.service network-online.target
-Requires=docker.service
-[Service]
-Type=simple
-ExecStart=/bin/bash /opt/vpnx3/scripts/enable-reality-on-443.sh guard
-ExecStopPost=/bin/bash /opt/vpnx3/scripts/enable-reality-on-443.sh firewall-off
-Restart=always
-RestartSec=10
-NoNewPrivileges=true
-[Install]
-WantedBy=multi-user.target
-OLD_UNITFILE
   systemctl daemon-reload
   systemctl enable --now "$UNIT"
   sleep 2
