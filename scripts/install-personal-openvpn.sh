@@ -38,7 +38,7 @@ install_server(){
   cat >"$CONF" <<EOF
 port $PORT
 proto udp4
-dev tun
+dev vpnx3tun0
 topology subnet
 server 10.86.0.0 255.255.255.0
 ca $PKI/ca.crt
@@ -64,7 +64,6 @@ EOF
   # Scope forwarding to this VPN subnet; do not globally masquerade the host.
   printf 'net.ipv4.ip_forward=1\n' >/etc/sysctl.d/91-vpnx3-openvpn.conf
   sysctl -w net.ipv4.ip_forward=1 >/dev/null
-  sysctl --system >/dev/null
   WAN="$(ip -4 route show default | awk '/default/{print $5;exit}')"
   [[ -n "$WAN" && "$WAN" =~ ^[a-zA-Z0-9_.:-]+$ ]] || die "Default IPv4 interface not detected"
   cat >"$ROOT/network.env" <<EOF
@@ -79,18 +78,47 @@ EOF
 set -euo pipefail
 source /etc/openvpn/vpnx3/network.env
 IPT=/usr/sbin/iptables
+VPN_IF=vpnx3tun0
+VPN_NET=10.86.0.0/24
+rule_add(){
+  local chain="$1"; shift
+  $IPT -C "$chain" "$@" 2>/dev/null || $IPT -I "$chain" 1 "$@"
+}
+rule_del(){
+  local chain="$1"; shift
+  while $IPT -C "$chain" "$@" 2>/dev/null; do
+    $IPT -D "$chain" "$@" || return 1
+  done
+}
+has_docker_user(){ $IPT -n -L DOCKER-USER >/dev/null 2>&1; }
 case "${1:-start}" in
 start)
-  $IPT -C INPUT -p udp --dport "$PORT" -j ACCEPT 2>/dev/null || $IPT -I INPUT 1 -p udp --dport "$PORT" -j ACCEPT
-  $IPT -C FORWARD -s 10.86.0.0/24 -j ACCEPT 2>/dev/null || $IPT -I FORWARD 1 -s 10.86.0.0/24 -j ACCEPT
-  $IPT -C FORWARD -d 10.86.0.0/24 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || $IPT -I FORWARD 1 -d 10.86.0.0/24 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-  $IPT -t nat -C POSTROUTING -s 10.86.0.0/24 -o "$WAN" -j MASQUERADE 2>/dev/null || $IPT -t nat -A POSTROUTING -s 10.86.0.0/24 -o "$WAN" -j MASQUERADE
+  # Old broad source-only ACCEPT rules allowed spoofed packets from any NIC.
+  rule_del FORWARD -s "$VPN_NET" -j ACCEPT
+  rule_del FORWARD -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  rule_add INPUT -p udp --dport "$PORT" -j ACCEPT
+  # Interface-scoped forwarding avoids accepting internet-origin source spoofing.
+  rule_add FORWARD -i "$VPN_IF" -s "$VPN_NET" -j ACCEPT
+  rule_add FORWARD -o "$VPN_IF" -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  if has_docker_user; then
+    rule_add DOCKER-USER -i "$VPN_IF" -s "$VPN_NET" -j ACCEPT
+    rule_add DOCKER-USER -o "$VPN_IF" -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  fi
+  $IPT -t nat -C POSTROUTING -s "$VPN_NET" -o "$WAN" -j MASQUERADE 2>/dev/null || $IPT -t nat -A POSTROUTING -s "$VPN_NET" -o "$WAN" -j MASQUERADE
   ;;
 stop)
-  $IPT -D INPUT -p udp --dport "$PORT" -j ACCEPT 2>/dev/null || true
-  $IPT -D FORWARD -s 10.86.0.0/24 -j ACCEPT 2>/dev/null || true
-  $IPT -D FORWARD -d 10.86.0.0/24 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
-  $IPT -t nat -D POSTROUTING -s 10.86.0.0/24 -o "$WAN" -j MASQUERADE 2>/dev/null || true
+  rule_del INPUT -p udp --dport "$PORT" -j ACCEPT
+  rule_del FORWARD -s "$VPN_NET" -j ACCEPT
+  rule_del FORWARD -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  rule_del FORWARD -i "$VPN_IF" -s "$VPN_NET" -j ACCEPT
+  rule_del FORWARD -o "$VPN_IF" -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  if has_docker_user; then
+    rule_del DOCKER-USER -i "$VPN_IF" -s "$VPN_NET" -j ACCEPT
+    rule_del DOCKER-USER -o "$VPN_IF" -d "$VPN_NET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  fi
+  while $IPT -t nat -C POSTROUTING -s "$VPN_NET" -o "$WAN" -j MASQUERADE 2>/dev/null; do
+    $IPT -t nat -D POSTROUTING -s "$VPN_NET" -o "$WAN" -j MASQUERADE || break
+  done
   ;;
 esac
 SCRIPT
@@ -98,9 +126,9 @@ SCRIPT
   cat >/etc/systemd/system/vpnx3-openvpn-firewall.service <<'EOF'
 [Unit]
 Description=VPNX3 OpenVPN forwarding and NAT rules
-After=network-online.target
+After=network-online.target docker.service
 Before=openvpn-server@vpnx3.service
-Wants=network-online.target
+Wants=network-online.target docker.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
@@ -119,7 +147,7 @@ EOF
   systemctl restart vpnx3-openvpn-firewall.service
   systemctl is-active --quiet vpnx3-openvpn-firewall.service || die "OpenVPN firewall service failed"
   iptables -C INPUT -p udp --dport "$PORT" -j ACCEPT || die "Firewall INPUT rule not installed"
-  iptables -C FORWARD -s 10.86.0.0/24 -j ACCEPT || die "VPN forward rule not installed"
+  iptables -C FORWARD -i vpnx3tun0 -s 10.86.0.0/24 -j ACCEPT || die "VPN forward rule not installed"
   iptables -t nat -C POSTROUTING -s 10.86.0.0/24 -o "$WAN" -j MASQUERADE || die "VPN NAT rule not installed"
   systemctl enable --now "$UNIT"
   systemctl restart "$UNIT"
