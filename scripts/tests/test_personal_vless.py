@@ -66,13 +66,20 @@ class CompatibilityTests(TestCase):
             (link.replace("pbk=" + "A" * 43, "pbk=" + "B" * 43), "stale_public_key"),
             (link.replace(":8443", ":443"), "incorrect_public_endpoint"),
             (link.replace("security=reality", "security=tls"), "incorrect_security"),
-            (link + "&flow=xtls-rprx-vision", "incorrect_flow"),
+            (link.replace("&security=reality", "&flow=xtls-rprx-vision&security=reality"), "incorrect_flow"),
         )
         for broken, expected in cases:
             with self.subTest(issue=expected):
                 result = manager.inspect_vless_import_link(broken, self.conf, IOS_ID, 8443)
                 self.assertFalse(result["valid"])
                 self.assertIn(expected, result["issues"])
+
+    def test_uri_fragment_is_label_not_connection_parameters(self):
+        link = manager.uri_for(IOS_ID, "iPhone", self.conf)
+        broken = link + "&flow=xtls-rprx-vision"
+        self.assertEqual(parse_qs(urlsplit(broken).query), parse_qs(urlsplit(link).query))
+        # Adding text to the display label cannot change actual transport options.
+        self.assertTrue(manager.inspect_vless_import_link(broken, self.conf, IOS_ID, 8443)["valid"])
 
     def test_modes_derive_from_server_configuration(self):
         devices = manager.current_profiles(self.conf)
