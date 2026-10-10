@@ -45,7 +45,7 @@ class LocalClientTests(unittest.TestCase):
 
     def test_failure_classification_does_not_echo_ip_or_keys(self):
         cases = (
-            ("Options error: unrecognized option found", "OpenVPN option rejected"),
+            ("Options error: unrecognized option found", "unsupported client profile directive"),
             ("TLS Error: TLS key negotiation failed with [AF_INET]1.2.3.4:1194", "TLS handshake timed out"),
             ("ERROR: Cannot open TUN/TAP dev /dev/net/tun", "TUN interface unavailable"),
             ("RTNETLINK answers: Network is unreachable", "client namespace cannot route"),
