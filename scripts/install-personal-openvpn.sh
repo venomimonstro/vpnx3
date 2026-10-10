@@ -31,8 +31,13 @@ need_install(){ [[ -f "$CONF" && -e "$PKI/ca.crt" ]] || die "Install OpenVPN fir
 install_server(){
   [[ "$PORT" =~ ^[0-9]+$ ]] && (( PORT>1024 && PORT<=65535 )) || die "Invalid UDP port"
   [[ "$ADDRESS" =~ ^[a-zA-Z0-9.-]+$ ]] || die "Invalid public hostname/IP"
-  apt-get update -qq
-  DEBIAN_FRONTEND=noninteractive apt-get install -y openvpn easy-rsa iptables
+  # Repeated configuration deployments must not depend on apt/dpkg locks.
+  # On production Ubuntu unattended-upgrades may hold the package manager.
+  if ! command -v openvpn >/dev/null 2>&1 || ! command -v iptables >/dev/null 2>&1 || \
+     [[ ! -x /usr/share/easy-rsa/easyrsa ]]; then
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=180 install -y openvpn easy-rsa iptables
+  fi
   [[ -x /usr/share/easy-rsa/easyrsa ]] || die "Easy-RSA binary missing"
   install -d -m 0700 "$ROOT" "$CLIENTS"
   install -d -m 0755 /etc/openvpn/server
