@@ -16,7 +16,7 @@ class DeploymentSafety(unittest.TestCase):
         script = source("scripts/enable-vless-443.sh")
         self.assertIn('die "Shared TCP/443 cutover is disabled:', script)
         self.assertLess(script.index('die "Shared TCP/443 cutover is disabled:'),
-                        script.index('cp -p "$CADDY" "$BACKUP"'))
+                        script.index('[[ -f "$CADDY" ]] || die'))
 
     def test_vless_status_never_prints_secret_link(self):
         script = source("scripts/install-personal-vless.sh")
